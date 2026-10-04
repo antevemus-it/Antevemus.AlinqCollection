@@ -1,0 +1,90 @@
+# Composer
+/vendor/
+composer.lock
+
+# PHPUnit
+/phpunit.xml
+/.phpunit.cache
+/coverage/
+.phpunit.result.cache
+
+# Git workflow helpers (local only)
+.git-workflow-guide.md
+NEXT-STEPS.md
+
+# PHP CS Fixer
+/.php-cs-fixer.cache
+/.php-cs-fixer.php
+
+# PHPStan
+/phpstan.neon
+/.phpstan.cache
+
+# Psalm
+/psalm.xml
+/.psalm.cache
+
+# Build artifacts
+/build/
+/dist/
+
+# IDE - PhpStorm / IntelliJ
+/.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE - VSCode
+/.vscode/
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
+
+# IDE - Visual Studio (caso esteja usando no Windows)
+/.vs/
+*.suo
+*.user
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Windows Zone.Identifier (WSL)
+*:Zone.Identifier
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.~lock.*
+
+# Logs
+*.log
+/logs/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Documentation build
+/docs/_build/
+/docs/.doctrees/
+
+# Package files (quando gerar para distribuição)
+*.tar
+*.tar.gz
+*.zip
+*.phar
+install-local.sh
+QUICK-START-LOCAL.md
+LOCAL-INSTALLATION.md

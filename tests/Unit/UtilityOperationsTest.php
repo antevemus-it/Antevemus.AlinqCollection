@@ -1,0 +1,540 @@
+<?php
+
+namespace Antevemus\ALinq\Tests\Unit;
+
+use Antevemus\ALinq\ALinqCollection;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Test class for Utility Operations
+ * Tests all 7 utility methods in UtilityOperations trait
+ */
+class UtilityOperationsTest extends TestCase
+{
+    // ===== IS LIST TESTS =====
+
+    /**
+     * Test isList returns true for sequential numeric array
+     */
+    public function testIsListReturnsTrueForSequentialNumericArray(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+
+        $this->assertTrue($collection->isList());
+    }
+
+    /**
+     * Test isList returns false for associative array
+     */
+    public function testIsListReturnsFalseForAssociativeArray(): void
+    {
+        $collection = ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
+
+        $this->assertFalse($collection->isList());
+    }
+
+    /**
+     * Test isList returns false for non-sequential numeric keys
+     */
+    public function testIsListReturnsFalseForNonSequentialKeys(): void
+    {
+        $collection = ALinqCollection::from([0 => 'a', 2 => 'b', 3 => 'c']);
+
+        $this->assertFalse($collection->isList());
+    }
+
+    /**
+     * Test isList returns true for empty array
+     */
+    public function testIsListReturnsTrueForEmptyArray(): void
+    {
+        $collection = ALinqCollection::empty();
+
+        $this->assertTrue($collection->isList());
+    }
+
+    /**
+     * Test isList after filtering operation
+     * Lists are reindexed after where(), so they remain lists
+     */
+    public function testIsListAfterFilteringOperation(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $filtered = $collection->where(fn($x) => $x > 2);
+
+        // After where(), lists are reindexed, so they remain lists
+        $this->assertTrue($filtered->isList());
+    }
+
+    // ===== EACH TESTS =====
+
+    /**
+     * Test each applies callback to all elements
+     */
+    public function testEachAppliesCallbackToAllElements(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $result = [];
+
+        $collection->each(function($value, $key) use (&$result) {
+            $result[$key] = $value * 2;
+        });
+
+        $this->assertEquals([0 => 2, 1 => 4, 2 => 6], $result);
+    }
+
+    /**
+     * Test each returns same collection instance
+     */
+    public function testEachReturnsSameCollectionInstance(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $result = $collection->each(fn($value) => $value);
+
+        $this->assertSame($collection, $result);
+    }
+
+    /**
+     * Test each with side effects
+     */
+    public function testEachWithSideEffects(): void
+    {
+        $collection = ALinqCollection::from(['a', 'b', 'c']);
+        $output = [];
+
+        $collection->each(function($value, $key) use (&$output) {
+            $output[] = strtoupper($value);
+        });
+
+        $this->assertEquals(['A', 'B', 'C'], $output);
+    }
+
+    /**
+     * Test each on empty collection
+     */
+    public function testEachOnEmptyCollection(): void
+    {
+        $collection = ALinqCollection::empty();
+        $count = 0;
+
+        $collection->each(function() use (&$count) {
+            $count++;
+        });
+
+        $this->assertEquals(0, $count);
+    }
+
+    // ===== EACH RECURSIVE TESTS =====
+
+    /**
+     * Test eachRecursive applies callback recursively
+     */
+    public function testEachRecursiveAppliesCallbackRecursively(): void
+    {
+        $collection = ALinqCollection::from([
+            'a' => [
+                'b' => [
+                    'c' => 'value'
+                ]
+            ],
+            'd' => 'another'
+        ]);
+
+        $values = [];
+        $collection->eachRecursive(function($value, $key) use (&$values) {
+            $values[] = $value;
+        });
+
+        $this->assertContains('value', $values);
+        $this->assertContains('another', $values);
+    }
+
+    /**
+     * Test eachRecursive returns same collection
+     */
+    public function testEachRecursiveReturnsSameCollection(): void
+    {
+        $collection = ALinqCollection::from([1, [2, 3]]);
+        $result = $collection->eachRecursive(fn($value) => $value);
+
+        $this->assertSame($collection, $result);
+    }
+
+    /**
+     * Test eachRecursive with nested arrays
+     */
+    public function testEachRecursiveWithNestedArrays(): void
+    {
+        $collection = ALinqCollection::from([
+            [1, 2, [3, 4]],
+            [5, [6, 7]]
+        ]);
+
+        $sum = 0;
+        $collection->eachRecursive(function($value) use (&$sum) {
+            if (is_numeric($value)) {
+                $sum += $value;
+            }
+        });
+
+        $this->assertEquals(28, $sum);
+    }
+
+    // ===== RANDOM TESTS =====
+
+    /**
+     * Test random returns single element by default
+     */
+    public function testRandomReturnsSingleElement(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $result = $collection->random();
+
+        $this->assertContains($result, [1, 2, 3, 4, 5]);
+    }
+
+    /**
+     * Test random returns multiple elements
+     */
+    public function testRandomReturnsMultipleElements(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $result = $collection->random(3);
+
+        $this->assertInstanceOf(ALinqCollection::class, $result);
+        $this->assertCount(3, $result->toArray());
+    }
+
+    /**
+     * Test random on empty collection returns null
+     */
+    public function testRandomOnEmptyCollectionReturnsNull(): void
+    {
+        $collection = ALinqCollection::empty();
+        $result = $collection->random();
+
+        $this->assertNull($result);
+    }
+
+    /**
+     * Test random with count larger than collection size
+     */
+    public function testRandomWithCountLargerThanCollectionSize(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $result = $collection->random(10);
+
+        $this->assertCount(3, $result->toArray());
+    }
+
+    /**
+     * Test random with single element collection
+     */
+    public function testRandomWithSingleElementCollection(): void
+    {
+        $collection = ALinqCollection::from([42]);
+        $result = $collection->random();
+
+        $this->assertEquals(42, $result);
+    }
+
+    /**
+     * Test random returns collection when num > 1
+     */
+    public function testRandomReturnsCollectionWhenNumGreaterThanOne(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $result = $collection->random(2);
+
+        $this->assertInstanceOf(ALinqCollection::class, $result);
+    }
+
+    // ===== EXTRACT TESTS =====
+
+    /**
+     * Test extract exports variables to current scope
+     */
+    public function testExtractExportsVariablesToCurrentScope(): void
+    {
+        $collection = ALinqCollection::from([
+            'var1' => 'value1',
+            'var2' => 'value2'
+        ]);
+
+        $count = $collection->extract(EXTR_SKIP);
+
+        $this->assertEquals(2, $count);
+    }
+
+    /**
+     * Test extract returns count of extracted variables
+     */
+    public function testExtractReturnsCountOfExtractedVariables(): void
+    {
+        $collection = ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
+
+        $count = $collection->extract();
+
+        $this->assertEquals(3, $count);
+    }
+
+    // ===== CREATE PREDICATE TESTS =====
+
+    /**
+     * Test createPredicate with equality operator
+     */
+    public function testCreatePredicateWithEqualityOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('=', 3);
+
+        $this->assertTrue($predicate(3));
+        $this->assertFalse($predicate(5));
+    }
+
+    /**
+     * Test createPredicate with strict equality
+     */
+    public function testCreatePredicateWithStrictEquality(): void
+    {
+        $collection = ALinqCollection::from([1, '1', 2]);
+        $predicate = $collection->createPredicate('===', 1);
+
+        $this->assertTrue($predicate(1));
+        $this->assertFalse($predicate('1'));
+    }
+
+    /**
+     * Test createPredicate with greater than operator
+     */
+    public function testCreatePredicateWithGreaterThanOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('>', 3);
+
+        $this->assertTrue($predicate(4));
+        $this->assertTrue($predicate(5));
+        $this->assertFalse($predicate(2));
+    }
+
+    /**
+     * Test createPredicate with less than or equal operator
+     */
+    public function testCreatePredicateWithLessThanOrEqualOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('<=', 3);
+
+        $this->assertTrue($predicate(1));
+        $this->assertTrue($predicate(3));
+        $this->assertFalse($predicate(4));
+    }
+
+    /**
+     * Test createPredicate with in operator
+     */
+    public function testCreatePredicateWithInOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('in', [2, 4, 6]);
+
+        $this->assertTrue($predicate(2));
+        $this->assertTrue($predicate(4));
+        $this->assertFalse($predicate(3));
+    }
+
+    /**
+     * Test createPredicate with contains operator
+     */
+    public function testCreatePredicateWithContainsOperator(): void
+    {
+        $collection = ALinqCollection::from(['hello world', 'foo bar']);
+        $predicate = $collection->createPredicate('contains', 'world');
+
+        $this->assertTrue($predicate('hello world'));
+        $this->assertFalse($predicate('foo bar'));
+    }
+
+    /**
+     * Test createPredicate with startsWith operator
+     */
+    public function testCreatePredicateWithStartsWithOperator(): void
+    {
+        $collection = ALinqCollection::from(['hello', 'world']);
+        $predicate = $collection->createPredicate('startsWith', 'hel');
+
+        $this->assertTrue($predicate('hello'));
+        $this->assertFalse($predicate('world'));
+    }
+
+    /**
+     * Test createPredicate with endsWith operator
+     */
+    public function testCreatePredicateWithEndsWithOperator(): void
+    {
+        $collection = ALinqCollection::from(['hello', 'world']);
+        $predicate = $collection->createPredicate('endsWith', 'ld');
+
+        $this->assertTrue($predicate('world'));
+        $this->assertFalse($predicate('hello'));
+    }
+
+    /**
+     * Test createPredicate with invalid operator throws exception
+     */
+    public function testCreatePredicateWithInvalidOperatorThrowsException(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Unknown operator: invalid");
+
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $collection->createPredicate('invalid', 5);
+    }
+
+    /**
+     * Test createPredicate with not equal operator
+     */
+    public function testCreatePredicateWithNotEqualOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $predicate = $collection->createPredicate('!=', 2);
+
+        $this->assertTrue($predicate(1));
+        $this->assertTrue($predicate(3));
+        $this->assertFalse($predicate(2));
+    }
+
+    /**
+     * Test createPredicate with strict not equal operator (!==)
+     */
+    public function testCreatePredicateWithStrictNotEqualOperator(): void
+    {
+        $collection = ALinqCollection::from([1, '1', 2]);
+        $predicate = $collection->createPredicate('!==', 1);
+
+        $this->assertTrue($predicate('1')); // string '1' !== int 1
+        $this->assertFalse($predicate(1));  // int 1 === int 1
+        $this->assertTrue($predicate(2));
+    }
+
+    /**
+     * Test createPredicate with greater than or equal operator (>=)
+     */
+    public function testCreatePredicateWithGreaterThanOrEqualOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('>=', 3);
+
+        $this->assertFalse($predicate(1));
+        $this->assertFalse($predicate(2));
+        $this->assertTrue($predicate(3));  // 3 >= 3
+        $this->assertTrue($predicate(4));
+        $this->assertTrue($predicate(5));
+    }
+
+    /**
+     * Test createPredicate with less than operator (<)
+     */
+    public function testCreatePredicateWithLessThanOperator(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+        $predicate = $collection->createPredicate('<', 3);
+
+        $this->assertTrue($predicate(1));
+        $this->assertTrue($predicate(2));
+        $this->assertFalse($predicate(3)); // 3 < 3 é false
+        $this->assertFalse($predicate(4));
+        $this->assertFalse($predicate(5));
+    }
+
+    // ===== CREATE PROPERTY SELECTOR TESTS =====
+
+    /**
+     * Test createPropertySelector for array access
+     */
+    public function testCreatePropertySelectorForArrayAccess(): void
+    {
+        $collection = ALinqCollection::from([
+            ['name' => 'Alice', 'age' => 25],
+            ['name' => 'Bob', 'age' => 30]
+        ]);
+
+        $selector = $collection->createPropertySelector('name');
+
+        $this->assertEquals('Alice', $selector(['name' => 'Alice', 'age' => 25]));
+        $this->assertEquals('Bob', $selector(['name' => 'Bob', 'age' => 30]));
+    }
+
+    /**
+     * Test createPropertySelector for object access
+     */
+    public function testCreatePropertySelectorForObjectAccess(): void
+    {
+        $obj = (object)['name' => 'Alice', 'age' => 25];
+
+        $collection = ALinqCollection::from([$obj]);
+        $selector = $collection->createPropertySelector('name');
+
+        $this->assertEquals('Alice', $selector($obj));
+    }
+
+    /**
+     * Test createPropertySelector returns null for missing property
+     */
+    public function testCreatePropertySelectorReturnsNullForMissingProperty(): void
+    {
+        $collection = ALinqCollection::from([['name' => 'Alice']]);
+        $selector = $collection->createPropertySelector('age');
+
+        $this->assertNull($selector(['name' => 'Alice']));
+    }
+
+    /**
+     * Test createPropertySelector with getter method
+     */
+    public function testCreatePropertySelectorWithGetterMethod(): void
+    {
+        $obj = new class {
+            public function getValue() {
+                return 'test from getter';
+            }
+        };
+
+        $collection = ALinqCollection::from([$obj]);
+        $selector = $collection->createPropertySelector('value');
+
+        // O ALinqPropertyAccess vai tentar getValue() como fallback
+        $this->assertEquals('test from getter', $selector($obj));
+    }
+
+    /**
+     * Test fluent API chaining with utility operations
+     */
+    public function testFluentApiChainingWithUtilityOperations(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+
+        $count = 0;
+        $result = $collection
+            ->where(fn($x) => $x > 2)
+            ->each(function($value) use (&$count) {
+                $count++;
+            });
+
+        $this->assertEquals(3, $count);
+        $this->assertInstanceOf(ALinqCollection::class, $result);
+    }
+
+    /**
+     * Test utility operations return correct types
+     */
+    public function testUtilityOperationsReturnCorrectTypes(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+
+        $this->assertIsBool($collection->isList());
+        $this->assertInstanceOf(ALinqCollection::class, $collection->each(fn($x) => $x));
+        $this->assertInstanceOf(\Closure::class, $collection->createPredicate('=', 1));
+        $this->assertInstanceOf(\Closure::class, $collection->createPropertySelector('name'));
+    }
+}

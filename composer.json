@@ -1,0 +1,51 @@
+{
+  "name": "antevemus/alinq-collection",
+  "description": "Enterprise LINQ-Style Collection Framework for PHP 8.4+ (Fluent API, Native Array Primitives, Query Builder, Set Operations, Dot-Notation Property Access)",
+  "type": "library",
+  "license": "MIT",
+  "homepage": "https://github.com/antevemus-it/Antevemus.AlinqCollection",
+  "support": {
+    "source": "https://github.com/antevemus-it/Antevemus.AlinqCollection",
+    "issues": "https://github.com/antevemus-it/Antevemus.AlinqCollection/issues",
+    "docs": "https://github.com/antevemus-it/Antevemus.AlinqCollection#readme"
+  },
+  "keywords": [
+    "linq",
+    "collection",
+    "array",
+    "functional-programming",
+    "query-builder",
+    "filtering",
+    "aggregation",
+    "set-theory",
+    "fluent-api",
+    "php84",
+    "generics",
+    "ddd"
+  ],
+  "authors": [
+    {
+      "name": "Heliton Junior - CTO @ Antevemus Soluções Inovadoras em TI Ltda.",
+      "email": "contato@antevemus.com.br",
+      "homepage": "https://antevemus.com.br"
+    }
+  ],
+  "require": {
+    "php": ">=8.4"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^11.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Antevemus\\ALinq\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Antevemus\\ALinq\\Tests\\": "tests/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
