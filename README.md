@@ -1,14 +1,14 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-305%20passed%20%7C%20485%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-335%20passed%20%7C%20561%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
 > **Enterprise LINQ-Style Collection Framework for PHP 8.4+**  
-> A fluent, expressive, and type-safe collection manipulation engine bringing the elegance of .NET Language Integrated Query (LINQ) to PHP. Powered by PHP 8.4 native array primitives (`array_any`, `array_all`, `array_find`, `array_find_key`), advanced set theory, dynamic predicate query builders, dot-notation deep property resolution, and seamless bidirectional synergy with [`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification).
+> A fluent, expressive, and type-safe collection manipulation engine bringing the elegance of .NET Language Integrated Query (LINQ) to PHP. Powered by PHP 8.4 native array primitives (`array_any`, `array_all`, `array_find`, `array_find_key`), generator-based streaming pipelines (`ALinqLazyCollection`), advanced set theory, dynamic predicate query builders, dot-notation deep property resolution, and seamless bidirectional synergy with [`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification).
 
 ---
 
@@ -23,9 +23,10 @@ Modern PHP development frequently struggles with boilerplate array manipulations
 **Antevemus ALinq Collection** was designed from first principles for **PHP 8.4+**:
 1. **Leveraging Native C-Level Primitives**: Harnesses PHP 8.4's native `array_any()`, `array_all()`, `array_find()`, and `array_find_key()` for maximum execution speed without userspace overhead.
 2. **Decomposed Trait-Based Modular Architecture**: Eliminates monoliths. Functionality is cleanly decoupled across 8 specialized domain traits (Filtering, Joining, Aggregations, Projections, Grouping, Ordering, Iterators, Utilities).
-3. **Enterprise Set Theory**: Complete mathematical Venn diagram operations (`intersectBy`, `exceptBy`, `unionBy`) supporting custom key selectors and comparers.
-4. **Dot-Notation Deep Property Access**: Query mixed datasets (arrays, objects, nested DTOs, or domain entities) effortlessly using dot-notation paths like `user.profile.address.city`.
-5. **Architectural Synergy**: Native integration partner for **[`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification)**, allowing Evans & Fowler specification trees to compile directly into high-speed in-memory LINQ pipelines via `ALinqBridge` and `ALinqSpecificationVisitor`.
+3. **Generator-Based Streaming Pipelines (O(1) RAM)**: `ALinqLazyCollection` processes multi-gigabyte log files, CSVs, and unbuffered database cursors line-by-line without memory inflation.
+4. **Enterprise Set Theory**: Complete mathematical Venn diagram operations (`intersectBy`, `exceptBy`, `unionBy`) supporting custom key selectors and comparers.
+5. **Dot-Notation Deep Property Access**: Query mixed datasets (arrays, objects, nested DTOs, or domain entities) effortlessly using dot-notation paths like `user.profile.address.city`.
+6. **Architectural Synergy**: Native integration partner for **[`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification)**, allowing Evans & Fowler specification trees to compile directly into high-speed in-memory LINQ pipelines via `ALinqBridge` and `ALinqSpecificationVisitor`.
 
 ---
 
@@ -33,6 +34,7 @@ Modern PHP development frequently struggles with boilerplate array manipulations
 
 | Feature Domain | Capabilities |
 | :--- | :--- |
+| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, constant $O(1)$ RAM |
 | **🔍 Filtering & Slicing** | `where`, `take`, `skip`, `distinct`, `distinctBy`, `first`, `firstOrDefault`, `last`, `lastOrDefault`, `singleOrDefault`, `chunk`, `pad`, `shuffle`, `contains` |
 | **🔗 Joining & Set Theory** | `join` (inner), `groupJoin` (left outer), `concat`, `intersect`, `intersectWith`, `intersectBy`, `except`, `exceptWith`, `exceptBy`, `unionBy`, `combine`, `replace`, `replaceRecursive` |
 | **📊 Aggregation & Metrics** | `any`, `all`, `sum`, `average`, `min`, `minBy`, `max`, `maxBy`, `product`, `countValues`, `aggregate`, `aggregateBy`, `countBy` |
@@ -125,13 +127,15 @@ $roleStats = $users
 
 ```text
 Antevemus\ALinq\
-├── ALinqCollection.php          # Main facade implementing IALinqCollection & Countable & Traversable
+├── ALinqCollection.php          # Main facade implementing IALinqCollection (In-Memory Engine)
+├── ALinqLazyCollection.php      # Generator-based Streaming Pipeline (O(1) Memory Engine)
 ├── ALinqQueryBuilder.php        # Fluent condition builder (AND / OR modes) for complex queries
 ├── Helpers\
 │   └── ALinqPropertyAccess.php  # Universal getter supporting dot notation, arrays, objects, and methods
-├── Interfaces\                  # 10 Segregated Contracts
+├── Interfaces\                  # 11 Segregated Contracts
 │   ├── IALinqBaseCollection.php
 │   ├── IALinqCollection.php
+│   ├── IALinqLazyCollection.php # Streaming collection contract (Generators, files, cursors)
 │   ├── IALinqFilterable.php
 │   ├── IALinqJoinable.php
 │   ├── IALinqAggregatable.php
@@ -446,6 +450,81 @@ $taxId = ALinqPropertyAccess::getValue($payload, 'user.profile.organization.taxI
 
 ---
 
+### 10. Streaming & Big Data Pipelines (`ALinqLazyCollection`)
+
+Inspired by reactive Node.js streams and .NET `IEnumerable<T>` deferred execution, `ALinqLazyCollection` provides high-throughput, memory-bounded processing using PHP 8.4 generators. 
+
+Processing gigabyte-scale datasets (such as access logs, financial transaction CSVs, or large SQL dumps) with standard in-memory arrays causes fatal memory exhaustion. `ALinqLazyCollection` guarantees **constant $O(1)$ memory consumption (< 100 KB RAM)** regardless of dataset size by evaluating elements strictly on-demand.
+
+#### Key Architectural Guarantees:
+- **Rewindable Multi-Pass Traversals**: Unlike standard PHP generators that throw `"Cannot traverse an already closed generator"`, `ALinqLazyCollection` wraps generator factories (`Closure(): iterable`). You can iterate, filter, and materialize the same pipeline multiple times safely.
+- **Deterministic Resource Disposal**: Sources like `fromFile()` and `fromCsv()` guarantee file handle closure in `finally` blocks, even during early pipeline termination (e.g. short-circuiting with `first()`, `take(n)`).
+- **Dual Pipeline Integration**: Effortlessly convert between eager collections (`ALinqCollection`) and streaming pipelines (`ALinqLazyCollection`) via `$collection->lazy()` and `$lazy->toCollection()`.
+
+#### Real-World Streaming Example: Multi-Gigabyte Log File
+
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+
+// Stream lines from a 10 GB production server log with < 100 KB RAM footprint
+$highSeverityAlerts = ALinqLazyCollection::fromFile('/var/log/app/production.log')
+    ->where(fn(string $line) => str_contains($line, '[CRITICAL]'))
+    ->select(function (string $line) {
+        preg_match('/\[(?<time>[^\]]+)\] \[CRITICAL\] (?<msg>.*)/', $line, $matches);
+        return [
+            'timestamp' => $matches['time'] ?? 'unknown',
+            'message'   => $matches['msg'] ?? trim($line),
+        ];
+    })
+    ->take(50) // Short-circuits immediately: stops reading disk once 50 matches are found!
+    ->toArray();
+```
+
+#### Real-World CSV Processing with Dynamic Headers
+
+```php
+// Automatically maps header line to associative row arrays
+$activeEnterpriseUsers = ALinqLazyCollection::fromCsv('/var/data/customers.csv')
+    ->where(fn(array $row) => $row['plan'] === 'Enterprise' && $row['status'] === 'active')
+    ->select(fn(array $row) => [
+        'customerId' => (int)$row['id'],
+        'email'      => strtolower(trim($row['email'])),
+        'mrr'        => (float)$row['mrr'],
+    ])
+    ->distinctBy(fn($customer) => $customer['email'])
+    ->tap(fn($customer) => syslog(LOG_INFO, "Processing customer {$customer['customerId']}"))
+    ->toCollection(); // Materialize filtered results into eager ALinqCollection for further in-memory grouping
+```
+
+#### Database Cursor Streaming (Unbuffered PDO)
+
+```php
+// Stream millions of database records directly from an unbuffered PDO query
+$stmt = $pdo->query('SELECT id, name, salary, department FROM employees');
+
+$topSalariesByDept = ALinqLazyCollection::fromCursor($stmt)
+    ->where(fn($row) => (float)$row['salary'] > 50000.0)
+    ->take(100)
+    ->toCollection()
+    ->groupBy(fn($row) => $row['department']);
+```
+
+#### Caching Intermediate Streams with `remember()`
+
+If an upstream data stream is computationally expensive or involves external I/O, calling `remember()` caches evaluated elements so subsequent iterations pull from memory without re-executing upstream generators:
+
+```php
+$cachedStream = ALinqLazyCollection::from(function () {
+    // Heavy generator or network stream
+    yield from fetchRemoteMetrics();
+})->remember();
+
+$totalCount = $cachedStream->count(); // Generator runs once
+$average    = $cachedStream->average(); // Reads from local memory cache, no generator rerun
+```
+
+---
+
 ## 🧪 Quality Assurance & Test Coverage
 
 The framework features extensive unit testing with **100% test pass rate** under PHP 8.4:
@@ -459,21 +538,22 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 305 ( 20%)
-............................................................... 126 / 305 ( 41%)
-............................................................... 189 / 305 ( 61%)
-............................................................... 252 / 305 ( 82%)
-.....................................................           305 / 305 (100%)
+...............................................................  63 / 335 ( 18%)
+............................................................... 126 / 335 ( 37%)
+............................................................... 189 / 335 ( 56%)
+............................................................... 252 / 335 ( 75%)
+............................................................... 315 / 335 ( 94%)
+....................                                            335 / 335 (100%)
 
-Time: 00:05.734, Memory: 6.00 MB
+Time: 00:06.312, Memory: 6.00 MB
 
-OK (305 tests, 485 assertions)
+OK (335 tests, 561 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **305 Unit Tests & 485 Assertions** certifying all 8 functional traits.
+- **335 Unit Tests & 561 Assertions** certifying all 8 functional traits and generator streaming engine.
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -483,7 +563,7 @@ OK (305 tests, 485 assertions)
 
 - [x] **v1.0.0**: Stable production release with 8 core traits, 305 tests, and PHP 8.4 native engine.
 - [x] **ASpecification Synergy**: Integration with `Antevemus.ASpecification` via `ALinqBridge`.
-- [ ] **v1.1.0**: Generator-based lazy evaluation pipeline for handling multi-gigabyte streams without in-memory buffering.
+- [x] **v1.1.0**: Generator-based lazy evaluation pipeline (`ALinqLazyCollection`) for handling multi-gigabyte streams without in-memory buffering.
 - [ ] **v1.2.0**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
 
 ---

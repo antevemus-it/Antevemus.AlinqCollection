@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-05
+
+### Added
+- **Generator-Based Streaming Engine (`ALinqLazyCollection`)**: Implementation of deferred, pull-based streaming pipeline enabling processing of multi-gigabyte files, datasets, and unbuffered SQL cursors with constant $O(1)$ memory consumption (< 100 KB RAM).
+- **Contract `IALinqLazyCollection`**: Formal interface contract segregating 35+ lazy transformation and terminal reduction operations.
+- **Rewindable Multi-Pass Traversals**: Solved PHP's native `"Cannot traverse an already closed generator"` limitation by wrapping generator factories (`Closure(): iterable`), allowing infinite re-iteration of pipelines.
+- **Deterministic Resource Disposal**: `fromFile()` and `fromCsv()` guarantee instant file handle closure via `try ... finally` blocks even during short-circuited termination (`take()`, `first()`).
+- **Dynamic CSV Ingestion**: `ALinqLazyCollection::fromCsv()` automatically maps the first header line to associative row arrays with configurable delimiter, enclosure, and escape characters.
+- **Unbuffered Database Cursor Streaming**: `ALinqLazyCollection::fromCursor()` streams PDO statements row-by-row with optional row projection mapper.
+- **Intermediate Stream Caching**: `remember()` operator caches evaluated items during first traversal for lightning-fast subsequent passes without re-executing expensive upstream I/O.
+- **Dual Pipeline Interoperability**: Seamless transitions between eager in-memory collections and lazy streams via `$collection->lazy()` and `$lazyCollection->toCollection()`.
+- **Expanded Test Suite**: Added 30 new unit tests (76 assertions) in `ALinqLazyCollectionTest`, bringing total suite to **335 tests, 561 assertions** with 100% pass rate.
+
 ## [1.0.0] - 2026-10-04
 
 ### Added

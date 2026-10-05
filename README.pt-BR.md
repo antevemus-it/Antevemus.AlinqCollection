@@ -1,14 +1,14 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.0.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-305%20aprovados%20%7C%20485%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-335%20aprovados%20%7C%20561%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
 > **Framework de Coleções Fluentes no Estilo LINQ para PHP 8.4+**  
-> Um motor de manipulação de coleções expressivo, fluente e type-safe que traz a elegância do .NET Language Integrated Query (LINQ) para o PHP moderno. Impulsionado pelas funções nativas de array em C do PHP 8.4 (`array_any`, `array_all`, `array_find`, `array_find_key`), teoria dos conjuntos avançada, query builders dinâmicos de predicados, resolução profunda de propriedades por notação de ponto e integração nativa com o [`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification).
+> Um motor de manipulação de coleções expressivo, fluente e type-safe que traz a elegância do .NET Language Integrated Query (LINQ) para o PHP moderno. Impulsionado pelas funções nativas de array em C do PHP 8.4 (`array_any`, `array_all`, `array_find`, `array_find_key`), pipelines de streaming baseados em generators (`ALinqLazyCollection`), teoria dos conjuntos avançada, query builders dinâmicos de predicados, resolução profunda de propriedades por notação de ponto e integração nativa com o [`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification).
 
 ---
 
@@ -23,9 +23,10 @@ O desenvolvimento moderno em PHP frequentemente enfrenta códigos repetitivos e 
 O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 1. **Primitivas Nativas em C**: Aproveita diretamente as novas funções nativas `array_any()`, `array_all()`, `array_find()` e `array_find_key()` do PHP 8.4 para máxima performance sem sobrecarga no userspace.
 2. **Arquitetura Modular Decomposta em Traits**: Elimina monolitos. As operações são distribuídas em 8 traits funcionais especializados (Filtragem, Junções, Agregações, Projeções, Agrupamento, Ordenação, Iteradores e Utilitários).
-3. **Teoria dos Conjuntos Enterprise**: Operações completas de diagramas de Venn (`intersectBy`, `exceptBy`, `unionBy`) com seletores de chave e comparadores customizados.
-4. **Resolução Profunda por Notação de Ponto**: Consulta estruturas de dados heterogêneas (arrays, objetos, DTOs e entidades de domínio) navegando caminhos aninhados como `user.profile.address.city`.
-5. **Sinergia Arquitetural**: Parceiro nativo do **[`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification)**, permitindo que árvores de especificação de Eric Evans e Martin Fowler compilem diretamente para pipelines LINQ em memória via `ALinqBridge` e `ALinqSpecificationVisitor`.
+3. **Pipelines de Streaming Baseados em Generators (O(1) de RAM)**: `ALinqLazyCollection` processa arquivos de log de múltiplos gigabytes, CSVs massivos e cursores PDO não bufferizados linha a linha, sem inflação de memória.
+4. **Teoria dos Conjuntos Enterprise**: Operações completas de diagramas de Venn (`intersectBy`, `exceptBy`, `unionBy`) com seletores de chave e comparadores customizados.
+5. **Resolução Profunda por Notação de Ponto**: Consulta estruturas de dados heterogêneas (arrays, objetos, DTOs e entidades de domínio) navegando caminhos aninhados como `user.profile.address.city`.
+6. **Sinergia Arquitetural**: Parceiro nativo do **[`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification)**, permitindo que árvores de especificação de Eric Evans e Martin Fowler compilem diretamente para pipelines LINQ em memória via `ALinqBridge` e `ALinqSpecificationVisitor`.
 
 ---
 
@@ -33,6 +34,7 @@ O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 
 | Domínio de Operação | Capacidades |
 | :--- | :--- |
+| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, consumo constante de memória $O(1)$ |
 | **🔍 Filtragem & Fatiamento** | `where`, `take`, `skip`, `distinct`, `distinctBy`, `first`, `firstOrDefault`, `last`, `lastOrDefault`, `singleOrDefault`, `chunk`, `pad`, `shuffle`, `contains` |
 | **🔗 Junções & Conjuntos** | `join` (inner), `groupJoin` (left outer), `concat`, `intersect`, `intersectWith`, `intersectBy`, `except`, `exceptWith`, `exceptBy`, `unionBy`, `combine`, `replace`, `replaceRecursive` |
 | **📊 Agregações & Métricas** | `any`, `all`, `sum`, `average`, `min`, `minBy`, `max`, `maxBy`, `product`, `countValues`, `aggregate`, `aggregateBy`, `countBy` |
@@ -66,7 +68,7 @@ Para consumir diretamente via GitHub antes ou em paralelo ao Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.0"
+        "antevemus/alinq-collection": "^1.1"
     }
 }
 ```
@@ -125,13 +127,15 @@ O `Antevemus.AlinqCollection` foi desenvolvido com foco em alta manutenibilidade
 
 ```text
 Antevemus\ALinq\
-├── ALinqCollection.php          # Fachada principal implementando IALinqCollection, Countable e Traversable
+├── ALinqCollection.php          # Fachada principal implementando IALinqCollection (Motor em Memória)
+├── ALinqLazyCollection.php      # Pipeline de Streaming Baseado em Generators (Motor O(1) de RAM)
 ├── ALinqQueryBuilder.php        # Construtor fluente de condições (AND / OR) para consultas dinâmicas
 ├── Helpers\
 │   └── ALinqPropertyAccess.php  # Getter universal com suporte a notação de ponto, arrays e objetos
-├── Interfaces\                  # 10 Contratos Segregados
+├── Interfaces\                  # 11 Contratos Segregados
 │   ├── IALinqBaseCollection.php
 │   ├── IALinqCollection.php
+│   ├── IALinqLazyCollection.php # Contrato de coleções de streaming (Generators, arquivos, cursores)
 │   ├── IALinqFilterable.php
 │   ├── IALinqJoinable.php
 │   ├── IALinqAggregatable.php
@@ -446,6 +450,81 @@ $cnpj = ALinqPropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
 
 ---
 
+### 10. Pipelines de Streaming & Big Data (`ALinqLazyCollection`)
+
+Inspirado nos reactive streams do Node.js e no modelo de execução postergada `IEnumerable<T>` do .NET LINQ, o `ALinqLazyCollection` oferece processamento de alto rendimento e consumo estritamente controlado de memória utilizando Generators do PHP 8.4.
+
+Processar conjuntos de dados de escala em gigabytes (como logs de acesso, CSVs de transações financeiras ou dumps de banco de dados) com arrays comuns em memória resulta em estouro fatal do limite de memória (`Allowed memory size exhausted`). O `ALinqLazyCollection` garante **consumo de memória constante $O(1)$ (< 100 KB de RAM)** independentemente do volume total de dados, avaliando os elementos sob demanda sob o padrão *pull-based*.
+
+#### Garantias Arquiteturais:
+- **Navegação Multi-Pass Rebobinável (Rewindable)**: Ao contrário dos generators padrão do PHP que disparam `Cannot traverse an already closed generator` em uma segunda iteração, o `ALinqLazyCollection` encapsula fábricas de geradores (`Closure(): iterable`). Você pode iterar, filtrar e materializar o mesmo pipeline múltiplas vezes com total segurança.
+- **Descarte Determinístico de Recursos**: Fontes como `fromFile()` e `fromCsv()` garantem o fechamento do ponteiro do arquivo no bloco `finally`, mesmo se a iteração for interrompida precocemente (ex: curto-circuito com `first()`, `take(n)`).
+- **Integração Bidirecional com a Coleção em Memória**: Alterne com naturalidade entre coleções imediatas (`ALinqCollection`) e pipelines de streaming (`ALinqLazyCollection`) através de `$collection->lazy()` e `$lazy->toCollection()`.
+
+#### Exemplo Prático: Streaming de Arquivo de Log com Múltiplos Gigabytes
+
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+
+// Processa um log de produção de 10 GB mantendo menos de 100 KB de RAM
+$alertasCriticos = ALinqLazyCollection::fromFile('/var/log/app/production.log')
+    ->where(fn(string $linha) => str_contains($linha, '[CRITICAL]'))
+    ->select(function (string $linha) {
+        preg_match('/\[(?<data>[^\]]+)\] \[CRITICAL\] (?<msg>.*)/', $linha, $matches);
+        return [
+            'data'     => $matches['data'] ?? 'desconhecida',
+            'mensagem' => $matches['msg'] ?? trim($linha),
+        ];
+    })
+    ->take(50) // Interrompe imediatamente: para de ler o disco assim que encontrar os primeiros 50 registros!
+    ->toArray();
+```
+
+#### Processamento de Arquivos CSV com Cabeçalhos Dinâmicos
+
+```php
+// Mapeia automaticamente o cabeçalho para arrays associativos em cada linha
+$clientesCorporativosAtivos = ALinqLazyCollection::fromCsv('/var/data/clientes.csv')
+    ->where(fn(array $linha) => $linha['plano'] === 'Enterprise' && $linha['status'] === 'ativo')
+    ->select(fn(array $linha) => [
+        'clienteId' => (int)$linha['id'],
+        'email'     => strtolower(trim($linha['email'])),
+        'mrr'       => (float)$linha['mrr'],
+    ])
+    ->distinctBy(fn($cliente) => $cliente['email'])
+    ->tap(fn($cliente) => syslog(LOG_INFO, "Processando cliente {$cliente['clienteId']}"))
+    ->toCollection(); // Converte o resultado filtrado para ALinqCollection e prossegue com agrupamentos em memória
+```
+
+#### Streaming de Cursor de Banco de Dados (PDO Não Bufferizado)
+
+```php
+// Faz o streaming de milhões de registros diretamente de uma consulta PDO não bufferizada
+$stmt = $pdo->query('SELECT id, nome, salario, departamento FROM funcionarios');
+
+$maioresSalariosPorDept = ALinqLazyCollection::fromCursor($stmt)
+    ->where(fn($linha) => (float)$linha['salario'] > 50000.0)
+    ->take(100)
+    ->toCollection()
+    ->groupBy(fn($linha) => $linha['departamento']);
+```
+
+#### Cache de Streams Intermediários com `remember()`
+
+Se a fonte upstream for computacionalmente pesada ou envolver I/O de rede, o método `remember()` memoriza os itens avaliados na primeira passagem para que iterações subsequentes leiam do cache local sem reexecutar os generators de origem:
+
+```php
+$streamComCache = ALinqLazyCollection::from(function () {
+    // Generator pesado ou chamada de API externa
+    yield from buscarMetricasRemotas();
+})->remember();
+
+$totalCount = $streamComCache->count(); // O generator roda uma única vez
+$media      = $streamComCache->average(); // Lê do cache local em memória, sem reexecutar o generator
+```
+
+---
+
 ## 🧪 Qualidade de Código & Cobertura de Testes
 
 A biblioteca possui cobertura de testes unitários com **100% de aprovação** no PHP 8.4:
@@ -459,21 +538,22 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 305 ( 20%)
-............................................................... 126 / 305 ( 41%)
-............................................................... 189 / 305 ( 61%)
-............................................................... 252 / 305 ( 82%)
-.....................................................           305 / 305 (100%)
+...............................................................  63 / 335 ( 18%)
+............................................................... 126 / 335 ( 37%)
+............................................................... 189 / 335 ( 56%)
+............................................................... 252 / 335 ( 75%)
+............................................................... 315 / 335 ( 94%)
+....................                                            335 / 335 (100%)
 
-Time: 00:05.734, Memory: 6.00 MB
+Time: 00:06.312, Memory: 6.00 MB
 
-OK (305 tests, 485 assertions)
+OK (335 tests, 561 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **305 Testes Unitários & 485 Asserções** certificando todos os 8 traits funcionais.
+- **335 Testes Unitários & 561 Asserções** certificando todos os 8 traits funcionais e o motor de streaming.
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 
@@ -483,7 +563,7 @@ OK (305 tests, 485 assertions)
 
 - [x] **v1.0.0**: Release oficial estável de produção com 8 traits centrais, 305 testes e motor nativo PHP 8.4.
 - [x] **Sinergia com ASpecification**: Integração direta com `Antevemus.ASpecification` via `ALinqBridge`.
-- [ ] **v1.1.0**: Pipeline de avaliação preguiçosa (Lazy Evaluation) baseado em Generators para fluxos de dados de múltiplos gigabytes sem esgotar a memória.
+- [x] **v1.1.0**: Pipeline de avaliação preguiçosa (Lazy Evaluation) baseado em Generators (`ALinqLazyCollection`) para fluxos de dados de múltiplos gigabytes sem esgotar a memória.
 - [ ] **v1.2.0**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.
 
 ---

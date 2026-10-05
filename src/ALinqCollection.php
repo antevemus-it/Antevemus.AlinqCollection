@@ -109,4 +109,60 @@ final class ALinqCollection implements IALinqCollection
 
         return new self(array_fill(0, $count, $element));
     }
+
+    /**
+     * Convert this in-memory collection into a Generator-based lazy streaming pipeline.
+     *
+     * @return ALinqLazyCollection
+     */
+    public function lazy(): ALinqLazyCollection
+    {
+        return ALinqLazyCollection::from($this->items);
+    }
+
+    /**
+     * Create a lazy streaming collection that reads a file line-by-line with O(1) memory.
+     *
+     * @param string $filePath Path to the file.
+     * @param int $bufferSize Buffer size for fgets.
+     * @param callable|null $lineParser Optional parser fn($line, $index): mixed.
+     * @return ALinqLazyCollection
+     */
+    public static function fromFile(string $filePath, int $bufferSize = 4096, ?callable $lineParser = null): ALinqLazyCollection
+    {
+        return ALinqLazyCollection::fromFile($filePath, $bufferSize, $lineParser);
+    }
+
+    /**
+     * Create a lazy streaming collection from a CSV file.
+     *
+     * @param string $filePath
+     * @param string $separator
+     * @param string $enclosure
+     * @param string $escape
+     * @param bool $hasHeader
+     * @return ALinqLazyCollection
+     */
+    public static function fromCsv(
+        string $filePath,
+        string $separator = ',',
+        string $enclosure = '"',
+        string $escape = '\\',
+        bool $hasHeader = true
+    ): ALinqLazyCollection {
+        return ALinqLazyCollection::fromCsv($filePath, $separator, $enclosure, $escape, $hasHeader);
+    }
+
+    /**
+     * Create a lazy streaming collection from a database PDOStatement cursor.
+     *
+     * @param \PDOStatement $statement
+     * @param callable|null $rowMapper
+     * @return ALinqLazyCollection
+     */
+    public static function fromCursor(\PDOStatement $statement, ?callable $rowMapper = null): ALinqLazyCollection
+    {
+        return ALinqLazyCollection::fromCursor($statement, $rowMapper);
+    }
 }
+

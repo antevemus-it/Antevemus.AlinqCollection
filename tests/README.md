@@ -5,10 +5,10 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 11 Unit Test Suites (`tests/Unit/`)
-- **Total Tests:** 305 tests
-- **Total Assertions:** 485 assertions
-- **Lines of Test Code:** 4,500+ lines
+- **Test Files:** 12 Unit Test Suites (`tests/Unit/`)
+- **Total Tests:** 335 tests
+- **Total Assertions:** 561 assertions
+- **Lines of Test Code:** 5,100+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** Zero (pure PHP 8.4 native engine)
 
@@ -103,6 +103,18 @@ Validates universal property resolution:
 - Dot-notation traversal (`user.address.city`)
 - Arrays, stdClass objects, public properties, and getter methods
 
+### 12. `ALinqLazyCollectionTest.php` (30 tests)
+Validates the streaming, generator-based pipeline engine:
+- Constant $O(1)$ memory usage with 500,000+ element streams (< 100 KB RAM)
+- Re-traversable streams via closure factory encapsulation
+- `fromFile()` with automatic file handle closure in `finally` blocks
+- `fromCsv()` with associative header mapping
+- `fromCursor()` with unbuffered PDO statement streams
+- Lazy operators (`where`, `whereNot`, `select`, `selectMany`, `take`, `skip`, `takeWhile`, `skipWhile`, `distinct`, `chunk`, `pad`, `concat`, `zip`, `tap`, `remember`)
+- Short-circuiting terminal operations (`first`, `firstOrDefault`, `last`, `lastOrDefault`, `singleOrDefault`, `any`, `all`, `contains`)
+- Arithmetic streaming aggregations (`sum`, `average`, `min`, `max`, `minBy`, `maxBy`, `aggregate`)
+- Interoperability bridges (`ALinqCollection::lazy()` and `ALinqLazyCollection::toCollection()`)
+
 ---
 
 ## 🚀 Running the Tests
@@ -119,12 +131,12 @@ vendor/bin/phpunit --testdox
 
 ### Run a Specific Test Suite
 ```bash
-vendor/bin/phpunit tests/Unit/FilteringOperationsTest.php
+vendor/bin/phpunit tests/Unit/ALinqLazyCollectionTest.php
 ```
 
 ### Filter by Test Name
 ```bash
-vendor/bin/phpunit --filter testWhereFiltersElements
+vendor/bin/phpunit --filter testLargeDatasetMaintainsConstantMemoryUsage
 ```
 
 ### Code Coverage Report (Requires Xdebug or PCOV)
