@@ -5,7 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.1] - 2026-10-07
+
+### Fixed
+- **`remember()` cache poisoning on partial traversal**: the cache is now promoted only after a complete pass. A short-circuited first traversal (`first()`, `any()`, `take(n)`, `zip()`) no longer leaves a truncated cache that later passes would serve as the whole stream.
+- **`fromFile()` splitting long lines**: lines longer than `bufferSize - 1` bytes (4095 by default) were emitted as several items. Lines are now read to their end regardless of length; `$bufferSize` is kept as the stream read-chunk hint and must be greater than zero.
+
+### Changed
+- **Single-pass PDO cursors fail loudly**: a second traversal of `fromCursor()` or `from(PDOStatement)` used to yield an empty stream silently. It now throws a `RuntimeException` pointing to `->remember()` (with a complete first pass) as the way to re-traverse the stream.
+- **DocBlock headers of `ALinqLazyCollection` and `IALinqLazyCollection`** aligned with the header standard used by every other class and interface of the library.
+
+### Added
+- Reproduction and regression tests for the fixes above in `ALinqLazyCollectionTest` (suite now **338 tests, 581 assertions**).
 
 ## [1.1.0] - 2026-10-05
 

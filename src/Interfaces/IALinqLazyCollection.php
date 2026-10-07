@@ -11,16 +11,16 @@ use stdClass;
 use Traversable;
 
 /**
- * IALinqLazyCollection - Interface for Generator-based lazy streaming collection operations
+ * IALinqLazyCollection
  *
- * Defines the contract for streaming, deferred-execution collections that evaluate
- * pipelines item-by-item with constant O(1) memory overhead using PHP generators.
+ * Interface for generator-based lazy streaming collection operations with deferred
+ * execution and constant O(1) memory overhead
  *
- * @version    1.1.0
- * @package    Antevemus\ALinq
- * @subpackage Interfaces
- * @author     Heliton Junior (CTO) - <contato@antevemus.com.br>
- * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda.
+ * @version    0.1
+ * @package    antevemus
+ * @subpackage alinq.interfaces
+ * @author     Heliton Junior
+ * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 interface IALinqLazyCollection extends Countable, IteratorAggregate

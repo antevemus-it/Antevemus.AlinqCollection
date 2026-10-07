@@ -454,4 +454,98 @@ final class ALinqLazyCollectionTest extends TestCase
             @unlink($tempFile);
         }
     }
+
+    // =========================================================================
+    // 11. Regression: silent wrong results (review 2026-10-07, §5.1 / §5.3 / §5.2)
+    // =========================================================================
+
+    public function testRememberDoesNotPoisonCacheOnPartialPass(): void
+    {
+        $invocations = 0;
+        $lazy = ALinqLazyCollection::from(function () use (&$invocations) {
+            $invocations++;
+            yield from range(1, 10);
+        })->remember();
+
+        // Short-circuiting passes must never leave a truncated cache behind.
+        $this->assertSame(1, $lazy->first());
+        $this->assertSame(range(1, 10), $lazy->toArray(), 'toArray() after first() served a truncated cache');
+
+        $lazy2 = ALinqLazyCollection::from(fn() => yield from range(1, 10))->remember();
+        $this->assertTrue($lazy2->any(fn($x) => $x > 2));
+        $this->assertSame(10, $lazy2->count(), 'count() after any() served a truncated cache');
+
+        $lazy3 = ALinqLazyCollection::from(fn() => yield from range(1, 10))->remember();
+        $this->assertSame([1, 2, 3], $lazy3->take(3)->toArray());
+        $this->assertSame(range(1, 10), $lazy3->toArray(), 'toArray() after take(3) served a truncated cache');
+
+        $lazy4 = ALinqLazyCollection::from(fn() => yield from range(1, 10))->remember();
+        $this->assertCount(10, $lazy4->zip($lazy4)->toArray(), 'zip() of the same remembered stream lost items');
+
+        // A complete pass promotes the cache: upstream ran for first() and once more for toArray(), never again.
+        $this->assertSame(2, $invocations);
+        $lazy->toArray();
+        $lazy->count();
+        $this->assertSame(2, $invocations, 'upstream re-executed after the cache was promoted');
+    }
+
+    public function testFromFileDoesNotSplitLinesLongerThanBuffer(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'alinq_longline_');
+        $longLine = str_repeat('x', 5000);
+        file_put_contents($tempFile, $longLine . "\nb\nc\n");
+
+        try {
+            $stream = ALinqLazyCollection::fromFile($tempFile);
+            $this->assertSame(3, $stream->count(), 'a line longer than the buffer was split into several items');
+            $this->assertSame([$longLine, 'b', 'c'], $stream->toArray());
+
+            // Explicit buffer size smaller than the line must not change the result either.
+            $this->assertSame(3, ALinqLazyCollection::fromFile($tempFile, 64)->count());
+        } finally {
+            @unlink($tempFile);
+        }
+    }
+
+    public function testCursorSecondPassThrowsInsteadOfReturningEmpty(): void
+    {
+        if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+            $this->markTestSkipped('pdo_sqlite is not available.');
+        }
+
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE t (id INTEGER PRIMARY KEY)');
+        $pdo->exec('INSERT INTO t VALUES (1), (2), (3)');
+
+        // fromCursor(): the first pass works, the second must fail loudly, never yield [].
+        $stream = ALinqLazyCollection::fromCursor($pdo->query('SELECT * FROM t ORDER BY id'));
+        $this->assertSame(3, $stream->count());
+        $second = null;
+        $thrown = null;
+        try {
+            $second = $stream->toArray();
+        } catch (\RuntimeException $e) {
+            $thrown = $e;
+        }
+        $this->assertNotNull($thrown, 'second pass over a consumed PDO cursor returned ' . json_encode($second) . ' instead of throwing');
+        $this->assertStringContainsString('remember()', $thrown->getMessage());
+
+        // from(PDOStatement): same contract.
+        $stream2 = ALinqLazyCollection::from($pdo->query('SELECT * FROM t ORDER BY id'));
+        $this->assertSame(2, $stream2->where(fn($r) => (int)$r['id'] > 1)->count());
+        $second = null;
+        $thrown = null;
+        try {
+            $second = $stream2->toArray();
+        } catch (\RuntimeException $e) {
+            $thrown = $e;
+        }
+        $this->assertNotNull($thrown, 'second pass over a consumed PDOStatement returned ' . json_encode($second) . ' instead of throwing');
+        $this->assertStringContainsString('remember()', $thrown->getMessage());
+
+        // remember() with a complete first pass is the documented way to re-traverse a cursor.
+        $cached = ALinqLazyCollection::fromCursor($pdo->query('SELECT * FROM t ORDER BY id'))->remember();
+        $this->assertSame(3, $cached->count());
+        $this->assertCount(3, $cached->toArray());
+    }
 }

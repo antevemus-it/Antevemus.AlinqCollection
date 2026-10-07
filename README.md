@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-335%20passed%20%7C%20561%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-338%20passed%20%7C%20581%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -547,13 +547,13 @@ vendor/bin/phpunit
 
 Time: 00:06.312, Memory: 6.00 MB
 
-OK (335 tests, 561 assertions)
+OK (338 tests, 581 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **335 Unit Tests & 561 Assertions** certifying all 8 functional traits and generator streaming engine.
+- **338 Unit Tests & 581 Assertions** certifying all 8 functional traits and generator streaming engine.
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -564,6 +564,7 @@ OK (335 tests, 561 assertions)
 - [x] **v1.0.0**: Stable production release with 8 core traits, 305 tests, and PHP 8.4 native engine.
 - [x] **ASpecification Synergy**: Integration with `Antevemus.ASpecification` via `ALinqBridge`.
 - [x] **v1.1.0**: Generator-based lazy evaluation pipeline (`ALinqLazyCollection`) for handling multi-gigabyte streams without in-memory buffering.
+- [x] **v1.1.1**: Streaming engine correctness: `remember()` caches only complete passes, `fromFile()` keeps long lines whole, single-pass cursors fail loudly on re-traversal.
 - [ ] **v1.2.0**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
 
 ---

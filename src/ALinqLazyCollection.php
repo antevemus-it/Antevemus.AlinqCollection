@@ -18,24 +18,17 @@ use Traversable;
 use UnderflowException;
 
 /**
- * ALinqLazyCollection - Generator-based streaming collection with deferred execution
+ * ALinqLazyCollection
  *
- * Implements a high-performance, stream-oriented LINQ pipeline that processes data
- * item-by-item with constant O(1) memory overhead. Designed for multi-gigabyte files,
- * streaming API consumers, and unbuffered database cursors.
+ * A generator-based streaming LINQ-style collection with deferred execution and constant
+ * O(1) memory overhead, designed for multi-gigabyte files, CSV streams and unbuffered
+ * database cursors, interoperable with the in-memory ALinqCollection
  *
- * Funcionalidades:
- * - Deferred/Lazy evaluation leveraging PHP Generators
- * - Multi-gigabyte file and CSV streaming with automatic resource disposal
- * - Re-traversable streams via closure factory encapsulation
- * - O(1) memory footprint during filtering, projection, and slicing
- * - Bidirectional interoperability with in-memory ALinqCollection
- *
- * @version    1.1.0
- * @package    Antevemus\ALinq
- * @subpackage Core
- * @author     Heliton Junior (CTO) - <contato@antevemus.com.br>
- * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda.
+ * @version    0.1
+ * @package    antevemus
+ * @subpackage alinq
+ * @author     Heliton Junior
+ * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 final class ALinqLazyCollection implements IALinqLazyCollection
@@ -56,6 +49,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection
             $this->sourceFactory = $source instanceof Closure ? $source : $source(...);
         } elseif (is_array($source)) {
             $this->sourceFactory = static fn(): array => $source;
+        } elseif ($source instanceof PDOStatement) {
+            // A PDO cursor is single-pass: a second traversal would silently yield nothing.
+            $this->sourceFactory = self::singlePassCursorFactory($source, null);
         } elseif ($source instanceof Traversable && !($source instanceof Generator)) {
             $this->sourceFactory = static fn(): Traversable => $source;
         } else {
@@ -77,6 +73,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public static function fromFile(string $filePath, int $bufferSize = 4096, ?callable $lineParser = null): self
     {
+        if ($bufferSize <= 0) {
+            throw new InvalidArgumentException('Buffer size must be greater than zero.');
+        }
+
         return new self(function () use ($filePath, $bufferSize, $lineParser) {
             $handle = @fopen($filePath, 'r');
             if ($handle === false) {
@@ -84,8 +84,13 @@ final class ALinqLazyCollection implements IALinqLazyCollection
             }
 
             try {
+                // $bufferSize is the I/O chunk hint only. It must never bound the line length:
+                // fgets() with a length argument splits lines longer than length-1 bytes into
+                // several items, which corrupts the stream silently.
+                @stream_set_chunk_size($handle, $bufferSize);
+
                 $lineNumber = 0;
-                while (($line = fgets($handle, $bufferSize)) !== false) {
+                while (($line = fgets($handle)) !== false) {
                     $trimmed = rtrim($line, "\r\n");
                     yield $lineNumber => ($lineParser !== null ? $lineParser($trimmed, $lineNumber) : $trimmed);
                     $lineNumber++;
@@ -152,13 +157,41 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public static function fromCursor(PDOStatement $statement, ?callable $rowMapper = null): self
     {
-        return new self(function () use ($statement, $rowMapper) {
+        return new self(self::singlePassCursorFactory($statement, $rowMapper));
+    }
+
+    /**
+     * Build the generator factory for a single-pass PDO cursor.
+     *
+     * A PDOStatement cannot be rewound: once fetched, a second traversal yields no rows.
+     * Returning an empty stream in that case is a silent wrong result, so the second
+     * traversal throws instead, pointing to remember() as the documented way to make
+     * the stream re-traversable.
+     *
+     * @param PDOStatement $statement
+     * @param callable|null $rowMapper fn($row, $index): mixed
+     * @return Closure(): Generator
+     */
+    private static function singlePassCursorFactory(PDOStatement $statement, ?callable $rowMapper): Closure
+    {
+        $consumed = false;
+
+        return function () use ($statement, $rowMapper, &$consumed): Generator {
+            if ($consumed) {
+                throw new RuntimeException(
+                    'A PDO cursor is single-pass and has already been traversed. ' .
+                    'Call ->remember() before the first complete traversal to re-traverse the stream, ' .
+                    'or execute the statement again.'
+                );
+            }
+            $consumed = true;
+
             $index = 0;
             while (($row = $statement->fetch(\PDO::FETCH_ASSOC)) !== false) {
                 yield $index => ($rowMapper !== null ? $rowMapper($row, $index) : $row);
                 $index++;
             }
-        });
+        };
     }
 
     /**
@@ -483,17 +516,23 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         $cache = null;
 
         return new self(function () use (&$cache) {
-            if ($cache === null) {
-                $cache = [];
-                foreach ($this as $key => $item) {
-                    $cache[$key] = $item;
-                    yield $key => $item;
-                }
-            } else {
+            if ($cache !== null) {
                 foreach ($cache as $key => $item) {
                     yield $key => $item;
                 }
+                return;
             }
+
+            // Buffer locally and promote to the shared cache only when the upstream was
+            // consumed to the end. A short-circuited pass (first(), any(), take(n), zip())
+            // leaves the generator unfinished, so the buffer is discarded and the next pass
+            // re-reads the upstream instead of serving a truncated cache.
+            $buffer = [];
+            foreach ($this as $key => $item) {
+                $buffer[$key] = $item;
+                yield $key => $item;
+            }
+            $cache = $buffer;
         });
     }
 
