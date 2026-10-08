@@ -587,4 +587,37 @@ class AggregationOperationsTest extends TestCase
         // Should return false when predicate is null
         $this->assertFalse($result);
     }
+
+
+    /**
+     * Review 2026-10-08, decision 4a: predicates and selectors receive the key only when they
+     * accept it; native callables work in any(), all(), sum() and friends.
+     */
+    public function testPredicatesAndSelectorsFollowTheArityRule(): void
+    {
+        $this->assertTrue(ALinqCollection::from([1, 'a'])->any('is_string'));
+        $this->assertFalse(ALinqCollection::from([1, 'a'])->all('is_int'));
+        $this->assertSame(6, ALinqCollection::from(['1', '2', '3'])->sum('intval'));
+        $this->assertSame(3, ALinqCollection::from([10, 20, 30])->sum(fn($v, $k) => $k));
+        $this->assertSame(0, ALinqCollection::from([10, 20, 30])->min(fn($v, $k) => $k));
+        $this->assertSame(30, ALinqCollection::from([10, 20, 30])->maxBy(fn($v, $k) => $k));
+        $this->assertSame(10, ALinqCollection::from([10, 20, 30])->minBy(fn($v, $k) => $k));
+    }
+
+    /**
+     * Review 2026-10-08, 2.1: groupBy() groups are collections; aggregateBy() and countBy()
+     * keep working on them.
+     */
+    public function testAggregateByAndCountByWorkOnCollectionGroups(): void
+    {
+        $sales = ALinqCollection::from([
+            ['dept' => 'Sales', 'amount' => 100],
+            ['dept' => 'IT', 'amount' => 150],
+            ['dept' => 'Sales', 'amount' => 200],
+            ['dept' => 'IT', 'amount' => 250],
+        ]);
+
+        $this->assertSame(['Sales' => 300, 'IT' => 400], $sales->aggregateBy(fn($s) => $s['dept'], 0, fn($carry, $s) => $carry + $s['amount'])->toArray());
+        $this->assertSame(['Sales' => 2, 'IT' => 2], $sales->countBy(fn($s) => $s['dept'])->toArray());
+    }
 }

@@ -435,4 +435,32 @@ class SelectionOperationsTest extends TestCase
         $obj = $collection->toObject();
         $this->assertInstanceOf(stdClass::class, $obj);
     }
+
+
+    /**
+     * Review 2026-10-08, decision 4a: the selector receives the key only when it accepts
+     * two parameters; native one-argument functions keep working.
+     */
+    public function testSelectPassesTheKeyOnlyWhenTheSelectorAcceptsIt(): void
+    {
+        $this->assertSame(['A', 'B'], ALinqCollection::from(['a', 'b'])->select('strtoupper')->toArray());
+        $this->assertSame(['x' => 'x=1', 'y' => 'y=2'], ALinqCollection::from(['x' => 1, 'y' => 2])->select(fn($v, $k) => "$k=$v")->toArray());
+        $this->assertSame([1, 2], ALinqCollection::from(['a', 'ab'])->select(strlen(...))->toArray());
+    }
+
+    /**
+     * Review 2026-10-08, 2.4: selectMany() flattens any iterable and refuses a scalar instead
+     * of silently dropping it.
+     */
+    public function testSelectManyFlattensAnyIterableAndRefusesScalars(): void
+    {
+        $source = ALinqCollection::from([[1, 2], [3]]);
+        $this->assertSame([1, 2, 3], $source->selectMany(fn($x) => ALinqCollection::from($x))->toArray());
+        $this->assertSame([1, 2, 3], $source->selectMany(fn($x) => new \ArrayIterator($x))->toArray());
+        $this->assertSame([1, 2, 3], $source->selectMany(fn($x) => (function () use ($x) { yield from $x; })())->toArray());
+        $this->assertSame([1, 2, 3], $source->selectMany(fn($x) => $x)->toArray());
+
+        $this->expectException(\UnexpectedValueException::class);
+        ALinqCollection::from([1, 2])->selectMany(fn($x) => $x * 10);
+    }
 }

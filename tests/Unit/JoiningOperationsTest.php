@@ -543,4 +543,34 @@ class JoiningOperationsTest extends TestCase
 
         $this->assertEquals([1, 3, 5], $result->toArray());
     }
+
+
+    /**
+     * Review 2026-10-08, 3.4 (README §3): groupJoin() hands an ALinqCollection to the result
+     * selector; the documented example runs as written.
+     */
+    public function testGroupJoinHandsAnALinqCollectionToTheResultSelector(): void
+    {
+        $departments = ALinqCollection::from([['id' => 1, 'name' => 'Engineering'], ['id' => 2, 'name' => 'Design']]);
+        $employees = ALinqCollection::from([
+            ['name' => 'Alex', 'dept_id' => 1],
+            ['name' => 'Bea', 'dept_id' => 1],
+            ['name' => 'Cid', 'dept_id' => 3],
+        ]);
+
+        $roster = $departments->groupJoin(
+            inner: $employees->toArray(),
+            outerKeySelector: fn($dept) => $dept['id'],
+            innerKeySelector: fn($emp) => $emp['dept_id'],
+            resultSelector: fn($dept, ALinqCollection $matchedEmps) => [
+                'dept' => $dept['name'],
+                'staff' => $matchedEmps->column('name')->toArray(),
+            ]
+        )->toArray();
+
+        $this->assertSame([
+            ['dept' => 'Engineering', 'staff' => ['Alex', 'Bea']],
+            ['dept' => 'Design', 'staff' => []],
+        ], $roster);
+    }
 }

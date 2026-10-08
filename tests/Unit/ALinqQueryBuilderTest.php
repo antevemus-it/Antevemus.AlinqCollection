@@ -484,4 +484,191 @@ class ALinqQueryBuilderTest extends TestCase
         $this->assertSame($builder, $result1);
         $this->assertSame($builder, $result2);
     }
+
+    // ===== NEW OPERATORS (review 2026-10-08 §3.3; README §8) =====
+
+    public function testWhereWithBetweenOperatorIsInclusive(): void
+    {
+        $predicate = ALinqQueryBuilder::create()
+            ->where('age', 'between', [21, 65])
+            ->toPredicate();
+
+        $this->assertTrue($predicate(['age' => 21]));
+        $this->assertTrue($predicate(['age' => 40]));
+        $this->assertTrue($predicate(['age' => 65]));
+        $this->assertFalse($predicate(['age' => 20]));
+        $this->assertFalse($predicate(['age' => 66]));
+    }
+
+    public function testWhereWithNotBetweenOperator(): void
+    {
+        $predicate = ALinqQueryBuilder::create()
+            ->where('age', 'notBetween', [21, 65])
+            ->toPredicate();
+
+        $this->assertTrue($predicate(['age' => 20]));
+        $this->assertTrue($predicate(['age' => 66]));
+        $this->assertFalse($predicate(['age' => 21]));
+        $this->assertFalse($predicate(['age' => 65]));
+    }
+
+    public function testBetweenRejectsARangeThatIsNotAPair(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('between expects a [min, max] array');
+
+        ALinqQueryBuilder::create()->where('age', 'between', 21);
+    }
+
+    public function testWhereWithNotInOperator(): void
+    {
+        $predicate = ALinqQueryBuilder::create()
+            ->where('role', 'notIn', ['admin', 'root'])
+            ->toPredicate();
+
+        $this->assertTrue($predicate(['role' => 'user']));
+        $this->assertFalse($predicate(['role' => 'admin']));
+    }
+
+    public function testWhereWithIsNullAndIsNotNullOperators(): void
+    {
+        $isNull = ALinqQueryBuilder::create()->where('deletedAt', 'isNull')->toPredicate();
+        $isNotNull = ALinqQueryBuilder::create()->where('deletedAt', 'isNotNull')->toPredicate();
+
+        $this->assertTrue($isNull(['deletedAt' => null]));
+        $this->assertTrue($isNull(['other' => 1]), 'a missing property reads as null');
+        $this->assertFalse($isNull(['deletedAt' => '2026-01-01']));
+        $this->assertFalse($isNull(['deletedAt' => 0]), 'isNull is strict: 0 is not null');
+
+        $this->assertTrue($isNotNull(['deletedAt' => '2026-01-01']));
+        $this->assertTrue($isNotNull(['deletedAt' => 0]));
+        $this->assertFalse($isNotNull(['deletedAt' => null]));
+    }
+
+    public function testOperatorsAreCaseInsensitiveAndIgnoreSpacesAndUnderscores(): void
+    {
+        $row = ['age' => 30, 'role' => 'user', 'name' => 'Mr. X', 'gone' => null];
+
+        $this->assertTrue(ALinqQueryBuilder::create()->where('age', 'BETWEEN', [21, 65])->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('age', 'Between', [21, 65])->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('age', 'IN', [30])->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('role', 'NOT IN', ['admin'])->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('role', 'not_in', ['admin'])->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('gone', 'IS NULL')->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('age', 'is not null')->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('name', 'STARTSWITH', 'Mr')->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('name', 'Contains', '. ')->toPredicate()($row));
+        $this->assertTrue(ALinqQueryBuilder::create()->where('name', 'endswith', 'X')->toPredicate()($row));
+    }
+
+    public function testUnknownOperatorMessageListsTheSupportedOnes(): void
+    {
+        try {
+            ALinqQueryBuilder::create()->where('field', 'like', '%x%');
+            $this->fail('Expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringStartsWith('Unknown operator: like', $e->getMessage());
+            $this->assertStringContainsString('between', $e->getMessage());
+            $this->assertStringContainsString('notIn', $e->getMessage());
+            $this->assertStringContainsString('isNull', $e->getMessage());
+        }
+    }
+
+    public function testSupportedOperatorsListsEveryOperatorTheEvaluatorAccepts(): void
+    {
+        $operators = ALinqQueryBuilder::supportedOperators();
+
+        $this->assertSame(
+            ['=', '==', '===', '!=', '<>', '!==', '>', '>=', '<', '<=',
+             'in', 'notIn', 'between', 'notBetween', 'isNull', 'isNotNull',
+             'contains', 'startsWith', 'endsWith'],
+            $operators
+        );
+
+        foreach ($operators as $operator) {
+            $value = match ($operator) {
+                'between', 'notBetween' => [1, 2],
+                'in', 'notIn' => [1],
+                default => 1,
+            };
+            $this->assertInstanceOf(\Closure::class, ALinqQueryBuilder::operatorPredicate($operator, $value));
+        }
+    }
+
+    public function testReadmeSection8ExampleRunsAsWritten(): void
+    {
+        $applicants = ALinqCollection::from([
+            ['name' => 'Ana', 'status' => 'APPROVED', 'creditScore' => 700, 'age' => 30],
+            ['name' => 'Bia', 'status' => 'APPROVED', 'creditScore' => 640, 'age' => 30],
+            ['name' => 'Caio', 'status' => 'APPROVED', 'creditScore' => 720, 'age' => 70],
+            ['name' => 'Davi', 'status' => 'REJECTED', 'creditScore' => 800, 'age' => 40],
+        ]);
+
+        $query = ALinqQueryBuilder::create('and')
+            ->where('status', '=', 'APPROVED')
+            ->where('creditScore', '>=', 650)
+            ->where('age', 'between', [21, 65]);
+
+        $predicate = $query->toPredicate();
+
+        $approvedApplicants = $applicants->where($predicate);
+
+        $this->assertSame(['Ana'], array_column($approvedApplicants->toArray(), 'name'));
+    }
+
+    // ===== ACCESSOR INTEGRATION (review 2026-10-08 §3.1, §3.2) =====
+
+    public function testWhereResolvesDotNotationPaths(): void
+    {
+        $rows = [
+            ['user' => ['name' => 'A']],
+            ['user' => ['name' => 'B']],
+            ['user' => []],
+        ];
+
+        $equalsA = ALinqQueryBuilder::create()->where('user.name', '=', 'A')->toPredicate();
+        $this->assertSame([['user' => ['name' => 'A']]], array_values(array_filter($rows, $equalsA)));
+
+        // Before the fix, 'user.name' was looked up as a literal key and compared null == null (false positive)
+        $isNull = ALinqQueryBuilder::create()->where('user.name', '=', null)->toPredicate();
+        $this->assertFalse($isNull(['user' => ['name' => 'A']]));
+        $this->assertTrue($isNull(['user' => []]));
+    }
+
+    public function testWhereWorksOnEntitiesWithPrivatePropertiesAndGetters(): void
+    {
+        $people = ALinqCollection::from([
+            new QueryBuilderPerson('Alice', 30, new QueryBuilderAddress('Paris')),
+            new QueryBuilderPerson('Bob', 17, new QueryBuilderAddress('London')),
+            new QueryBuilderPerson('Carol', 45, new QueryBuilderAddress('Paris')),
+        ]);
+
+        $adults = $people->where(ALinqQueryBuilder::create()->where('age', '>', 18)->toPredicate());
+        $this->assertSame(['Alice', 'Carol'], $adults->select(fn($p) => $p->getName())->toArray());
+
+        $inParis = $people->where(ALinqQueryBuilder::create()->where('address.city', '=', 'Paris')->toPredicate());
+        $this->assertCount(2, $inParis->toArray());
+
+        $between = $people->where(ALinqQueryBuilder::create()->where('age', 'between', [18, 40])->toPredicate());
+        $this->assertSame(['Alice'], $between->select(fn($p) => $p->getName())->toArray());
+    }
+}
+
+final class QueryBuilderPerson
+{
+    public function __construct(
+        private string $name,
+        private int $age,
+        private QueryBuilderAddress $address,
+    ) {}
+
+    public function getName(): string { return $this->name; }
+    public function getAge(): int { return $this->age; }
+    public function getAddress(): QueryBuilderAddress { return $this->address; }
+}
+
+final class QueryBuilderAddress
+{
+    public function __construct(private string $city) {}
+    public function getCity(): string { return $this->city; }
 }

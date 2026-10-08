@@ -3,7 +3,7 @@
 [![Latest Stable Version](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-342%20aprovados%20%7C%20614%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-387%20aprovados%20%7C%201050%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -170,12 +170,12 @@ use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ASpecification\Spec;
 use Antevemus\ASpecification\Linq\ALinqBridge;
 use function Antevemus\ASpecification\DSL\is;
-use function Antevemus\ASpecification\DSL\isGreaterThan;
+use function Antevemus\ASpecification\DSL\greaterThan;
 
 // 1. Definir Regras de Negócio com o Padrão Specification (Evans & Fowler)
-$clienteElegivel = Spec::and(
+$clienteElegivel = Spec::allOf(
     Spec::property('status', is('ATIVO')),
-    Spec::property('scoreCredito', isGreaterThan(700))
+    Spec::property('scoreCredito', greaterThan(700))
 );
 
 // 2. Consultar qualquer coleção ou repositório em memória via ALinqBridge
@@ -278,9 +278,9 @@ $equipes = $departamentos->groupJoin(
     inner: $funcionarios->toArray(),
     outerKeySelector: fn($d) => $d['id'],
     innerKeySelector: fn($f) => $f['depto_id'],
-    resultSelector: fn($d, array $membros) => [
+    resultSelector: fn($d, ALinqCollection $membros) => [
         'departamento' => $d['nome'],
-        'membros'      => array_column($membros, 'nome'),
+        'membros'      => $membros->column('nome')->toArray(),
     ]
 )->toArray();
 
@@ -390,7 +390,9 @@ $arquivos = ALinqCollection::from([
 // Ordenação Alfanumérica Natural (ordenação humana: arquivo1, arquivo2, arquivo10, ARQUIVO100)
 $ordenadosNaturalmente = $arquivos->orderByNatural(caseSensitive: false)->toArray();
 
-// Ordenação por múltiplos atributos
+// Ordenação por múltiplos atributos: cada orderBy() ordena a coleção inteira, então encadear
+// orderBy()->orderByDescending() fica só com a ÚLTIMA chave. Para chave composta use
+// orderByCustom() (thenBy()/thenByDescending() estão no roadmap):
 $colaboradores = ALinqCollection::from([
     ['depto' => 'Vendas', 'salario' => 5000],
     ['depto' => 'TI',     'salario' => 7000],
@@ -398,9 +400,9 @@ $colaboradores = ALinqCollection::from([
 ]);
 
 $ordenados = $colaboradores
-    ->orderBy(fn($c) => $c['depto'])
-    ->orderByDescending(fn($c) => $c['salario'])
+    ->orderByCustom(fn($a, $b) => [$a['depto'], -$a['salario']] <=> [$b['depto'], -$b['salario']])
     ->toArray();
+// TI 9000, TI 7000, Vendas 5000
 ```
 
 ---
@@ -423,6 +425,8 @@ $predicado = $query->toPredicate();
 
 $candidatosAprovados = $candidatos->where($predicado);
 ```
+
+Operadores (sem diferenciar caixa nem separador): `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`. `between` recebe um par inclusivo `[min, max]`. O mesmo avaliador está exposto como `ALinqQueryBuilder::operatorPredicate($operador, $valor)` e sustenta o `createPredicate()`.
 
 ---
 
@@ -447,6 +451,8 @@ $payload = [
 $cnpj = ALinqPropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
 // Retorna: '12.345.678/0001-90'
 ```
+
+Ordem de resolução (a mesma do `PropertyAccessor` do Antevemus.ASpecification): array ou `ArrayAccess` pela chave, depois getter público (`getX()`, `x()`, `isX()`, `hasX()`), depois `__get` guardado por `__isset`, depois propriedade pública inicializada; senão `null`, nunca `Error`. Ponto é sempre caminho. `ALinqPropertyAccess::hasProperty($item, 'a.b')` diz se o caminho resolve.
 
 ---
 
@@ -538,22 +544,22 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 342 ( 18%)
-............................................................... 126 / 342 ( 37%)
-............................................................... 189 / 342 ( 56%)
-............................................................... 252 / 342 ( 75%)
-............................................................... 315 / 342 ( 94%)
-....................                                            342 / 342 (100%)
+...............................................................  63 / 387 ( 18%)
+............................................................... 126 / 387 ( 37%)
+............................................................... 189 / 387 ( 56%)
+............................................................... 252 / 387 ( 75%)
+............................................................... 315 / 387 ( 94%)
+....................                                            387 / 387 (100%)
 
 Time: 00:06.312, Memory: 6.00 MB
 
-OK (342 tests, 614 assertions)
+OK (387 tests, 1050 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **342 Testes Unitários & 614 Asserções** certificando todos os 8 traits funcionais e o motor de streaming.
+- **387 Testes Unitários & 1050 Asserções** certificando todos os 8 traits funcionais e o motor de streaming.
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 
@@ -565,7 +571,11 @@ OK (342 tests, 614 assertions)
 - [x] **Sinergia com ASpecification**: Integração direta com `Antevemus.ASpecification` via `ALinqBridge`.
 - [x] **v1.1.0**: Pipeline de avaliação preguiçosa (Lazy Evaluation) baseado em Generators (`ALinqLazyCollection`) para fluxos de dados de múltiplos gigabytes sem esgotar a memória.
 - [x] **v1.1.1**: Correções do motor de streaming: `remember()` só guarda passagens completas, `fromFile()` preserva linhas longas inteiras, cursores de passagem única falham alto na segunda travessia.
-- [ ] **v1.2.0**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.
+- [x] **v1.1.2**: Materializadores lazy nunca perdem itens (lista reindexada, dicionário preservado), `remember()` resumível, `last()` com a chave real.
+- [x] **v1.2.0**: Promessas do README I: grupos de `groupBy()` são coleções, `select()` recebe a chave, todo operador aceita callables nativos, `distinct()` estrito e seguro para arrays/objetos, `selectMany()` achata qualquer iterable, `between`/`notIn`/`isNull` no query builder, dot-notation e resolução de getters no `ALinqPropertyAccess`.
+- [ ] **`thenBy()` / `thenByDescending()`**: ordenação composta e estável por várias chaves (hoje: `orderByCustom()`).
+- [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: anunciados nas notas da 0.1.0 e nunca entregues; ver a errata no CHANGELOG.
+- [ ] **Futuro**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.
 
 ---
 

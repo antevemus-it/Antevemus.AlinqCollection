@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-08
+
+README promises I: every code block of the README runs as written (15/15; five did not on 1.1.2).
+
+### Changed
+- **`groupBy()` groups are `ALinqCollection` instances**, as the README always said, so `->select(fn(ALinqCollection $group, string $key) => ...)`, nested pipelines and `$group->count()`/`->average()` work. **Breaking for** code that indexed a group as an array (`$group[0]`, `array_column($group, ...)`): use `$group->toArray()` or the collection API. `aggregateBy()`/`countBy()` keep their results.
+- **Callbacks follow one arity rule in every operator of both collections** (`Helpers\ALinqCallable::withKey()`): a callback receives `($item, $key)` when it accepts two parameters and the item alone otherwise. Native one-argument functions (`is_int`, `strtoupper`, `strlen(...)`) now work in `where`, `first`, `last`, `firstOrDefault`, `lastOrDefault`, `singleOrDefault`, `findKey`, `any`, `all` (eager) and in `select`, `selectMany`, `where`, `sum`, `min`, `max` and friends (lazy), where they threw `ArgumentCountError`; two-parameter closures now receive the key in `select`, `sum`, `average`, `min`, `max`, `product`, `minBy`, `maxBy`, `orderBy`, `orderByDescending`, `groupBy`, `distinct`, `distinctBy`, `toDictionary`, `join` and `groupJoin`, where the eager side passed the item alone. Internal functions with an optional second argument (`intval`) keep receiving the item only.
+- **`select()` preserves keys** and hands the key to a two-parameter selector (it was `array_map`, value only).
+- **`distinct()` compares by strict, type-aware identity** (`ALinqCallable::hashKey()`): `1`, `1`, `true` and `1.0` stay distinct, arrays are compared by value, objects by identity, every `NAN` falls in one bucket, no warning is emitted, and both forms are O(1) per item (the selector form was O(n²)). The lazy `distinct()` uses the same identity (it compared scalars as strings). **Breaking for** code that relied on `array_unique()` merging `1`/`1`/`true`, or on arrays collapsing to one.
+- **`ALinqPropertyAccess` resolves properties in the same order as Antevemus.ASpecification's `PropertyAccessor`** (array/`ArrayAccess` by key, then a public getter `getX`/`x`/`isX`/`hasX`, then `__get` guarded by `__isset`, then a public initialized property via reflection, else `null`) and never throws `Error`: a private or protected property with a getter, a typed uninitialized property and a private getter now resolve or yield `null` instead of crashing `QueryBuilder::where()`, `orderBy($c->createPropertySelector(...))` and the nested accessor. `getValue()` resolves dot-notation (`'user.profile.organization.taxId'`), so the README §9 example returns the value instead of `null`, and `QueryBuilder->where('a.b.c', ...)` works. **Breaking for** code that relied on a public property winning over its getter (`public $status` + `getStatus()` now reads the getter), on a literal array key containing a dot (a dot is always a path now), or on the `Error` thrown for non-public properties (use `hasProperty()`). The 13 divergences between the two accessors measured by the review are gone (43/43 cases converge).
+- **`orderBy()` / `orderByDescending()`** call the key selector once per item (it was twice per comparison), sort stably on the precomputed key, and follow the key policy of 1.1.2: a list comes out reindexed, a dictionary keeps its keys. **Breaking for** code that expected string keys to be dropped.
+
+### Fixed
+- **`selectMany()` no longer discards non-array results silently.** Any iterable returned by the selector (`ALinqCollection`, `Traversable`, generator) is flattened; a scalar now throws `UnexpectedValueException` naming the key, instead of producing an empty collection.
+- **README §3 `groupJoin()` example** typed the matched group as `array` while the method hands an `ALinqCollection`; the example now types it correctly and uses `->column(name)->toArray()`.
+- **README Synergy example** used `Spec::and()` and `DSL\isGreaterThan()`, which do not exist in Antevemus.ASpecification; it now uses `Spec::allOf()` and `DSL\greaterThan()` and runs against ASpecification 1.4.3.
+- **README §7 multi-attribute ordering** chained `orderBy()->orderByDescending()`, which only sorts by the last key; the example now uses `orderByCustom()` with a composite key and says so. `thenBy()`/`thenByDescending()` are in the roadmap.
+- **README §6 and Quick Start** examples run (see `groupBy()` above).
+
+### Added
+- **Query builder operators `between`, `notBetween`, `notIn`, `isNull`, `isNotNull`** (the README §8 example with `between` now runs; `between` takes an inclusive `[min, max]` pair and refuses anything else). Operator names are case- and separator-insensitive (`BETWEEN`, `Not In`, `is_null`). `ALinqQueryBuilder::operatorPredicate(string $operator, mixed $value = null): Closure` and `::supportedOperators(): array` expose the single evaluator; `UtilityOperations::createPredicate()` delegates to it, so the two operator tables that used to diverge are one (`contains`/`startsWith`/`endsWith` on a non-string value now return `false` instead of casting). An unknown operator lists the supported ones in its message.
+- `ALinqPropertyAccess::hasProperty(mixed $item, string $property): bool`, with the ASpecification semantics (a `null` array value exists, a private property without getter does not, dot-notation fails on any missing segment).
+- `Helpers\ALinqCallable` (`withKey()`, `acceptsKey()`, `hashKey()`), the shared callback and identity rules.
+- Roadmap entries in the README for `thenBy()`/`thenByDescending()` and for `whereIn()`/`whereNotIn()`/`whereBetween()`/`single()`, announced in the 0.1.0 notes and never shipped (see the erratum notes in the 0.1.0 section below).
+- Regression tests for everything above (suite **387 tests, 1050 assertions**, from 342/614).
+
+### Documentation
+- Erratum notes in the 0.1.0 section (method counts, coverage claim, methods announced and never shipped). `declare(strict_types=1)` added to the files changed in this release.
+
 ## [1.1.2] - 2026-10-08
 
 ### Fixed
@@ -80,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ALinqQueryBuilder` for building complex predicates
 - `ALinqPropertyAccess` helper for property access patterns
 - Comprehensive trait-based architecture:
-  - **FilteringOperations** (17 methods): where, take, skip, distinct, first, last, chunk, pad, shuffle, contains
+  - **FilteringOperations** (17 methods): where, take, skip, distinct, first, last, chunk, pad, shuffle, contains *(Erratum, 2026-10-08: the trait has 16 methods)*
   - **JoiningOperations** (13 methods): join, groupJoin, concat, intersect, except, combine, replace, exceptBy, intersectBy, unionBy
   - **AggregationOperations** (13 methods): any, all, sum, average, min, max, product, aggregate, aggregateBy, countBy, maxBy, minBy, countValues
   - **SelectionOperations** (6 methods): select, selectMany, column, toDictionary, toObject, flip
@@ -91,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Factory methods: `from()`, `range()`, `empty()`, `repeat()`
 - Full PHP 8.4 compatibility using native array functions (array_any, array_all, array_find, array_find_key)
 - Comprehensive test suite with 305 tests and 485 assertions
-- 100% code coverage (338/338 lines, 84/84 methods, 11/11 classes)
+- 100% code coverage (338/338 lines, 84/84 methods, 11/11 classes) *(Erratum, 2026-10-08: measured at 93.20 % of lines on 1.1.1; `ALinqCollection::fromCsv`/`fromCursor` and the lazy `max`/`minBy`/`toObject` had no test)*
 - PSR-4 autoloading with `Antevemus\ALinq` namespace
 - Complete PHPDoc documentation
 - MIT License
@@ -116,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 This is the first public release of ALinq Collection, a comprehensive LINQ-style collection library for PHP 8.4+.
 
 **Highlights:**
-- 🎯 **69 LINQ-style methods** covering filtering, joining, aggregation, selection, grouping, ordering, and utilities
+- 🎯 **69 LINQ-style methods** covering filtering, joining, aggregation, selection, grouping, ordering, and utilities *(Erratum, 2026-10-08: 68)*
 - 🧪 **100% test coverage** with 305 comprehensive tests
 - 🏗️ **Trait-based architecture** for clean separation of concerns
 - ⚡ **PHP 8.4 native functions** for optimal performance
@@ -126,10 +155,10 @@ This is the first public release of ALinq Collection, a comprehensive LINQ-style
 **What's Included:**
 
 **Filtering & Querying:**
-- where, whereIn, whereNotIn, whereBetween
+- where, whereIn, whereNotIn, whereBetween *(Erratum, 2026-10-08: only `where()` shipped; `whereIn`/`whereNotIn`/`whereBetween` never existed and are listed in the README roadmap; the query builder offers `in`, `notIn`, `between` and `notBetween` since 1.2.0)*
 - take, skip, distinct, distinctBy
 - first, firstOrDefault, last, lastOrDefault
-- single, singleOrDefault
+- single, singleOrDefault *(Erratum, 2026-10-08: only `singleOrDefault()` shipped; `single()` is in the README roadmap)*
 - chunk, pad, shuffle, contains
 
 **Joining & Set Operations:**
@@ -192,7 +221,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.0.0...v1.1.0

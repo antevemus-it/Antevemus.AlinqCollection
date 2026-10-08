@@ -6,8 +6,8 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
 - **Test Files:** 12 Unit Test Suites (`tests/Unit/`)
-- **Total Tests:** 342 tests
-- **Total Assertions:** 614 assertions
+- **Total Tests:** 387 tests
+- **Total Assertions:** 1050 assertions
 - **Lines of Test Code:** 5,100+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** Zero (pure PHP 8.4 native engine)

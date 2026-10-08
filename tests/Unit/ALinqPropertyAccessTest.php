@@ -298,4 +298,268 @@ class ALinqPropertyAccessTest extends TestCase
 
         $this->assertFalse($comparer($obj));
     }
+
+    // ===== RESOLUTION ORDER / VISIBILITY (review 2026-10-08 §3.1, §3.15; decision 3a) =====
+
+    public function testGetValueResolvesPrivatePropertyThroughItsGetter(): void
+    {
+        $this->assertSame('priv', ALinqPropertyAccess::getValue(new PrivateWithGetter(), 'name'));
+        $this->assertSame('prot', ALinqPropertyAccess::getValue(new ProtectedWithGetter(), 'name'));
+    }
+
+    public function testGetValueReturnsNullForPrivatePropertyWithoutGetter(): void
+    {
+        $this->assertNull(ALinqPropertyAccess::getValue(new PrivateWithoutGetter(), 'name'));
+    }
+
+    public function testGetValueLetsMethodsWinOverPublicProperties(): void
+    {
+        // public $active = true, isActive() = false: the method wins (ASpec order)
+        $this->assertFalse(ALinqPropertyAccess::getValue(new PublicActiveWithIsMethod(), 'active'));
+        // public $status = 'prop', getStatus() = 'getter'
+        $this->assertSame('getter', ALinqPropertyAccess::getValue(new PublicStatusWithGetter(), 'status'));
+        // public $value = 'v', hasValue() = 'has'
+        $this->assertSame('has', ALinqPropertyAccess::getValue(new PublicValueWithHasMethod(), 'value'));
+    }
+
+    public function testGetValueResolvesMagicGetWhenIssetIsDeclared(): void
+    {
+        $this->assertSame('magic:name', ALinqPropertyAccess::getValue(new MagicGetWithIsset(), 'name'));
+        $this->assertNull(ALinqPropertyAccess::getValue(new MagicGetWithoutIsset(), 'name'));
+    }
+
+    public function testGetValueResolvesArrayAccessOffsets(): void
+    {
+        $this->assertSame('aa', ALinqPropertyAccess::getValue(new ArrayAccessFixture(['name' => 'aa']), 'name'));
+        $this->assertNull(ALinqPropertyAccess::getValue(new ArrayAccessFixture([]), 'name'));
+    }
+
+    public function testGetValueCallsAMethodNamedLikeTheProperty(): void
+    {
+        $this->assertSame('method-name', ALinqPropertyAccess::getValue(new MethodNamedLikeProperty(), 'name'));
+    }
+
+    public function testGetValueReturnsNullForUninitializedTypedProperty(): void
+    {
+        $this->assertNull(ALinqPropertyAccess::getValue(new UninitializedTyped(), 'age'));
+    }
+
+    public function testGetValueReadsPublicStaticPropertyWithoutWarnings(): void
+    {
+        $this->assertSame('static', ALinqPropertyAccess::getValue(new PublicStaticProperty(), 'name'));
+    }
+
+    public function testGetValueIgnoresPrivateGetters(): void
+    {
+        $this->assertNull(ALinqPropertyAccess::getValue(new PrivateGetterOnly(), 'name'));
+        // private getter + public property: the property is still readable
+        $this->assertSame('pub', ALinqPropertyAccess::getValue(new PrivateGetterWithPublicProperty(), 'name'));
+    }
+
+    public function testGetValueKeepsWorkingForEnumsReadonlyAndDateTime(): void
+    {
+        $this->assertSame('A', ALinqPropertyAccess::getValue(StatusFixture::Active, 'value'));
+        $this->assertSame('Active', ALinqPropertyAccess::getValue(StatusFixture::Active, 'name'));
+        $this->assertSame('ro', ALinqPropertyAccess::getValue(new ReadonlyFixture('ro'), 'name'));
+        $this->assertSame(
+            1767225600,
+            ALinqPropertyAccess::getValue(new \DateTime('2026-01-01 00:00:00 UTC'), 'timestamp')
+        );
+    }
+
+    // ===== DOT NOTATION IN getValue() (review 2026-10-08 §3.2; README §9) =====
+
+    public function testGetValueResolvesDotNotationPaths(): void
+    {
+        $target = new class {
+            public object $a;
+            public function __construct()
+            {
+                $this->a = (object)['b' => ['c' => 'deep']];
+            }
+        };
+
+        $this->assertSame('deep', ALinqPropertyAccess::getValue($target, 'a.b.c'));
+        $this->assertNull(ALinqPropertyAccess::getValue($target, 'a.b.missing'));
+        $this->assertNull(ALinqPropertyAccess::getValue($target, 'a.missing.c'));
+    }
+
+    public function testGetValueRunsTheReadmeSection9ExampleAsWritten(): void
+    {
+        $payload = [
+            'user' => (object)[
+                'profile' => [
+                    'organization' => (object)[
+                        'taxId' => '12.345.678/0001-90'
+                    ]
+                ]
+            ]
+        ];
+
+        $this->assertSame(
+            '12.345.678/0001-90',
+            ALinqPropertyAccess::getValue($payload, 'user.profile.organization.taxId')
+        );
+    }
+
+    public function testGetValueTreatsADottedNameAsNestedEvenWhenALiteralKeyExists(): void
+    {
+        // Documented choice (decision 3a): a dotted name is always a path, as in ASpecification.
+        $data = ['a.b' => 'literal', 'a' => ['b' => 'nested']];
+
+        $this->assertSame('nested', ALinqPropertyAccess::getValue($data, 'a.b'));
+    }
+
+    public function testNestedAccessorResolvesPrivatePropertiesWithGettersAlongThePath(): void
+    {
+        $accessor = ALinqPropertyAccess::getNestedPropertyAccessor('p.name');
+
+        $this->assertSame('priv', $accessor(['p' => new PrivateWithGetter()]));
+        $this->assertSame('priv', ALinqPropertyAccess::getPropertyAccessor('p.name')(['p' => new PrivateWithGetter()]));
+    }
+
+    public function testPropertyAccessorAndComparerUseTheSameResolutionOrder(): void
+    {
+        $accessor = ALinqPropertyAccess::getPropertyAccessor('name');
+        $this->assertSame('priv', $accessor(new PrivateWithGetter()));
+
+        $comparer = ALinqPropertyAccess::createPropertyComparer('name', 'alias');
+        $this->assertTrue($comparer(new class {
+            private string $name = 'same';
+            public string $alias = 'same';
+            public function getName(): string { return $this->name; }
+        }));
+    }
+
+    // ===== hasProperty() (new; same semantics as ASpecification PropertyAccessor::hasProperty) =====
+
+    public function testHasPropertyOnArraysAndArrayAccess(): void
+    {
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(['name' => 'x'], 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(['name' => null], 'name'), 'a null value still exists');
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(['name' => 'x'], 'other'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new ArrayAccessFixture(['name' => 'aa']), 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(new ArrayAccessFixture([]), 'name'));
+    }
+
+    public function testHasPropertyOnObjectsFollowsTheResolutionOrder(): void
+    {
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new PrivateWithGetter(), 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(new PrivateWithoutGetter(), 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(new PrivateGetterOnly(), 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new MethodNamedLikeProperty(), 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new MagicGetWithIsset(), 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(new MagicGetWithoutIsset(), 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new UninitializedTyped(), 'age'), 'declared public, even if uninitialized');
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new PublicStaticProperty(), 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty((object)['name' => 'dyn'], 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(new \stdClass(), 'name'));
+    }
+
+    public function testHasPropertyWithDotNotationAndNonInspectableTargets(): void
+    {
+        $data = ['user' => ['address' => ['city' => 'Paris']], 'p' => new PrivateWithGetter()];
+
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($data, 'user.address.city'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty($data, 'user.address.zip'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty($data, 'user.phone.number'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($data, 'p.name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(null, 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty('string', 'name'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty(42, 'name'));
+    }
+}
+
+// ===== Fixtures for the resolution-order tests (one per row of REVISAO-2026-10-08 §3.15) =====
+
+final class PrivateWithGetter
+{
+    private string $name = 'priv';
+    public function getName(): string { return $this->name; }
+}
+
+final class ProtectedWithGetter
+{
+    protected string $name = 'prot';
+    public function getName(): string { return $this->name; }
+}
+
+final class PrivateWithoutGetter
+{
+    private string $name = 'priv-no-getter';
+    public function describe(): string { return $this->name; }
+}
+
+final class PublicActiveWithIsMethod
+{
+    public bool $active = true;
+    public function isActive(): bool { return false; }
+}
+
+final class PublicStatusWithGetter
+{
+    public string $status = 'prop';
+    public function getStatus(): string { return 'getter'; }
+}
+
+final class PublicValueWithHasMethod
+{
+    public string $value = 'v';
+    public function hasValue(): string { return 'has'; }
+}
+
+final class MagicGetWithIsset
+{
+    public function __get(string $name): string { return "magic:$name"; }
+    public function __isset(string $name): bool { return true; }
+}
+
+final class MagicGetWithoutIsset
+{
+    public function __get(string $name): string { return "magic:$name"; }
+}
+
+final class ArrayAccessFixture implements \ArrayAccess
+{
+    public function __construct(private array $data) {}
+    public function offsetExists(mixed $offset): bool { return isset($this->data[$offset]); }
+    public function offsetGet(mixed $offset): mixed { return $this->data[$offset]; }
+    public function offsetSet(mixed $offset, mixed $value): void { $this->data[$offset] = $value; }
+    public function offsetUnset(mixed $offset): void { unset($this->data[$offset]); }
+}
+
+final class MethodNamedLikeProperty
+{
+    public function name(): string { return 'method-name'; }
+}
+
+final class UninitializedTyped
+{
+    public int $age;
+}
+
+final class PublicStaticProperty
+{
+    public static string $name = 'static';
+}
+
+final class PrivateGetterOnly
+{
+    private function getName(): string { return 'private-getter'; }
+}
+
+final class PrivateGetterWithPublicProperty
+{
+    public string $name = 'pub';
+    private function getName(): string { return 'private-getter'; }
+}
+
+final class ReadonlyFixture
+{
+    public function __construct(public readonly string $name) {}
+}
+
+enum StatusFixture: string
+{
+    case Active = 'A';
 }

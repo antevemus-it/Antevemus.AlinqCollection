@@ -647,4 +647,27 @@ final class ALinqLazyCollectionTest extends TestCase
         $this->assertSame(3, $cached->count());
         $this->assertCount(3, $cached->toArray());
     }
+
+
+    // =========================================================================
+    // 12. Callable arity (review 2026-10-08, decision 4a) and typed distinct()
+    // =========================================================================
+
+    public function testCallablesFollowTheArityRuleOnTheLazySide(): void
+    {
+        // Native one-argument functions used to receive ($item, $key) and throw ArgumentCountError.
+        $this->assertSame(['1', '2', '3'], ALinqLazyCollection::from([1, 2, 3])->select('strval')->toArray());
+        $this->assertSame([1, 2], ALinqLazyCollection::from([1, 'a', 2])->where('is_int')->toArray());
+        $this->assertSame(1, ALinqLazyCollection::from([1, 'a', 2])->first('is_int'));
+        $this->assertSame(6, ALinqLazyCollection::from(['1', '2', '3'])->sum('intval'));
+        $this->assertTrue(ALinqLazyCollection::from([1, 'a'])->any('is_string'));
+
+        // Two-parameter callbacks still receive the key.
+        $this->assertSame(['x' => 'x:1', 'y' => 'y:2'], ALinqLazyCollection::from(['x' => 1, 'y' => 2])->select(fn($v, $k) => "$k:$v")->toArray());
+        $this->assertSame(3, ALinqLazyCollection::from([10, 20, 30])->sum(fn($v, $k) => $k));
+
+        // distinct() shares the typed identity rule with the eager side: 1, '1' and true stay distinct.
+        $this->assertSame([1, '1', true], ALinqLazyCollection::from([1, '1', true, 1])->distinct()->toArray());
+        $this->assertSame([[1, 2], [3, 4]], ALinqLazyCollection::from([[1, 2], [3, 4], [1, 2]])->distinct()->toArray());
+    }
 }

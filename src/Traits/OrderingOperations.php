@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 
 /**
@@ -9,7 +12,7 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  *
  * Provides LINQ-style ordering and sorting operations for collections
  *
- * @version    0.1.0
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -23,9 +26,7 @@ trait OrderingOperations
      */
     public function orderBy(callable $keySelector): IALinqCollection
     {
-        $items = $this->items;
-        usort($items, fn($a, $b) => $keySelector($a) <=> $keySelector($b));
-        return new self($items);
+        return new self($this->sortByKey($keySelector, 1));
     }
 
     /**
@@ -33,9 +34,30 @@ trait OrderingOperations
      */
     public function orderByDescending(callable $keySelector): IALinqCollection
     {
+        return new self($this->sortByKey($keySelector, -1));
+    }
+
+    /**
+     * Stable sort by a precomputed key (each selector called once per item instead of twice
+     * per comparison, review 2026-10-08, 1.15). Key policy: a list comes out reindexed, a
+     * dictionary keeps its keys (decision 1a).
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param int $direction 1 ascending, -1 descending
+     * @return array
+     */
+    private function sortByKey(callable $keySelector, int $direction): array
+    {
+        $keySelector = ALinqCallable::withKey($keySelector);
+        $sortKeys = [];
+        foreach ($this->items as $key => $item) {
+            $sortKeys[$key] = $keySelector($item, $key);
+        }
+
         $items = $this->items;
-        usort($items, fn($a, $b) => $keySelector($b) <=> $keySelector($a));
-        return new self($items);
+        uksort($items, static fn($a, $b) => $direction * ($sortKeys[$a] <=> $sortKeys[$b]));
+
+        return array_is_list($this->items) ? array_values($items) : $items;
     }
 
     /**

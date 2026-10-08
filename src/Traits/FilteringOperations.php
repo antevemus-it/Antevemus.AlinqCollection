@@ -1,15 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 
 /**
  * FilteringOperations Trait
  *
- * Provides filtering and element selection operations for collections
+ * Provides filtering and element selection operations for collections.
+ * Callbacks follow ALinqCallable::withKey(): `($item, $key)` when they accept two
+ * parameters, the item alone otherwise (review 2026-10-08, decision 4a).
  *
- * @version    1.1.2
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -24,7 +29,7 @@ trait FilteringOperations
      */
     public function where(callable $predicate): IALinqCollection
     {
-        $filtered = array_filter($this->items, $predicate, ARRAY_FILTER_USE_BOTH);
+        $filtered = array_filter($this->items, ALinqCallable::withKey($predicate), ARRAY_FILTER_USE_BOTH);
 
         // Reindex only if original array was a list (sequential numeric keys)
         if (array_is_list($this->items)) {
@@ -55,16 +60,18 @@ trait FilteringOperations
      */
     public function distinct(?callable $keySelector = null): IALinqCollection
     {
-        if ($keySelector === null) {
-            return new self(array_values(array_unique($this->items)));
-        }
-
+        // Identity by ALinqCallable::hashKey(): strict and type-aware for scalars, by value
+        // for arrays, by identity for objects, O(1) per item. Before, the no-selector form
+        // used array_unique() (string comparison: arrays collapsed with a warning, objects
+        // threw, 1/'1'/true/1.0 became one) and the selector form was an O(n²) in_array()
+        // (review 2026-10-08, 2.3 and 2.11).
+        $selector = $keySelector === null ? null : ALinqCallable::withKey($keySelector);
         $result = [];
-        $keys = [];
-        foreach ($this->items as $item) {
-            $key = $keySelector($item);
-            if (!in_array($key, $keys, true)) {
-                $keys[] = $key;
+        $seen = [];
+        foreach ($this->items as $key => $item) {
+            $identity = ALinqCallable::hashKey($selector === null ? $item : $selector($item, $key));
+            if (!isset($seen[$identity])) {
+                $seen[$identity] = true;
                 $result[] = $item;
             }
         }
@@ -81,7 +88,7 @@ trait FilteringOperations
             return empty($this->items) ? $default : reset($this->items);
         }
 
-        $result = array_find($this->items, $predicate);
+        $result = array_find($this->items, ALinqCallable::withKey($predicate));
         return $result !== null ? $result : $default;
     }
 
@@ -98,7 +105,7 @@ trait FilteringOperations
         // reindexed backwards and `fn($v, $k) => $k !== 0` on [1..5] answered 4 instead of 5
         // (review 2026-10-08, 2.5).
         $reversedItems = array_reverse($this->items, true);
-        $result = array_find($reversedItems, $predicate);
+        $result = array_find($reversedItems, ALinqCallable::withKey($predicate));
         return $result !== null ? $result : $default;
     }
 
@@ -123,7 +130,9 @@ trait FilteringOperations
      */
     public function singleOrDefault($default = null, ?callable $predicate = null)
     {
-        $filtered = $predicate === null ? $this->items : array_filter($this->items, $predicate);
+        $filtered = $predicate === null
+            ? $this->items
+            : array_filter($this->items, ALinqCallable::withKey($predicate), ARRAY_FILTER_USE_BOTH);
 
         if (count($filtered) > 1) {
             throw new \RuntimeException("Sequence contains more than one matching element");
@@ -138,7 +147,7 @@ trait FilteringOperations
      */
     public function findKey(callable $predicate)
     {
-        return array_find_key($this->items, $predicate);
+        return array_find_key($this->items, ALinqCallable::withKey($predicate));
     }
 
     /**
@@ -203,9 +212,10 @@ trait FilteringOperations
     {
         $result = [];
         $keys = [];
+        $selector = ALinqCallable::withKey($keySelector);
 
-        foreach ($this->items as $item) {
-            $key = $keySelector($item);
+        foreach ($this->items as $itemKey => $item) {
+            $key = $selector($item, $itemKey);
             $keyString = is_object($key) ? spl_object_hash($key) : (string)$key;
 
             if (!isset($keys[$keyString])) {

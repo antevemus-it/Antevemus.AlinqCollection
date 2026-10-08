@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 
 /**
@@ -9,7 +12,7 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  *
  * Provides LINQ-style aggregation operations for collections
  *
- * @version    0.1.0
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -27,7 +30,7 @@ trait AggregationOperations
         if ($predicate === null) {
             return count($this->items) > 0;
         }
-        return array_any($this->items, $predicate);
+        return array_any($this->items, ALinqCallable::withKey($predicate));
     }
 
     /**
@@ -39,7 +42,24 @@ trait AggregationOperations
         if ($predicate === null) {
             return false;
         }
-        return array_all($this->items, $predicate);
+        return array_all($this->items, ALinqCallable::withKey($predicate));
+    }
+
+    /**
+     * Values produced by a selector, one per item, in order (the selector receives
+     * `($item, $key)` when it accepts two parameters, review 2026-10-08, decision 4a).
+     *
+     * @param callable $selector
+     * @return array<int, mixed>
+     */
+    private function selectValues(callable $selector): array
+    {
+        $selector = ALinqCallable::withKey($selector);
+        $values = [];
+        foreach ($this->items as $key => $item) {
+            $values[] = $selector($item, $key);
+        }
+        return $values;
     }
 
     /**
@@ -48,7 +68,7 @@ trait AggregationOperations
     public function sum(?callable $selector = null): int|float
     {
         if ($selector !== null) {
-            return array_sum(array_map($selector, $this->items));
+            return array_sum($this->selectValues($selector));
         }
         return array_sum($this->items);
     }
@@ -63,7 +83,7 @@ trait AggregationOperations
         }
 
         if ($selector !== null) {
-            $values = array_map($selector, $this->items);
+            $values = $this->selectValues($selector);
             return array_sum($values) / count($values);
         }
         return array_sum($this->items) / count($this->items);
@@ -79,8 +99,7 @@ trait AggregationOperations
         }
 
         if ($selector !== null) {
-            $values = array_map($selector, $this->items);
-            return min($values);
+            return min($this->selectValues($selector));
         }
         return min($this->items);
     }
@@ -95,8 +114,7 @@ trait AggregationOperations
         }
 
         if ($selector !== null) {
-            $values = array_map($selector, $this->items);
-            return max($values);
+            return max($this->selectValues($selector));
         }
         return max($this->items);
     }
@@ -111,8 +129,7 @@ trait AggregationOperations
         }
 
         if ($selector !== null) {
-            $values = array_map($selector, $this->items);
-            return array_product($values);
+            return array_product($this->selectValues($selector));
         }
         return array_product($this->items);
     }
@@ -152,11 +169,12 @@ trait AggregationOperations
      */
     public function aggregateBy(callable $keySelector, $seed, callable $func): IALinqCollection
     {
-        $groups = $this->groupBy($keySelector)->toArray();
-
-        $result = array_map(function ($group) use ($func, $seed) {
-            return array_reduce($group, $func, $seed);
-        }, $groups);
+        // groupBy() returns ALinqCollection groups since 1.2.0; each is reduced with its own
+        // aggregate(), so $func receives (carry, item, key) as everywhere else.
+        $result = [];
+        foreach ($this->groupBy($keySelector)->toArray() as $key => $group) {
+            $result[$key] = $group->aggregate($seed, $func);
+        }
 
         return new self($result);
     }
@@ -169,11 +187,10 @@ trait AggregationOperations
      */
     public function countBy(callable $keySelector): IALinqCollection
     {
-        $groups = $this->groupBy($keySelector)->toArray();
-
-        $result = array_map(function ($group) {
-            return count($group);
-        }, $groups);
+        $result = [];
+        foreach ($this->groupBy($keySelector)->toArray() as $key => $group) {
+            $result[$key] = $group->count();
+        }
 
         return new self($result);
     }
@@ -190,11 +207,12 @@ trait AggregationOperations
             return null;
         }
 
+        $keySelector = ALinqCallable::withKey($keySelector);
         $maxItem = reset($this->items);
-        $maxKey = $keySelector($maxItem);
+        $maxKey = $keySelector($maxItem, array_key_first($this->items));
 
-        foreach ($this->items as $item) {
-            $key = $keySelector($item);
+        foreach ($this->items as $itemKey => $item) {
+            $key = $keySelector($item, $itemKey);
             if ($key > $maxKey) {
                 $maxItem = $item;
                 $maxKey = $key;
@@ -216,11 +234,12 @@ trait AggregationOperations
             return null;
         }
 
+        $keySelector = ALinqCallable::withKey($keySelector);
         $minItem = reset($this->items);
-        $minKey = $keySelector($minItem);
+        $minKey = $keySelector($minItem, array_key_first($this->items));
 
-        foreach ($this->items as $item) {
-            $key = $keySelector($item);
+        foreach ($this->items as $itemKey => $item) {
+            $key = $keySelector($item, $itemKey);
             if ($key < $minKey) {
                 $minItem = $item;
                 $minKey = $key;

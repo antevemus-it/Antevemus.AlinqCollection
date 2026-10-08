@@ -126,9 +126,10 @@ class GroupingOperationsTest extends TestCase
 
         $resultArray = $result->toArray();
 
-        $this->assertEquals(1, $resultArray['A'][0]['seq']);
-        $this->assertEquals(3, $resultArray['A'][1]['seq']);
-        $this->assertEquals(4, $resultArray['A'][2]['seq']);
+        // Groups are ALinqCollection instances since 1.2.0 (review 2026-10-08, 2.1)
+        $this->assertEquals(1, $resultArray['A']->toArray()[0]['seq']);
+        $this->assertEquals(3, $resultArray['A']->toArray()[1]['seq']);
+        $this->assertEquals(4, $resultArray['A']->toArray()[2]['seq']);
     }
 
     /**
@@ -231,8 +232,9 @@ class GroupingOperationsTest extends TestCase
 
         $groupedArray = $grouped->toArray();
 
-        $salesTotal = array_sum(array_column($groupedArray['Sales'], 'amount'));
-        $itTotal = array_sum(array_column($groupedArray['IT'], 'amount'));
+        // Groups are ALinqCollection instances since 1.2.0 (review 2026-10-08, 2.1)
+        $salesTotal = $groupedArray['Sales']->sum(fn($item) => $item['amount']);
+        $itTotal = $groupedArray['IT']->sum(fn($item) => $item['amount']);
 
         $this->assertEquals(300, $salesTotal);
         $this->assertEquals(400, $itTotal);
@@ -317,5 +319,40 @@ class GroupingOperationsTest extends TestCase
 
         $this->assertArrayHasKey('', $resultArray);
         $this->assertCount(2, $resultArray['']);
+    }
+
+
+    /**
+     * Review 2026-10-08, 2.1 (README Quick Start and §6): groupBy() returns ALinqCollection
+     * groups and select() hands the group key to a two-parameter selector.
+     */
+    public function testGroupByReturnsCollectionsAndSelectReceivesTheKey(): void
+    {
+        $users = ALinqCollection::from([
+            ['name' => 'Alice', 'role' => 'admin', 'score' => 95],
+            ['name' => 'Bob', 'role' => 'editor', 'score' => 70],
+            ['name' => 'Carol', 'role' => 'admin', 'score' => 80],
+        ]);
+
+        $groups = $users->groupBy(fn($u) => $u['role']);
+        $this->assertContainsOnlyInstancesOf(ALinqCollection::class, $groups->toArray());
+        $this->assertSame(['admin', 'editor'], array_keys($groups->toArray()));
+
+        $summary = $groups
+            ->select(fn(ALinqCollection $group, string $role) => [
+                'role' => $role,
+                'count' => $group->count(),
+                'avg' => $group->average(fn($u) => $u['score']),
+            ])
+            ->toArray();
+        $this->assertSame(['role' => 'admin', 'count' => 2, 'avg' => 87.5], $summary['admin']);
+        $this->assertSame(['role' => 'editor', 'count' => 1, 'avg' => 70], $summary['editor']);
+
+        // Nested pipelines inside a group
+        $this->assertSame(['Alice', 'Carol'], $groups->toArray()['admin']->column('name')->toArray());
+
+        // The key selector itself may use the item key
+        $byIndexParity = ALinqCollection::from(['a', 'b', 'c'])->groupBy(fn($v, $k) => $k % 2);
+        $this->assertSame(['a', 'c'], $byIndexParity->toArray()[0]->toArray());
     }
 }

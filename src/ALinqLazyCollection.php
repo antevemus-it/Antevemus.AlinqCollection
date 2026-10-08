@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqLazyCollection;
 use ArrayIterator;
 use Closure;
@@ -26,7 +27,7 @@ use UnderflowException;
  * O(1) memory overhead, designed for multi-gigabyte files, CSV streams and unbuffered
  * database cursors, interoperable with the in-memory ALinqCollection
  *
- * @version    1.1.2
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -260,6 +261,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function where(callable $predicate): self
     {
+        $predicate = ALinqCallable::withKey($predicate);
         return new self(function () use ($predicate) {
             foreach ($this as $key => $item) {
                 if ($predicate($item, $key)) {
@@ -274,6 +276,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function whereNot(callable $predicate): self
     {
+        $predicate = ALinqCallable::withKey($predicate);
         return $this->where(fn($item, $key) => !$predicate($item, $key));
     }
 
@@ -282,6 +285,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function select(callable $selector): self
     {
+        $selector = ALinqCallable::withKey($selector);
         return new self(function () use ($selector) {
             foreach ($this as $key => $item) {
                 yield $key => $selector($item, $key);
@@ -294,6 +298,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function selectMany(callable $selector): self
     {
+        $selector = ALinqCallable::withKey($selector);
         return new self(function () use ($selector) {
             foreach ($this as $key => $item) {
                 $inner = $selector($item, $key);
@@ -351,6 +356,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function takeWhile(callable $predicate): self
     {
+        $predicate = ALinqCallable::withKey($predicate);
         return new self(function () use ($predicate) {
             foreach ($this as $key => $item) {
                 if (!$predicate($item, $key)) {
@@ -366,6 +372,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function skipWhile(callable $predicate): self
     {
+        $predicate = ALinqCallable::withKey($predicate);
         return new self(function () use ($predicate) {
             $skipping = true;
             foreach ($this as $key => $item) {
@@ -385,11 +392,12 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function distinct(?callable $keySelector = null): self
     {
+        $keySelector = $keySelector === null ? null : ALinqCallable::withKey($keySelector);
         return new self(function () use ($keySelector) {
             $seen = [];
             foreach ($this as $key => $item) {
                 $identifier = $keySelector !== null ? $keySelector($item, $key) : $item;
-                $hash = is_scalar($identifier) ? (string)$identifier : serialize($identifier);
+                $hash = ALinqCallable::hashKey($identifier);
 
                 if (!isset($seen[$hash])) {
                     $seen[$hash] = true;
@@ -404,6 +412,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function distinctBy(callable $keySelector): self
     {
+        $keySelector = ALinqCallable::withKey($keySelector);
         return $this->distinct($keySelector);
     }
 
@@ -512,6 +521,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function tap(callable $callback): self
     {
+        $callback = ALinqCallable::withKey($callback);
         return new self(function () use ($callback) {
             foreach ($this as $key => $item) {
                 $callback($item, $key);
@@ -572,6 +582,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function first(?callable $predicate = null): mixed
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         foreach ($this as $key => $item) {
             if ($predicate === null || $predicate($item, $key)) {
                 return $item;
@@ -586,6 +597,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function firstOrDefault(mixed $default = null, ?callable $predicate = null): mixed
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         foreach ($this as $key => $item) {
             if ($predicate === null || $predicate($item, $key)) {
                 return $item;
@@ -600,6 +612,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function last(?callable $predicate = null): mixed
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         $found = false;
         $last = null;
 
@@ -622,6 +635,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function lastOrDefault(mixed $default = null, ?callable $predicate = null): mixed
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         $last = $default;
 
         foreach ($this as $key => $item) {
@@ -638,6 +652,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function singleOrDefault(mixed $default = null, ?callable $predicate = null): mixed
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         $match = null;
         $found = false;
 
@@ -659,6 +674,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function any(?callable $predicate = null): bool
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         foreach ($this as $key => $item) {
             if ($predicate === null || $predicate($item, $key)) {
                 return true;
@@ -673,6 +689,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function all(?callable $predicate = null): bool
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         if ($predicate === null) {
             return false;
         }
@@ -720,6 +737,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function sum(?callable $selector = null): int|float
     {
+        $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $sum = 0;
         foreach ($this as $key => $item) {
             $sum += $selector !== null ? $selector($item, $key) : $item;
@@ -733,6 +751,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function average(?callable $selector = null): int|float
     {
+        $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $sum = 0;
         $count = 0;
 
@@ -753,6 +772,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function min(?callable $selector = null): mixed
     {
+        $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $min = null;
         $first = true;
 
@@ -776,6 +796,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function max(?callable $selector = null): mixed
     {
+        $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $max = null;
         $first = true;
 
@@ -799,6 +820,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function minBy(callable $keySelector): mixed
     {
+        $keySelector = ALinqCallable::withKey($keySelector);
         $bestItem = null;
         $bestKey = null;
         $first = true;
@@ -824,6 +846,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function maxBy(callable $keySelector): mixed
     {
+        $keySelector = ALinqCallable::withKey($keySelector);
         $bestItem = null;
         $bestKey = null;
         $first = true;
@@ -862,6 +885,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function each(callable $callback): self
     {
+        $callback = ALinqCallable::withKey($callback);
         foreach ($this as $key => $item) {
             $callback($item, $key);
         }

@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 
 /**
@@ -9,7 +12,7 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  *
  * Provides LINQ-style joining operations for collections
  *
- * @version    0.1.0
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -23,11 +26,13 @@ trait JoiningOperations
      */
     public function join(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
     {
+        $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
+        $innerKeySelector = ALinqCallable::withKey($innerKeySelector);
         $result = [];
-        foreach ($this->items as $outer) {
-            $outerKey = $outerKeySelector($outer);
-            foreach ($inner as $innerItem) {
-                if ($outerKey === $innerKeySelector($innerItem)) {
+        foreach ($this->items as $outerKeyIndex => $outer) {
+            $outerKey = $outerKeySelector($outer, $outerKeyIndex);
+            foreach ($inner as $innerKeyIndex => $innerItem) {
+                if ($outerKey === $innerKeySelector($innerItem, $innerKeyIndex)) {
                     $result[] = $resultSelector($outer, $innerItem);
                 }
             }
@@ -42,19 +47,21 @@ trait JoiningOperations
     {
         $result = [];
         $innerGrouped = [];
+        $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
+        $innerKeySelector = ALinqCallable::withKey($innerKeySelector);
 
         // Group inner elements by key
-        foreach ($inner as $innerItem) {
-            $key = $innerKeySelector($innerItem);
+        foreach ($inner as $innerKeyIndex => $innerItem) {
+            $key = $innerKeySelector($innerItem, $innerKeyIndex);
             if (!isset($innerGrouped[$key])) {
                 $innerGrouped[$key] = [];
             }
             $innerGrouped[$key][] = $innerItem;
         }
 
-        // Join outer with grouped inner
-        foreach ($this->items as $outer) {
-            $key = $outerKeySelector($outer);
+        // Join outer with grouped inner; the matched group is an ALinqCollection (README §3)
+        foreach ($this->items as $outerKeyIndex => $outer) {
+            $key = $outerKeySelector($outer, $outerKeyIndex);
             $matchingInner = $innerGrouped[$key] ?? [];
             $result[] = $resultSelector($outer, new self($matchingInner));
         }

@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\ALinqQueryBuilder;
 use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use Closure;
@@ -11,7 +14,7 @@ use Closure;
  *
  * Provides utility operations for collections
  *
- * @version    0.1.0
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -79,24 +82,18 @@ trait UtilityOperations
 
     /**
      * Create a closure that can be used for query composition
+     *
+     * Delegates to ALinqQueryBuilder::operatorPredicate(), so the operator set and the
+     * semantics are the same as in ALinqQueryBuilder::where() (including between, notIn,
+     * isNull and case-insensitive operator names).
+     *
+     * @param string $operator One of ALinqQueryBuilder::supportedOperators()
+     * @param mixed $value Comparison value (ignored for isNull/isNotNull)
+     * @throws \InvalidArgumentException for an unknown operator
      */
-    public function createPredicate(string $operator, $value): Closure
+    public function createPredicate(string $operator, mixed $value = null): Closure
     {
-        return match($operator) {
-            '=' => fn($item) => $item == $value,
-            '===' => fn($item) => $item === $value,
-            '!=' => fn($item) => $item != $value,
-            '!==' => fn($item) => $item !== $value,
-            '>' => fn($item) => $item > $value,
-            '>=' => fn($item) => $item >= $value,
-            '<' => fn($item) => $item < $value,
-            '<=' => fn($item) => $item <= $value,
-            'in' => fn($item) => in_array($item, (array)$value),
-            'contains' => fn($item) => str_contains((string)$item, (string)$value),
-            'startsWith' => fn($item) => str_starts_with((string)$item, (string)$value),
-            'endsWith' => fn($item) => str_ends_with((string)$item, (string)$value),
-            default => throw new \InvalidArgumentException("Unknown operator: $operator")
-        };
+        return ALinqQueryBuilder::operatorPredicate($operator, $value);
     }
 
     /**

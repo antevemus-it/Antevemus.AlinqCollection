@@ -3,6 +3,7 @@
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqQueryBuilder;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -537,4 +538,117 @@ class UtilityOperationsTest extends TestCase
         $this->assertInstanceOf(\Closure::class, $collection->createPredicate('=', 1));
         $this->assertInstanceOf(\Closure::class, $collection->createPropertySelector('name'));
     }
+
+    // ===== CREATE PREDICATE: SHARED EVALUATOR (review 2026-10-08 §3.20) =====
+
+    public function testCreatePredicateSupportsBetweenNotInAndIsNull(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5, null]);
+
+        $between = $collection->createPredicate('between', [2, 4]);
+        $this->assertTrue($between(2));
+        $this->assertTrue($between(4));
+        $this->assertFalse($between(5));
+
+        $notBetween = $collection->createPredicate('notBetween', [2, 4]);
+        $this->assertTrue($notBetween(5));
+        $this->assertFalse($notBetween(3));
+
+        $notIn = $collection->createPredicate('notIn', [2, 4]);
+        $this->assertTrue($notIn(1));
+        $this->assertFalse($notIn(2));
+
+        $isNull = $collection->createPredicate('isNull');
+        $this->assertTrue($isNull(null));
+        $this->assertFalse($isNull(0));
+
+        $isNotNull = $collection->createPredicate('isNotNull');
+        $this->assertTrue($isNotNull(0));
+        $this->assertFalse($isNotNull(null));
+
+        $this->assertSame([2, 3, 4], array_values(array_filter([1, 2, 3, 4, 5], $between)));
+    }
+
+    public function testCreatePredicateOperatorsAreCaseInsensitive(): void
+    {
+        $collection = ALinqCollection::from(['hello', 'world']);
+
+        $this->assertTrue($collection->createPredicate('STARTSWITH', 'hel')('hello'));
+        $this->assertTrue($collection->createPredicate('EndsWith', 'ld')('world'));
+        $this->assertTrue($collection->createPredicate('IN', ['hello'])('hello'));
+        $this->assertTrue($collection->createPredicate('Between', [1, 3])(2));
+    }
+
+    public function testCreatePredicateAgreesWithTheQueryBuilderForEveryOperator(): void
+    {
+        $collection = ALinqCollection::from([]);
+        $samples = [1, '1', 2, 0, null, '', 'abc', 'xabcx', [1], true, false, 10, '1e1'];
+
+        foreach (ALinqQueryBuilder::supportedOperators() as $operator) {
+            $value = match ($operator) {
+                'between', 'notBetween' => [1, 5],
+                'in', 'notIn' => [1, 'abc'],
+                'contains', 'startsWith', 'endsWith' => 'abc',
+                default => 1,
+            };
+
+            $fromCollection = $collection->createPredicate($operator, $value);
+            $fromBuilder = ALinqQueryBuilder::create()->where('v', $operator, $value)->toPredicate();
+
+            foreach ($samples as $sample) {
+                $this->assertSame(
+                    $fromBuilder(['v' => $sample]),
+                    $fromCollection($sample),
+                    sprintf('operator %s diverges for %s', $operator, var_export($sample, true))
+                );
+            }
+        }
+    }
+
+    public function testCreatePredicateUnknownOperatorMessageListsTheSupportedOnes(): void
+    {
+        try {
+            ALinqCollection::from([1])->createPredicate('like', '%x%');
+            $this->fail('Expected InvalidArgumentException');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringStartsWith('Unknown operator: like', $e->getMessage());
+            $this->assertStringContainsString('between', $e->getMessage());
+        }
+    }
+
+    // ===== CREATE PROPERTY SELECTOR: VISIBILITY AND DOT NOTATION (review 2026-10-08 §3.1, §3.2) =====
+
+    public function testCreatePropertySelectorResolvesPrivatePropertiesThroughGettersInOrderBy(): void
+    {
+        $collection = ALinqCollection::from([
+            new UtilityPerson('Carol', 45),
+            new UtilityPerson('Alice', 30),
+            new UtilityPerson('Bob', 17),
+        ]);
+
+        $byName = $collection->orderBy($collection->createPropertySelector('name'));
+        $this->assertSame(['Alice', 'Bob', 'Carol'], $byName->select(fn($p) => $p->getName())->toArray());
+
+        $byAgeDesc = $collection->orderByDescending($collection->createPropertySelector('age'));
+        $this->assertSame([45, 30, 17], $byAgeDesc->select(fn($p) => $p->getAge())->toArray());
+    }
+
+    public function testCreatePropertySelectorResolvesDotNotation(): void
+    {
+        $collection = ALinqCollection::from([
+            ['user' => ['address' => ['city' => 'Paris']]],
+            ['user' => ['address' => ['city' => 'Lima']]],
+        ]);
+
+        $selector = $collection->createPropertySelector('user.address.city');
+
+        $this->assertSame(['Paris', 'Lima'], $collection->select($selector)->toArray());
+    }
+}
+
+final class UtilityPerson
+{
+    public function __construct(private string $name, private int $age) {}
+    public function getName(): string { return $this->name; }
+    public function getAge(): int { return $this->age; }
 }

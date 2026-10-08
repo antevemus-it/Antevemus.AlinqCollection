@@ -551,4 +551,52 @@ class FilteringOperationsTest extends TestCase
         $this->assertEmpty($collection->skip(2)->toArray());
         $this->assertEmpty($collection->distinct()->toArray());
     }
+
+
+    /**
+     * Review 2026-10-08, 2.2 / decision 4a: a native one-argument callable works in every
+     * predicate operator (before: ArgumentCountError from array_filter/array_find/array_any
+     * passing the key), and a two-parameter closure still receives the key.
+     */
+    public function testNativeCallablesWorkInEveryPredicateOperator(): void
+    {
+        $mixed = ALinqCollection::from([1, 'a', 2, 'b']);
+
+        $this->assertSame([1, 2], $mixed->where('is_int')->toArray());
+        $this->assertSame([1, 2], $mixed->where(is_int(...))->toArray());
+        $this->assertSame(1, $mixed->first('is_int'));
+        $this->assertSame(2, $mixed->last('is_int'));
+        $this->assertSame('a', $mixed->firstOrDefault(null, 'is_string'));
+        $this->assertSame('b', $mixed->lastOrDefault(null, 'is_string'));
+        $this->assertSame(1, $mixed->findKey('is_string'));
+        $this->assertSame('b', ALinqCollection::from([1, 'b'])->singleOrDefault(null, 'is_string'));
+
+        // Two-parameter predicates keep receiving the key
+        $this->assertSame([2 => 2, 3 => 'b'], ALinqCollection::from([1, 'a', 2, 'b'])->where(fn($v, $k) => $k >= 2)->toArray() === [2, 'b']
+            ? [2 => 2, 3 => 'b'] : ALinqCollection::from([1, 'a', 2, 'b'])->where(fn($v, $k) => $k >= 2)->toArray(),
+            'sanity: list is reindexed by where()');
+        $this->assertSame([2, 'b'], ALinqCollection::from([1, 'a', 2, 'b'])->where(fn($v, $k) => $k >= 2)->toArray());
+        $this->assertSame(2, ALinqCollection::from(['x' => 1, 'y' => 2])->first(fn($v, $k) => $k === 'y'));
+    }
+
+    /**
+     * Review 2026-10-08, 2.3 / 2.11: distinct() is strict and type-aware, safe for arrays
+     * (by value) and objects (by identity), O(1) per item in both forms.
+     */
+    public function testDistinctIsStrictAndSafeForArraysAndObjects(): void
+    {
+        $this->assertSame([[1, 2], [3, 4]], ALinqCollection::from([[1, 2], [3, 4], [1, 2]])->distinct()->toArray());
+
+        $o1 = new \stdClass();
+        $o2 = new \stdClass();
+        $this->assertCount(2, ALinqCollection::from([$o1, $o2, $o1])->distinct()->toArray());
+
+        $this->assertSame([1, '1', true, 1.0], ALinqCollection::from([1, '1', true, 1.0, 1])->distinct()->toArray());
+        $this->assertSame([null, '', false, 0, '0'], ALinqCollection::from([null, '', false, 0, '0', null])->distinct()->toArray());
+        $this->assertCount(1, ALinqCollection::from([NAN, NAN])->distinct()->toArray());
+
+        // With a selector, same identity rule; native selector accepted
+        $this->assertSame(['a', 'bb'], ALinqCollection::from(['a', 'bb', 'cc', 'd'])->distinct('strlen')->toArray());
+        $this->assertSame([['k' => [1]], ['k' => [2]]], ALinqCollection::from([['k' => [1]], ['k' => [2]], ['k' => [1]]])->distinct(fn($v) => $v['k'])->toArray());
+    }
 }

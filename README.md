@@ -3,7 +3,7 @@
 [![Latest Stable Version](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-342%20passed%20%7C%20614%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-387%20passed%20%7C%201050%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -170,12 +170,12 @@ use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ASpecification\Spec;
 use Antevemus\ASpecification\Linq\ALinqBridge;
 use function Antevemus\ASpecification\DSL\is;
-use function Antevemus\ASpecification\DSL\isGreaterThan;
+use function Antevemus\ASpecification\DSL\greaterThan;
 
 // 1. Define Business Rules using Evans & Fowler Specification Pattern
-$isEligibleCustomer = Spec::and(
+$isEligibleCustomer = Spec::allOf(
     Spec::property('status', is('ACTIVE')),
-    Spec::property('creditScore', isGreaterThan(700))
+    Spec::property('creditScore', greaterThan(700))
 );
 
 // 2. Query any collection or in-memory repository through ALinqBridge
@@ -278,9 +278,9 @@ $deptRoster = $departments->groupJoin(
     inner: $employees->toArray(),
     outerKeySelector: fn($dept) => $dept['id'],
     innerKeySelector: fn($emp) => $emp['dept_id'],
-    resultSelector: fn($dept, array $matchedEmps) => [
+    resultSelector: fn($dept, ALinqCollection $matchedEmps) => [
         'dept'  => $dept['name'],
-        'staff' => array_column($matchedEmps, 'name'),
+        'staff' => $matchedEmps->column('name')->toArray(),
     ]
 )->toArray();
 
@@ -390,7 +390,9 @@ $files = ALinqCollection::from([
 // Natural Alphanumeric Sort (Human sorting: file1, file2, file10, FILE100)
 $naturalSorted = $files->orderByNatural(caseSensitive: false)->toArray();
 
-// Multi-attribute ordering
+// Multi-attribute ordering: every orderBy() sorts the whole collection, so chaining
+// orderBy()->orderByDescending() keeps only the LAST key. For a composite key use
+// orderByCustom() (thenBy()/thenByDescending() are on the roadmap):
 $employees = ALinqCollection::from([
     ['dept' => 'Sales', 'salary' => 5000],
     ['dept' => 'IT',    'salary' => 7000],
@@ -398,9 +400,9 @@ $employees = ALinqCollection::from([
 ]);
 
 $sorted = $employees
-    ->orderBy(fn($e) => $e['dept'])
-    ->orderByDescending(fn($e) => $e['salary'])
+    ->orderByCustom(fn($a, $b) => [$a['dept'], -$a['salary']] <=> [$b['dept'], -$b['salary']])
     ->toArray();
+// IT 9000, IT 7000, Sales 5000
 ```
 
 ---
@@ -423,6 +425,8 @@ $predicate = $query->toPredicate();
 
 $approvedApplicants = $applicants->where($predicate);
 ```
+
+Operators (case- and separator-insensitive): `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`. `between` takes an inclusive `[min, max]` pair. The same evaluator is exposed as `ALinqQueryBuilder::operatorPredicate($operator, $value)` and backs `createPredicate()`.
 
 ---
 
@@ -447,6 +451,8 @@ $payload = [
 $taxId = ALinqPropertyAccess::getValue($payload, 'user.profile.organization.taxId');
 // Returns: '12.345.678/0001-90'
 ```
+
+Resolution order (the same as Antevemus.ASpecification's `PropertyAccessor`): array or `ArrayAccess` by key, then a public getter (`getX()`, `x()`, `isX()`, `hasX()`), then `__get` guarded by `__isset`, then a public initialized property; otherwise `null`, never an `Error`. A dot is always a path. `ALinqPropertyAccess::hasProperty($item, 'a.b')` tells whether the path resolves.
 
 ---
 
@@ -538,22 +544,22 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 342 ( 18%)
-............................................................... 126 / 342 ( 37%)
-............................................................... 189 / 342 ( 56%)
-............................................................... 252 / 342 ( 75%)
-............................................................... 315 / 342 ( 94%)
-....................                                            342 / 342 (100%)
+...............................................................  63 / 387 ( 18%)
+............................................................... 126 / 387 ( 37%)
+............................................................... 189 / 387 ( 56%)
+............................................................... 252 / 387 ( 75%)
+............................................................... 315 / 387 ( 94%)
+....................                                            387 / 387 (100%)
 
 Time: 00:06.312, Memory: 6.00 MB
 
-OK (342 tests, 614 assertions)
+OK (387 tests, 1050 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **342 Unit Tests & 614 Assertions** certifying all 8 functional traits and generator streaming engine.
+- **387 Unit Tests & 1050 Assertions** certifying all 8 functional traits and generator streaming engine.
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -565,7 +571,11 @@ OK (342 tests, 614 assertions)
 - [x] **ASpecification Synergy**: Integration with `Antevemus.ASpecification` via `ALinqBridge`.
 - [x] **v1.1.0**: Generator-based lazy evaluation pipeline (`ALinqLazyCollection`) for handling multi-gigabyte streams without in-memory buffering.
 - [x] **v1.1.1**: Streaming engine correctness: `remember()` caches only complete passes, `fromFile()` keeps long lines whole, single-pass cursors fail loudly on re-traversal.
-- [ ] **v1.2.0**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
+- [x] **v1.1.2**: Lazy materializers never lose items (list reindexed, dictionary preserved), resumable `remember()`, `last()` with the real key.
+- [x] **v1.2.0**: README promises I: `groupBy()` groups are collections, `select()` receives the key, every operator accepts native callables, `distinct()` is strict and safe for arrays/objects, `selectMany()` flattens any iterable, `between`/`notIn`/`isNull` in the query builder, dot-notation and getter resolution in `ALinqPropertyAccess`.
+- [ ] **`thenBy()` / `thenByDescending()`**: composite, stable multi-key ordering (today: `orderByCustom()`).
+- [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: announced in the 0.1.0 release notes and never shipped; see the CHANGELOG erratum.
+- [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
 
 ---
 

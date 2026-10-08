@@ -68,13 +68,16 @@ class OrderingOperationsTest extends TestCase
     /**
      * Test orderBy reindexes keys
      */
-    public function testOrderByReindexesKeys(): void
+    public function testOrderByKeepsDictionaryKeysAndReindexesLists(): void
     {
+        // Key policy (review 2026-10-08, decision 1a): a dictionary keeps its keys, a list is
+        // reindexed. Before 1.2.0 orderBy() dropped the string keys.
         $collection = ALinqCollection::from(['z' => 3, 'y' => 1, 'x' => 2]);
-        $result = $collection->orderBy(fn($x) => $x);
+        $this->assertSame(['y' => 1, 'x' => 2, 'z' => 3], $collection->orderBy(fn($x) => $x)->toArray());
 
-        $resultArray = $result->toArray();
-        $this->assertEquals([1, 2, 3], $resultArray);
+        $list = ALinqCollection::from([3, 1, 2]);
+        $this->assertSame([1, 2, 3], $list->orderBy(fn($x) => $x)->toArray());
+        $this->assertSame([3, 2, 1], $list->orderByDescending(fn($x) => $x)->toArray());
     }
 
     // ===== ORDER BY DESCENDING TESTS =====
@@ -410,5 +413,25 @@ class OrderingOperationsTest extends TestCase
         $this->assertNotSame($original, $sorted);
         $this->assertEquals([3, 1, 2], $original->toArray());
         $this->assertEquals([1, 2, 3], $sorted->toArray());
+    }
+
+
+    /**
+     * Review 2026-10-08, 1.15 / decision 4a: the key selector runs once per item (not twice
+     * per comparison) and may receive the item key.
+     */
+    public function testOrderByCallsTheSelectorOncePerItem(): void
+    {
+        $calls = 0;
+        $sorted = ALinqCollection::from([5, 3, 9, 1, 7, 2, 8, 4, 6])->orderBy(function ($v) use (&$calls) {
+            $calls++;
+            return $v;
+        })->toArray();
+
+        $this->assertSame([1, 2, 3, 4, 5, 6, 7, 8, 9], $sorted);
+        $this->assertSame(9, $calls);
+
+        $this->assertSame(['c' => 3, 'b' => 2, 'a' => 1], ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3])->orderByDescending(fn($v, $k) => $k)->toArray());
+        $this->assertSame(['b', 'a'], ALinqCollection::from(['a', 'b'])->orderBy('strrev')->reverse()->toArray());
     }
 }

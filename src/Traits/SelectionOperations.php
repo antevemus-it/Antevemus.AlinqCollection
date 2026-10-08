@@ -1,16 +1,22 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use stdClass;
+use UnexpectedValueException;
 
 /**
  * SelectionOperations Trait
  *
- * Provides LINQ-style selection and projection operations for collections
+ * Provides LINQ-style selection and projection operations for collections.
+ * Callbacks follow ALinqCallable::withKey(): `($item, $key)` when they accept two
+ * parameters, the item alone otherwise (review 2026-10-08, decision 4a).
  *
- * @version    0.1.0
+ * @version    1.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -24,21 +30,40 @@ trait SelectionOperations
      */
     public function select(callable $selector): IALinqCollection
     {
-        return new self(array_map($selector, $this->items));
+        // Keys are preserved and handed to a two-parameter selector, so the README's
+        // `groupBy()->select(fn(ALinqCollection $group, string $role) => ...)` works; before,
+        // array_map() passed the item alone (review 2026-10-08, 2.1).
+        $selector = ALinqCallable::withKey($selector);
+        $result = [];
+        foreach ($this->items as $key => $item) {
+            $result[$key] = $selector($item, $key);
+        }
+        return new self($result);
     }
 
     /**
      * Project elements and flatten results (SelectMany in LINQ)
+     *
+     * The selector may return any iterable (array, ALinqCollection, Traversable, generator);
+     * a non-iterable result is an error, not a silently dropped item (review 2026-10-08, 2.4).
+     *
+     * @throws UnexpectedValueException When the selector returns a non-iterable value
      */
     public function selectMany(callable $selector): IALinqCollection
     {
+        $selector = ALinqCallable::withKey($selector);
         $result = [];
-        foreach ($this->items as $item) {
-            $selected = $selector($item);
-            if (is_array($selected)) {
-                foreach ($selected as $subItem) {
-                    $result[] = $subItem;
-                }
+        foreach ($this->items as $key => $item) {
+            $selected = $selector($item, $key);
+            if (!is_iterable($selected)) {
+                throw new UnexpectedValueException(sprintf(
+                    'selectMany() expects the selector to return an iterable, %s returned for key %s',
+                    get_debug_type($selected),
+                    var_export($key, true)
+                ));
+            }
+            foreach ($selected as $subItem) {
+                $result[] = $subItem;
             }
         }
         return new self($result);
@@ -58,11 +83,12 @@ trait SelectionOperations
     public function toDictionary(callable $keySelector, ?callable $elementSelector = null): array
     {
         $result = [];
-        $elementSelector = $elementSelector ?? fn($item) => $item;
+        $keySelector = ALinqCallable::withKey($keySelector);
+        $elementSelector = ALinqCallable::withKey($elementSelector ?? fn($item) => $item);
 
-        foreach ($this->items as $item) {
-            $key = $keySelector($item);
-            $result[$key] = $elementSelector($item);
+        foreach ($this->items as $itemKey => $item) {
+            $key = $keySelector($item, $itemKey);
+            $result[$key] = $elementSelector($item, $itemKey);
         }
 
         return $result;
