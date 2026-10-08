@@ -9,7 +9,9 @@ use ArrayIterator;
 use Closure;
 use Generator;
 use InvalidArgumentException;
+use Iterator;
 use IteratorAggregate;
+use IteratorIterator;
 use OverflowException;
 use PDOStatement;
 use RuntimeException;
@@ -24,7 +26,7 @@ use UnderflowException;
  * O(1) memory overhead, designed for multi-gigabyte files, CSV streams and unbuffered
  * database cursors, interoperable with the in-memory ALinqCollection
  *
- * @version    0.1
+ * @version    1.1.2
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -415,16 +417,22 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         return new self(function () use ($size) {
+            // Chunks are reindexed lists, as array_chunk() does on the eager side. Keying the
+            // chunk by the source key made a repeated key overwrite the previous item and
+            // count($chunk) never reach $size: six items with key 0 came out as one chunk of
+            // one (review 2026-10-08, 4.3).
             $chunk = [];
-            foreach ($this as $key => $item) {
-                $chunk[$key] = $item;
-                if (count($chunk) === $size) {
+            $filled = 0;
+            foreach ($this as $item) {
+                $chunk[] = $item;
+                if (++$filled === $size) {
                     yield $chunk;
                     $chunk = [];
+                    $filled = 0;
                 }
             }
 
-            if (!empty($chunk)) {
+            if ($chunk !== []) {
                 yield $chunk;
             }
         });
@@ -442,8 +450,12 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                 $count++;
             }
 
+            // Padding is yielded without an explicit key: the generator continues from the
+            // highest integer key already emitted, as array_pad() does. Keying it by the
+            // counter collided with the source keys after where()/skip() and overwrote real
+            // items (review 2026-10-08, 4.4).
             while ($count < $size) {
-                yield $count => $value;
+                yield $value;
                 $count++;
             }
         });
@@ -513,26 +525,45 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function remember(): self
     {
-        $cache = null;
+        // Resumable memoization (review 2026-10-08, 4.2 and 4.12). The buffer holds
+        // [key, item] pairs, so a source with repeated keys is replayed item by item
+        // instead of collapsing on the key; and the upstream iterator is kept alive between
+        // passes: a short-circuited pass (first(), any(), take(n)) caches what it consumed,
+        // and the next pass replays the buffer and then keeps pulling from where the
+        // upstream stopped. The upstream runs once, whatever the shape of the passes; a
+        // single-pass PDO cursor can therefore be followed by first() and then toArray().
+        $buffer   = [];
+        $upstream = null;
+        $complete = false;
 
-        return new self(function () use (&$cache) {
-            if ($cache !== null) {
-                foreach ($cache as $key => $item) {
+        return new self(function () use (&$buffer, &$upstream, &$complete): Generator {
+            $index = 0;
+            while (true) {
+                if ($index < count($buffer)) {
+                    [$key, $item] = $buffer[$index++];
                     yield $key => $item;
+                    continue;
                 }
-                return;
-            }
 
-            // Buffer locally and promote to the shared cache only when the upstream was
-            // consumed to the end. A short-circuited pass (first(), any(), take(n), zip())
-            // leaves the generator unfinished, so the buffer is discarded and the next pass
-            // re-reads the upstream instead of serving a truncated cache.
-            $buffer = [];
-            foreach ($this as $key => $item) {
-                $buffer[$key] = $item;
-                yield $key => $item;
+                if ($complete) {
+                    return;
+                }
+
+                if ($upstream === null) {
+                    $source   = $this->getIterator();
+                    $upstream = $source instanceof Iterator ? $source : new IteratorIterator($source);
+                    $upstream->rewind();
+                }
+
+                if (!$upstream->valid()) {
+                    $complete = true;
+                    $upstream = null;
+                    return;
+                }
+
+                $buffer[] = [$upstream->key(), $upstream->current()];
+                $upstream->next();
             }
-            $cache = $buffer;
         });
     }
 
@@ -843,9 +874,45 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function toArray(): array
     {
+        return self::materialize($this);
+    }
+
+    /**
+     * Materializes a stream without ever losing an item (key policy of the 2026-10-08
+     * review, decision 1a: "a list is reindexed, a dictionary keeps its keys").
+     *
+     * A stream whose keys are all integers is a list and comes out reindexed, exactly as
+     * the eager ALinqCollection does after where()/take()/skip(); a stream with at least one
+     * string key is a dictionary and keeps its keys, appending an item whose key collides
+     * instead of overwriting it. Before, every materializer did `$result[$key] = $item`:
+     * a source built from two `yield from`, or any where()/skip() over a plain list,
+     * reported count() = 4 and returned two items from toArray().
+     *
+     * @param iterable $items
+     * @return array
+     */
+    private static function materialize(iterable $items): array
+    {
+        $pairs = [];
+        $allIntegerKeys = true;
+        foreach ($items as $key => $item) {
+            $pairs[] = [$key, $item];
+            if (!is_int($key)) {
+                $allIntegerKeys = false;
+            }
+        }
+
+        if ($allIntegerKeys) {
+            return array_column($pairs, 1);
+        }
+
         $result = [];
-        foreach ($this as $key => $item) {
-            $result[$key] = $item;
+        foreach ($pairs as [$key, $item]) {
+            if (array_key_exists($key, $result)) {
+                $result[] = $item;
+            } else {
+                $result[$key] = $item;
+            }
         }
 
         return $result;

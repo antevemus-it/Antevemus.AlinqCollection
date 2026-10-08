@@ -10,7 +10,7 @@ use Closure;
  *
  * A query builder for more complex filtering operations
  *
- * @version    0.1
+ * @version    0.1.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior

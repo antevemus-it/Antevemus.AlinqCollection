@@ -7,7 +7,7 @@ namespace Antevemus\ALinq\Interfaces;
  *
  * Interface for filtering operations on collections
  *
- * @version    0.1
+ * @version    0.1.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior

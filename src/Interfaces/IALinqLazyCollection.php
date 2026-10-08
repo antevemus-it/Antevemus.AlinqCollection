@@ -16,7 +16,7 @@ use Traversable;
  * Interface for generator-based lazy streaming collection operations with deferred
  * execution and constant O(1) memory overhead
  *
- * @version    0.1
+ * @version    1.1.1
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior

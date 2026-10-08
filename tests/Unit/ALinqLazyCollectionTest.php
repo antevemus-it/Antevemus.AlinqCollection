@@ -123,11 +123,79 @@ final class ALinqLazyCollectionTest extends TestCase
     {
         $numbers = ALinqLazyCollection::from([1, 2, 3, 4, 5, 6]);
 
+        // Key policy (review 2026-10-08, decision 1a): a list comes out reindexed, as the
+        // eager where() does; before, the lazy side kept the gaps ([1 => 2, 3 => 4, 5 => 6]).
         $evens = $numbers->where(fn($n) => $n % 2 === 0)->toArray();
-        $this->assertSame([1 => 2, 3 => 4, 5 => 6], $evens);
+        $this->assertSame([2, 4, 6], $evens);
 
         $odds = $numbers->whereNot(fn($n) => $n % 2 === 0)->toArray();
-        $this->assertSame([0 => 1, 2 => 3, 4 => 5], $odds);
+        $this->assertSame([1, 3, 5], $odds);
+
+        // A dictionary keeps its keys.
+        $dictionary = ALinqLazyCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
+        $this->assertSame(['b' => 2], $dictionary->where(fn($n) => $n === 2)->toArray());
+        $this->assertSame(['a' => 1, 'c' => 3], $dictionary->whereNot(fn($n) => $n === 2)->toArray());
+    }
+
+    // =========================================================================
+    // 3b. Key policy and materialization (review 2026-10-08, 4.1 / 4.3 / 4.4)
+    // =========================================================================
+
+    public function testMaterializersNeverLoseItemsWithRepeatedKeys(): void
+    {
+        // Two `yield from` restart the integer keys: 0,1,0,1. Every materializer collapsed
+        // on the key and returned two items while count() said four.
+        $source = static fn() => (static function () {
+            yield from [1, 2];
+            yield from [3, 4];
+        })();
+        $stream = ALinqLazyCollection::from($source);
+
+        $this->assertSame(4, $stream->count());
+        $this->assertSame([1, 2, 3, 4], $stream->toArray());
+        $this->assertSame([1, 2, 3, 4], $stream->toCollection()->toArray());
+        $this->assertSame(4, $stream->toCollection()->count());
+        $this->assertSame(['0' => 1, '1' => 2, '2' => 3, '3' => 4], (array) $stream->toObject());
+        $this->assertSame([[1, 2, 3], [4]], $stream->chunk(3)->toArray());
+        $this->assertSame([1, 2, 3, 4, 'p'], $stream->pad(5, 'p')->toArray());
+        $this->assertSame([2, 3, 4], $stream->skip(1)->toArray());
+        $this->assertSame([1, 2, 3], $stream->take(3)->toArray());
+
+        // Six items that all carry key 0: the chunk used to "never close".
+        $sameKey = ALinqLazyCollection::from(static function () {
+            for ($i = 1; $i <= 6; $i++) {
+                yield 0 => $i;
+            }
+        });
+        $this->assertSame([[1, 2], [3, 4], [5, 6]], $sameKey->chunk(2)->toArray());
+        $this->assertSame(3, $sameKey->chunk(2)->count());
+
+        // A dictionary keeps its keys; a colliding key is appended, never overwritten.
+        $dictionary = ALinqLazyCollection::from(static function () {
+            yield 'a' => 1;
+            yield 'b' => 2;
+            yield 'a' => 3;
+        });
+        $this->assertSame(['a' => 1, 'b' => 2, 0 => 3], $dictionary->toArray());
+        $this->assertSame(3, $dictionary->toCollection()->count());
+    }
+
+    public function testPadNeverOverwritesRealItems(): void
+    {
+        // pad() keyed the padding by its counter, which collided with the keys that
+        // where()/skip() leave behind: "c" became "p" and count() still said five.
+        $padded = ALinqLazyCollection::from(['a', 'b', 'c'])->where(fn($v) => $v !== 'a')->pad(5, 'p');
+        $this->assertSame(['b', 'c', 'p', 'p', 'p'], $padded->toArray());
+        $this->assertSame(5, $padded->count());
+
+        $this->assertSame(['c', 'd', 'p', 'p'], ALinqLazyCollection::from(['a', 'b', 'c', 'd'])->skip(2)->pad(4, 'p')->toArray());
+        $this->assertSame(['a', 'b', 'p', 'p'], ALinqLazyCollection::from([0 => 'a', 3 => 'b'])->pad(4, 'p')->toArray());
+
+        // Parity with the eager side on the same pipeline.
+        $this->assertSame(
+            ALinqCollection::from(['a', 'b', 'c'])->where(fn($v) => $v !== 'a')->pad(5, 'p')->toArray(),
+            $padded->toArray()
+        );
     }
 
     public function testSelect(): void
@@ -482,11 +550,42 @@ final class ALinqLazyCollectionTest extends TestCase
         $lazy4 = ALinqLazyCollection::from(fn() => yield from range(1, 10))->remember();
         $this->assertCount(10, $lazy4->zip($lazy4)->toArray(), 'zip() of the same remembered stream lost items');
 
-        // A complete pass promotes the cache: upstream ran for first() and once more for toArray(), never again.
-        $this->assertSame(2, $invocations);
+        // Resumable memoization (review 2026-10-08, 4.12): the partial pass caches what it
+        // consumed and the next pass continues from there, so the upstream runs ONCE. The
+        // 1.1.1 fix discarded the partial buffer and re-ran the upstream (2 invocations).
+        $this->assertSame(1, $invocations);
         $lazy->toArray();
         $lazy->count();
-        $this->assertSame(2, $invocations, 'upstream re-executed after the cache was promoted');
+        $this->assertSame(1, $invocations, 'upstream re-executed after the cache was complete');
+    }
+
+    public function testRememberReplaysRepeatedKeysAndResumesACursor(): void
+    {
+        // Repeated keys: the cache was keyed by the source key, so the second pass saw
+        // two items where the first saw four (review 2026-10-08, 4.2).
+        $invocations = 0;
+        $remembered = ALinqLazyCollection::from(static function () use (&$invocations) {
+            $invocations++;
+            yield from [1, 2];
+            yield from [3, 4];
+        })->remember();
+
+        $this->assertSame(4, $remembered->count());
+        $this->assertSame(4, $remembered->count());
+        $this->assertSame([1, 2, 3, 4], $remembered->toArray());
+        $this->assertSame(10, $remembered->sum());
+        $this->assertSame(1, $invocations);
+
+        // Single-pass cursor + remember() + partial pass: before, toArray() after first()
+        // threw "already been traversed" and the rows were lost (review 2026-10-08, 4.12).
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE t (id INTEGER, n TEXT)');
+        $pdo->exec("INSERT INTO t VALUES (1, 'a'), (2, 'b'), (3, 'c')");
+        $cursor = ALinqLazyCollection::fromCursor($pdo->query('SELECT id, n FROM t ORDER BY id'))->remember();
+
+        $this->assertSame(['id' => 1, 'n' => 'a'], $cursor->first());
+        $this->assertSame([['id' => 1, 'n' => 'a'], ['id' => 2, 'n' => 'b'], ['id' => 3, 'n' => 'c']], $cursor->toArray());
+        $this->assertSame(3, $cursor->count(), 'the remembered cursor is re-traversable after a partial pass');
     }
 
     public function testFromFileDoesNotSplitLinesLongerThanBuffer(): void

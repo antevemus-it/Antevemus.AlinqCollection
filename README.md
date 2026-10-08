@@ -3,7 +3,7 @@
 [![Latest Stable Version](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-338%20passed%20%7C%20581%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-342%20passed%20%7C%20614%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -538,22 +538,22 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 335 ( 18%)
-............................................................... 126 / 335 ( 37%)
-............................................................... 189 / 335 ( 56%)
-............................................................... 252 / 335 ( 75%)
-............................................................... 315 / 335 ( 94%)
-....................                                            335 / 335 (100%)
+...............................................................  63 / 342 ( 18%)
+............................................................... 126 / 342 ( 37%)
+............................................................... 189 / 342 ( 56%)
+............................................................... 252 / 342 ( 75%)
+............................................................... 315 / 342 ( 94%)
+....................                                            342 / 342 (100%)
 
 Time: 00:06.312, Memory: 6.00 MB
 
-OK (338 tests, 581 assertions)
+OK (342 tests, 614 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **338 Unit Tests & 581 Assertions** certifying all 8 functional traits and generator streaming engine.
+- **342 Unit Tests & 614 Assertions** certifying all 8 functional traits and generator streaming engine.
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 

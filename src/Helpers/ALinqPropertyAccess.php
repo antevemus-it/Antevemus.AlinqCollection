@@ -9,7 +9,7 @@ use Closure;
  *
  * Helper class for property/method access on objects
  *
- * @version    0.1
+ * @version    0.1.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior

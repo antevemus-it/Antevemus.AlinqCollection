@@ -263,6 +263,25 @@ class FilteringOperationsTest extends TestCase
         $this->assertEquals('default', $result);
     }
 
+    /**
+     * Review 2026-10-08, 2.5: the predicate of last()/lastOrDefault() received a reversed,
+     * reindexed key, so `fn($v, $k) => $k !== 0` on [1..5] answered 4 and `$k === 0` answered 5.
+     */
+    public function testLastWithKeyPredicateSeesTheRealKeys(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+
+        $this->assertSame(5, $collection->last(fn($v, $k) => $k !== 0));
+        $this->assertSame(1, $collection->lastOrDefault('d', fn($v, $k) => $k === 0));
+        $this->assertSame('d', $collection->lastOrDefault('d', fn($v, $k) => $k > 10));
+
+        // Same answer as first() for a predicate that matches a single key.
+        $this->assertSame($collection->first(fn($v, $k) => $k === 2), $collection->last(fn($v, $k) => $k === 2));
+
+        // Dictionary keys were never affected; they must keep working.
+        $this->assertSame(2, ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3])->lastOrDefault(null, fn($v, $k) => $k === 'b'));
+    }
+
     // ===== SINGLE OR DEFAULT TESTS =====
 
     /**

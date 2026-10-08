@@ -9,7 +9,7 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  *
  * Provides filtering and element selection operations for collections
  *
- * @version    0.1
+ * @version    1.1.2
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -94,7 +94,10 @@ trait FilteringOperations
             return empty($this->items) ? $default : end($this->items);
         }
 
-        $reversedItems = array_reverse($this->items);
+        // preserve_keys: the predicate receives the real key. Without it a list was
+        // reindexed backwards and `fn($v, $k) => $k !== 0` on [1..5] answered 4 instead of 5
+        // (review 2026-10-08, 2.5).
+        $reversedItems = array_reverse($this->items, true);
         $result = array_find($reversedItems, $predicate);
         return $result !== null ? $result : $default;
     }

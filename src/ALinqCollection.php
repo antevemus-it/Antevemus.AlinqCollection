@@ -19,7 +19,7 @@ use Traversable;
  *
  * A comprehensive LINQ-style collection class leveraging PHP 8.4 array functions
  *
- * @version    0.1
+ * @version    1.1.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior

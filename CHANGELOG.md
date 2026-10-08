@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.2] - 2026-10-08
+
+### Fixed
+- **Lazy materializers no longer lose items.** `toArray()`, `toCollection()` and `toObject()` on an `ALinqLazyCollection` stored each item under its source key, so a source whose keys repeat (two `yield from`, a `where()`/`skip()` pipeline over a plain list, any generator restarting its counter) reported `count()` = 4 and returned two items. The materializers now follow the key policy of the eager collection: a stream whose keys are all integers is a list and comes out reindexed (`where()` over `[1..6]` gives `[2, 4, 6]`, not `[1 => 2, 3 => 4, 5 => 6]`); a stream with string keys is a dictionary and keeps its keys, appending an item whose key collides instead of overwriting it. **Breaking for** code that relied on the gaps left by the lazy `where()`/`skip()`/`take()` over a list.
+- **`chunk()` on a lazy stream** keyed each chunk by the source key: repeated keys overwrote items and the chunk never reached its size (six items with key 0 came out as one chunk of one). Chunks are now reindexed lists, as `array_chunk()` does on the eager side.
+- **`pad()` on a lazy stream** keyed the padding by its counter, which collided with the keys that `where()`/`skip()` leave behind and overwrote real items (`['a','b','c']->where(v != 'a')->pad(5, 'p')` gave `b, p, p, p`). Padding is now appended after the last integer key, as `array_pad()` does.
+- **`remember()` with repeated keys** collapsed the cache on the key, so the second pass saw two items where the first saw four.
+- **`last()` / `lastOrDefault()` with a key-aware predicate** reversed the list without preserving keys, so the predicate saw the keys backwards (`fn($v, $k) => $k !== 0` on `[1..5]` answered 4). The real keys are now passed.
+
+### Changed
+- **`remember()` is resumable.** A short-circuited pass (`first()`, `any()`, `take(n)`) now caches what it consumed and the next pass replays the cache and keeps pulling from where the upstream stopped: the upstream runs once whatever the shape of the passes (1.1.1 discarded the partial buffer and re-ran it), and a single-pass PDO cursor wrapped in `remember()` can be followed by `first()` and then `toArray()` instead of throwing.
+
+### Added
+- Regression tests for the above (suite now **342 tests, 614 assertions**); two pre-existing tests that encoded the old key gaps and the 1.1.1 re-run of the upstream were updated to the new contract.
+
+### Documentation
+- Class DocBlock `@version` tags now state the package version in which each file was last changed (derived from the repository history; 19 files `0.1.0`, `IALinqLazyCollection` `1.1.1`, `ALinqCollection` `1.1.0`, the two files changed here `1.1.2`). This one-off correction of the tags does not itself count as a change to the files. CHANGELOG footer links rewritten for every version against the GitHub repository, and an `[Unreleased]` section added.
+
 ## [1.1.1] - 2026-10-07
 
 ### Fixed
@@ -172,6 +192,10 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://dev.azure.com/antevemus/A-Flow%20Engine/_git/Antevemus.AlinqCollection/branchCompare?baseVersion=GTv0.1.1&targetVersion=GBmain
-[0.1.1]: https://dev.azure.com/antevemus/A-Flow%20Engine/_git/Antevemus.AlinqCollection/branchCompare?baseVersion=GTv0.1.0&targetVersion=GTv0.1.1
-[0.1.0]: https://dev.azure.com/antevemus/A-Flow%20Engine/_git/Antevemus.AlinqCollection?version=GTv0.1.0
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v0.1.1...v1.0.0
+[0.1.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/releases/tag/v0.1.0

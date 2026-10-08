@@ -10,7 +10,7 @@ use stdClass;
  *
  * Provides LINQ-style selection and projection operations for collections
  *
- * @version    0.1
+ * @version    0.1.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
