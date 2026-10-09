@@ -68,7 +68,7 @@ If using directly from GitHub prior to or alongside Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.0"
+        "antevemus/alinq-collection": "^1.3"
     }
 }
 ```
@@ -240,7 +240,8 @@ $firstOrNull = $collection->firstOrDefault(null, fn($x) => $x > 100); // null
 $single = $collection->where(fn($x) => $x === 3)->singleOrDefault(); // 3
 
 // chunk(size) & pad(size, value)
-$chunks = $collection->chunk(3); // [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10]]
+$chunks = $collection->chunk(3);                       // 4 collections: [1, 2, 3], [4, 5, 6], [7, 8, 9], [10]
+$sums = $chunks->select(fn($chunk) => $chunk->sum());  // [6, 15, 24, 10]
 $padded = ALinqCollection::from([1, 2])->pad(5, 0); // [1, 2, 0, 0, 0]
 ```
 
@@ -529,6 +530,23 @@ $totalCount = $cachedStream->count(); // Generator runs once
 $average    = $cachedStream->average(); // Reads from local memory cache, no generator rerun
 ```
 
+### 11. The Contract: Keys, Equality, Empty Collections (since 1.3.0)
+
+Both collections obey one written contract, enforced by a parity test that runs every shared operation over the same inputs on the eager and the lazy side (`tests/Contract/ParityTest.php`, zero divergences allowed).
+
+| Rule | Behaviour |
+|---|---|
+| **Keys** | A **list** (`array_is_list()`) comes out **reindexed** from every filtering, slicing, set or ordering operation; a **dictionary** (any other key shape, including `[10 => 'a', 20 => 'b']`) **keeps its keys**. `select()` always preserves keys. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `zip()`, `unionBy()` always produce a list. `chunk()` is a list of collections (each chunk follows the rule of its source). The lazy collection knows whether its source is a list (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `range()`, `repeat()`); a raw generator is "unknown" and keeps its keys while streaming, and `toArray()` reindexes it only when every key is an integer. Materialization never loses an item: a repeated key is appended. |
+| **Equality** | Elements and keys are compared by **strict, type-aware identity** everywhere: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `contains`. `1`, `'1'`, `1.0` and `true` are four different values; arrays compare by value; objects by identity. A `null` key never matches in `join`/`groupJoin` (LINQ and SQL semantics). A database column that arrives as a string does not match an integer key: cast on your side. A custom comparer (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) may return `bool` (`true` = equal) or a `<=>` style integer (`0` = equal). |
+| **Group keys** | `groupBy`, `countBy`, `aggregateBy` and `toDictionary` accept `int`, `string` and `BackedEnum` (its value) keys; `null`, `bool`, `float`, arrays and objects throw `InvalidArgumentException` instead of being silently coerced. `toDictionary()` throws on a repeated key. |
+| **Empty collections** | As in LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` return the default; `singleOrDefault()` throws `OverflowException` on more than one match; `random()` throws `UnderflowException` like `first()` and `random(n > 1)` returns an empty collection like `take(n)`; `sum()` of nothing is `0`, `product()` of nothing is `1`; `any()` means "has at least one item"; `all($p)` of nothing is `true`; `all()` without predicate means "every item is truthy". |
+| **Arguments** | `take`/`skip`/`pad` with a negative count, `chunk(0)`, `random(0)`, `range()` with a non-positive step throw `InvalidArgumentException` (nothing slices from the tail or is silently ignored). |
+| **Numbers** | `sum`, `average`, `min`, `max`, `product` **ignore `null`** (`average([1, null, 2])` is `1.5`); when only `null` remains the collection counts as empty. A non-numeric value (string, array, object) throws `InvalidArgumentException` in `sum`/`average`/`product`; `min`/`max` compare any scalar or `DateTimeInterface`. |
+| **Callbacks** | A callback receives `($item, $key)` when it accepts two parameters and the item alone otherwise, so `where('is_int')`, `select('trim')` and `fn($v, $k) => ...` all work in every operator of both collections. |
+| **Immutability** | No query operation mutates the collection it was called on. `each()` iterates over a copy: a by-reference callback does not change the collection (use `select()` to transform). |
+| **Query builder** | `toPredicate()` is a snapshot: later `where()` calls do not change a predicate already returned. `create($mode)` accepts `and`/`or` (any case) and throws otherwise. When the property resolves to `null`, `>`, `>=`, `<`, `<=`, `between`, `notBetween`, `contains`, `startsWith`, `endsWith` are `false`; `=`/`==` and `!=`/`<>` compare strictly against `null` (`where('x', '=', null)` means "is null"); a missing property resolves to `null`. |
+| **JSON** | Both collections implement `JsonSerializable`: a list encodes as a JSON array, a dictionary as a JSON object. |
+
 ---
 
 ## 🧪 Quality Assurance & Test Coverage
@@ -544,22 +562,24 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 387 ( 18%)
-............................................................... 126 / 387 ( 37%)
-............................................................... 189 / 387 ( 56%)
-............................................................... 252 / 387 ( 75%)
-............................................................... 315 / 387 ( 94%)
-....................                                            387 / 387 (100%)
+...............................................................  63 / 442 ( 14%)
+............................................................... 126 / 442 ( 28%)
+............................................................... 189 / 442 ( 42%)
+............................................................... 252 / 442 ( 57%)
+............................................................... 315 / 442 ( 71%)
+............................................................... 378 / 442 ( 85%)
+............................................................... 441 / 442 ( 99%)
+.                                                               442 / 442 (100%)
 
-Time: 00:06.312, Memory: 6.00 MB
+Time: 00:00.330, Memory: 8.00 MB
 
-OK (387 tests, 1050 assertions)
+OK (442 tests, 1381 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **387 Unit Tests & 1050 Assertions** certifying all 8 functional traits and generator streaming engine.
+- **442 Tests & 1381 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -573,6 +593,9 @@ OK (387 tests, 1050 assertions)
 - [x] **v1.1.1**: Streaming engine correctness: `remember()` caches only complete passes, `fromFile()` keeps long lines whole, single-pass cursors fail loudly on re-traversal.
 - [x] **v1.1.2**: Lazy materializers never lose items (list reindexed, dictionary preserved), resumable `remember()`, `last()` with the real key.
 - [x] **v1.2.0**: README promises I: `groupBy()` groups are collections, `select()` receives the key, every operator accepts native callables, `distinct()` is strict and safe for arrays/objects, `selectMany()` flattens any iterable, `between`/`notIn`/`isNull` in the query builder, dot-notation and getter resolution in `ALinqPropertyAccess`.
+- [x] **v1.3.0**: The contract: one key rule, strict identity, LINQ semantics on empty collections, validated arguments and group keys, `null`-aware aggregations and query builder, `count($predicate)`, `JsonSerializable`; eager × lazy parity enforced by test (§11).
+- [ ] **Lazy sources hardening**: irregular CSV rows, BOM, directories in `fromFile()`, one statement per `fromCursor()` collection.
+- [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order; extracting a common package is a 2.0 topic).
 - [ ] **`thenBy()` / `thenByDescending()`**: composite, stable multi-key ordering (today: `orderByCustom()`).
 - [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: announced in the 0.1.0 release notes and never shipped; see the CHANGELOG erratum.
 - [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.

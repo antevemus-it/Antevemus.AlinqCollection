@@ -12,6 +12,9 @@
         <testsuite name="Unit Tests">
             <directory>tests/Unit</directory>
         </testsuite>
+        <testsuite name="Contract Tests">
+            <directory>tests/Contract</directory>
+        </testsuite>
         <testsuite name="Trait Tests">
             <directory>tests/Traits</directory>
         </testsuite>

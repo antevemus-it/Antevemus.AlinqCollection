@@ -281,21 +281,37 @@ class SelectionOperationsTest extends TestCase
     }
 
     /**
-     * Test toDictionary overwrites duplicate keys
+     * RN-08 (forward 015, D3): a key produced twice throws, as ToDictionary does in LINQ.
+     * Before 1.3.0 the second element silently overwrote the first.
      */
-    public function testToDictionaryOverwritesDuplicateKeys(): void
+    public function testToDictionaryThrowsOnDuplicateKeys(): void
     {
         $collection = ALinqCollection::from([
             ['id' => 1, 'name' => 'First'],
             ['id' => 1, 'name' => 'Second']
         ]);
 
-        $result = $collection->toDictionary(
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('toDictionary() key 1 produced twice (second time for item at key 1)');
+
+        $collection->toDictionary(
             fn($item) => $item['id'],
             fn($item) => $item['name']
         );
+    }
 
-        $this->assertEquals('Second', $result[1]);
+    /**
+     * RN-07: toDictionary() validates the key like groupBy(): BackedEnum becomes its value,
+     * null/bool/float/array/object throw.
+     */
+    public function testToDictionaryValidatesKeys(): void
+    {
+        $collection = ALinqCollection::from([['k' => SelectionStatus::On, 'v' => 1], ['k' => SelectionStatus::Off, 'v' => 2]]);
+        $this->assertSame(['on' => 1, 'off' => 2], $collection->toDictionary(fn($i) => $i['k'], fn($i) => $i['v']));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('toDictionary() expects the key selector to return an int, a string or a BackedEnum, float returned for item at key 0');
+        $collection->toDictionary(fn($i) => 1.5);
     }
 
     // ===== TO OBJECT TESTS =====
@@ -463,4 +479,13 @@ class SelectionOperationsTest extends TestCase
         $this->expectException(\UnexpectedValueException::class);
         ALinqCollection::from([1, 2])->selectMany(fn($x) => $x * 10);
     }
+}
+
+/**
+ * Fixture for RN-07: a BackedEnum is accepted as dictionary key (its value is used).
+ */
+enum SelectionStatus: string
+{
+    case On = "on";
+    case Off = "off";
 }

@@ -155,29 +155,67 @@ class GroupingOperationsTest extends TestCase
     }
 
     /**
-     * Test groupBy with boolean keys
+     * RN-07 (forward 015): a group key is an int, a string or a BackedEnum; bool, null, float,
+     * arrays and other objects throw with the type and the item key. Before 1.3.0 PHP coerced
+     * them in silence (true -> 1, null -> '', 1.5 -> 1 with E_DEPRECATED) or threw a raw
+     * TypeError (review 2026-10-08, 2.10). The bool case of this test now expects the
+     * exception; a caller that wants two groups maps the flag to a name or an int.
      */
-    public function testGroupByWithBooleanKeys(): void
+    public function testGroupByRejectsKeysThatAreNotIntStringOrBackedEnum(): void
     {
         $collection = ALinqCollection::from([
             ['active' => true, 'name' => 'User1'],
             ['active' => false, 'name' => 'User2'],
-            ['active' => true, 'name' => 'User3'],
-            ['active' => false, 'name' => 'User4']
         ]);
 
-        $result = $collection->groupBy(fn($item) => $item['active']);
+        $cases = [
+            'bool' => fn($item) => $item['active'],
+            'null' => fn($item) => null,
+            'float' => fn($item) => 1.5,
+            'array' => fn($item) => [1],
+            'stdClass' => fn($item) => new \stdClass(),
+        ];
+        foreach ($cases as $type => $selector) {
+            try {
+                $collection->groupBy($selector);
+                $this->fail("groupBy() with a $type key must throw");
+            } catch (\InvalidArgumentException $e) {
+                $this->assertSame(
+                    "groupBy() expects the key selector to return an int, a string or a BackedEnum, $type returned for item at key 0",
+                    $e->getMessage()
+                );
+            }
+        }
 
-        $resultArray = $result->toArray();
+        $byName = $collection->groupBy(fn($item) => $item['active'] ? 'active' : 'inactive')->toArray();
+        $this->assertSame(['active', 'inactive'], array_keys($byName));
+        $this->assertCount(1, $byName['active']);
 
-        $this->assertArrayHasKey(1, $resultArray);
-        $this->assertArrayHasKey(0, $resultArray);
-        $this->assertCount(2, $resultArray[1]);
-        $this->assertCount(2, $resultArray[0]);
+        // countBy() and aggregateBy() go through the same validation
+        $this->expectException(\InvalidArgumentException::class);
+        $collection->countBy(fn($item) => $item['active']);
     }
 
     /**
-     * Test groupBy with computed key
+     * RN-07: a BackedEnum key is grouped under its backing value.
+     */
+    public function testGroupByAcceptsBackedEnumKeys(): void
+    {
+        $collection = ALinqCollection::from([
+            ['status' => GroupingStatus::Active, 'id' => 1],
+            ['status' => GroupingStatus::Blocked, 'id' => 2],
+            ['status' => GroupingStatus::Active, 'id' => 3],
+        ]);
+
+        $groups = $collection->groupBy(fn($item) => $item['status'])->toArray();
+
+        $this->assertSame(['active', 'blocked'], array_keys($groups));
+        $this->assertSame([1, 3], $groups['active']->column('id')->toArray());
+        $this->assertSame(['active' => 2, 'blocked' => 1], $collection->countBy(fn($item) => $item['status'])->toArray());
+    }
+
+    /**
+     * Test groupBy with computed key (cast to int since 1.3.0: a float key throws, RN-07)
      */
     public function testGroupByWithComputedKey(): void
     {
@@ -189,7 +227,7 @@ class GroupingOperationsTest extends TestCase
             ['value' => 30]
         ]);
 
-        $result = $collection->groupBy(fn($item) => floor($item['value'] / 10));
+        $result = $collection->groupBy(fn($item) => (int) floor($item['value'] / 10));
 
         $resultArray = $result->toArray();
 
@@ -303,7 +341,8 @@ class GroupingOperationsTest extends TestCase
     }
 
     /**
-     * Test groupBy with null keys
+     * RN-07: a null key throws (before 1.3.0 it was silently grouped under ''). The caller
+     * names the group explicitly.
      */
     public function testGroupByWithNullKeys(): void
     {
@@ -313,12 +352,13 @@ class GroupingOperationsTest extends TestCase
             ['category' => null, 'value' => 3]
         ]);
 
-        $result = $collection->groupBy(fn($item) => $item['category']);
+        $result = $collection->groupBy(fn($item) => $item['category'] ?? 'uncategorized')->toArray();
 
-        $resultArray = $result->toArray();
+        $this->assertSame(['uncategorized', 'A'], array_keys($result));
+        $this->assertCount(2, $result['uncategorized']);
 
-        $this->assertArrayHasKey('', $resultArray);
-        $this->assertCount(2, $resultArray['']);
+        $this->expectException(\InvalidArgumentException::class);
+        $collection->groupBy(fn($item) => $item['category']);
     }
 
 
@@ -355,4 +395,13 @@ class GroupingOperationsTest extends TestCase
         $byIndexParity = ALinqCollection::from(['a', 'b', 'c'])->groupBy(fn($v, $k) => $k % 2);
         $this->assertSame(['a', 'c'], $byIndexParity->toArray()[0]->toArray());
     }
+}
+
+/**
+ * Fixture for RN-07: a BackedEnum is accepted as group key (its value is used).
+ */
+enum GroupingStatus: string
+{
+    case Active = "active";
+    case Blocked = "blocked";
 }

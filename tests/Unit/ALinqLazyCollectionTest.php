@@ -8,6 +8,7 @@ use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ALinq\ALinqLazyCollection;
 use Antevemus\ALinq\Interfaces\IALinqLazyCollection;
 use ArrayIterator;
+use Closure;
 use OverflowException;
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -156,7 +157,7 @@ final class ALinqLazyCollectionTest extends TestCase
         $this->assertSame([1, 2, 3, 4], $stream->toCollection()->toArray());
         $this->assertSame(4, $stream->toCollection()->count());
         $this->assertSame(['0' => 1, '1' => 2, '2' => 3, '3' => 4], (array) $stream->toObject());
-        $this->assertSame([[1, 2, 3], [4]], $stream->chunk(3)->toArray());
+        $this->assertSame([[1, 2, 3], [4]], self::chunks($stream->chunk(3)));
         $this->assertSame([1, 2, 3, 4, 'p'], $stream->pad(5, 'p')->toArray());
         $this->assertSame([2, 3, 4], $stream->skip(1)->toArray());
         $this->assertSame([1, 2, 3], $stream->take(3)->toArray());
@@ -167,7 +168,7 @@ final class ALinqLazyCollectionTest extends TestCase
                 yield 0 => $i;
             }
         });
-        $this->assertSame([[1, 2], [3, 4], [5, 6]], $sameKey->chunk(2)->toArray());
+        $this->assertSame([[1, 2], [3, 4], [5, 6]], self::chunks($sameKey->chunk(2)));
         $this->assertSame(3, $sameKey->chunk(2)->count());
 
         // A dictionary keeps its keys; a colliding key is appended, never overwritten.
@@ -189,7 +190,9 @@ final class ALinqLazyCollectionTest extends TestCase
         $this->assertSame(5, $padded->count());
 
         $this->assertSame(['c', 'd', 'p', 'p'], ALinqLazyCollection::from(['a', 'b', 'c', 'd'])->skip(2)->pad(4, 'p')->toArray());
-        $this->assertSame(['a', 'b', 'p', 'p'], ALinqLazyCollection::from([0 => 'a', 3 => 'b'])->pad(4, 'p')->toArray());
+        // [0 => 'a', 3 => 'b'] is a dictionary (not a list): since 1.3.0 (RN-02) it keeps its
+        // keys and the padding is appended; before, the lazy side reindexed it to a list.
+        $this->assertSame([0 => 'a', 3 => 'b', 4 => 'p', 5 => 'p'], ALinqLazyCollection::from([0 => 'a', 3 => 'b'])->pad(4, 'p')->toArray());
 
         // Parity with the eager side on the same pipeline.
         $this->assertSame(
@@ -255,8 +258,11 @@ final class ALinqLazyCollectionTest extends TestCase
 
     public function testChunkAndPad(): void
     {
-        $chunks = ALinqLazyCollection::range(1, 7)->chunk(3)->toArray();
-        $this->assertSame([[1, 2, 3], [4, 5, 6], [7]], array_values(array_map('array_values', $chunks)));
+        $chunked = ALinqLazyCollection::range(1, 7)->chunk(3);
+        $this->assertContainsOnlyInstancesOf(ALinqCollection::class, $chunked->toArray());
+        $this->assertSame([[1, 2, 3], [4, 5, 6], [7]], self::chunks($chunked));
+        // D10: each chunk stays queryable
+        $this->assertSame([6, 15, 7], $chunked->select(fn(ALinqCollection $c) => $c->sum())->toArray());
 
         $padded = ALinqLazyCollection::from([10, 20])->pad(5, 0)->toArray();
         $this->assertSame([10, 20, 0, 0, 0], array_values($padded));
@@ -669,5 +675,297 @@ final class ALinqLazyCollectionTest extends TestCase
         // distinct() shares the typed identity rule with the eager side: 1, '1' and true stay distinct.
         $this->assertSame([1, '1', true], ALinqLazyCollection::from([1, '1', true, 1])->distinct()->toArray());
         $this->assertSame([[1, 2], [3, 4]], ALinqLazyCollection::from([[1, 2], [3, 4], [1, 2]])->distinct()->toArray());
+    }
+
+    // =========================================================================
+    // 13. The 1.3.0 contract (review 2026-10-08, forward 015): keys, empty, null, arguments
+    // =========================================================================
+
+    /**
+     * @return array<int|string, mixed> the keys and items as the stream emits them
+     */
+    private static function streamed(iterable $stream): array
+    {
+        $pairs = [];
+        foreach ($stream as $key => $item) {
+            $pairs[] = [$key, $item];
+        }
+        return $pairs;
+    }
+
+    public function testWhereOnListEmitsSequentialKeysWhileStreaming(): void
+    {
+        // RN-03: a list source emits renumbered keys already while streaming, not only after
+        // toArray(); before, foreach saw the gaps [1 => 'b', 2 => 'c'].
+        $stream = ALinqLazyCollection::from(['a', 'b', 'c'])->where(fn($v) => $v !== 'a');
+        $this->assertSame([[0, 'b'], [1, 'c']], self::streamed($stream));
+
+        $pipeline = ALinqLazyCollection::from([1, 2, 3, 4, 5, 6])
+            ->skip(1)
+            ->where(fn($v) => $v % 2 === 0)
+            ->select(fn($v) => $v * 10)
+            ->distinct()
+            ->tap(fn() => null)
+            ->take(2);
+        $this->assertSame([[0, 20], [1, 40]], self::streamed($pipeline));
+        $this->assertSame([[0, 60]], self::streamed(
+            ALinqLazyCollection::from([10, 20, 60, 70])->skipWhile(fn($v) => $v < 60)->takeWhile(fn($v) => $v < 70)->skip(0)
+        ));
+
+        // Sources that are lists by construction.
+        $this->assertSame([[0, 3], [1, 4]], self::streamed(ALinqLazyCollection::range(1, 4)->where(fn($v) => $v > 2)));
+        $this->assertSame([[0, 'x']], self::streamed(ALinqLazyCollection::repeat('x', 3)->take(1)));
+        $this->assertSame([[0, 2]], self::streamed(ALinqLazyCollection::from([1, 2])->skip(1)));
+    }
+
+    public function testWhereOnDictionaryKeepsKeys(): void
+    {
+        $dictionary = ALinqLazyCollection::from(['x' => 1, 'y' => 2, 'z' => 3]);
+        $this->assertSame([['y', 2], ['z', 3]], self::streamed($dictionary->where(fn($v) => $v > 1)));
+        $this->assertSame(['y' => 2, 'z' => 3], $dictionary->where(fn($v) => $v > 1)->toArray());
+        $this->assertSame(['x' => 10, 'y' => 20, 'z' => 30], $dictionary->select(fn($v) => $v * 10)->toArray());
+
+        // Integer keys that are not sequential are a dictionary too (RN-01), on both sides.
+        $sparse = ALinqLazyCollection::from([10 => 'a', 20 => 'b', 30 => 'c']);
+        $this->assertSame([20 => 'b', 30 => 'c'], $sparse->skip(1)->toArray());
+        $this->assertSame([10 => 'a', 20 => 'b'], $sparse->take(2)->toArray());
+        $this->assertSame([10 => 'a'], $sparse->distinct()->takeWhile(fn($v) => $v === 'a')->toArray());
+    }
+
+    public function testUnknownSourceKeepsKeysWhileStreamingAndMaterializesByKeyType(): void
+    {
+        // A generator is an unknown source: the original key is emitted while streaming and
+        // toArray() applies the 1.1.2 rule (all-integer keys -> list, otherwise dictionary).
+        $integers = ALinqLazyCollection::from(static function () {
+            yield 0 => 'a';
+            yield 1 => 'b';
+            yield 2 => 'c';
+        })->where(fn($v) => $v !== 'a');
+        $this->assertSame([[1, 'b'], [2, 'c']], self::streamed($integers));
+        $this->assertSame(['b', 'c'], $integers->toArray());
+
+        $strings = ALinqLazyCollection::from(static function () {
+            yield 'k1' => 1;
+            yield 'k2' => 2;
+        })->select(fn($v) => $v + 1);
+        $this->assertSame([['k1', 2], ['k2', 3]], self::streamed($strings));
+        $this->assertSame(['k1' => 2, 'k2' => 3], $strings->toArray());
+    }
+
+    public function testChunkPadConcatZipSelectManyFollowTheKeyRule(): void
+    {
+        // chunk(): a list of collections; inside each chunk a dictionary keeps its keys.
+        $this->assertSame([['a' => 1, 'b' => 2], ['c' => 3]], self::chunks(ALinqLazyCollection::from(['a' => 1, 'b' => 2, 'c' => 3])->chunk(2)));
+        $this->assertSame([[2, 3], [4]], self::chunks(ALinqLazyCollection::from([1, 2, 3, 4])->where(fn($v) => $v > 1)->chunk(2)));
+        $streamedChunks = array_map(
+            static fn(array $pair) => [$pair[0], $pair[1]->toArray()],
+            self::streamed(ALinqLazyCollection::from([1, 2, 3, 4])->skip(1)->chunk(2))
+        );
+        $this->assertSame([[0, [2, 3]], [1, [4]]], $streamedChunks);
+
+        // pad(): a dictionary keeps its keys and the padding is appended.
+        $this->assertSame(['a' => 1, 0 => 'p', 1 => 'p'], ALinqLazyCollection::from(['a' => 1])->pad(3, 'p')->toArray());
+        $this->assertSame([1, 2, 'p'], ALinqLazyCollection::from([1, 2])->pad(3, 'p')->toArray());
+
+        // concat(), zip(), selectMany(): always a list (RN-17), nothing overwritten.
+        $this->assertSame([1, 2, 9], ALinqLazyCollection::from(['a' => 1, 'b' => 2])->concat(['a' => 9])->toArray());
+        $this->assertSame([[0, 1], [1, 2]], self::streamed(ALinqLazyCollection::from(['a' => 1, 'b' => 2])->concat([])));
+        $this->assertSame([[1, 'x'], [2, 'y']], ALinqLazyCollection::from(['a' => 1, 'b' => 2])->zip(['x', 'y'])->toArray());
+        $this->assertSame([1, 1, 2, 2], ALinqLazyCollection::from(['a' => 1, 'b' => 2])->selectMany(fn($v) => [$v, $v])->toArray());
+        // concat() with a Closure factory and with a plain callable array as data.
+        $this->assertSame([1, 2, 3], ALinqLazyCollection::from([1])->concat(fn() => yield from [2, 3])->toArray());
+    }
+
+    public function testTakeSkipPadChunkRangeRepeatRejectInvalidArguments(): void
+    {
+        // RN-13: before, take(-1)/skip(-1)/pad(-1) were silently ignored on the lazy side.
+        $calls = [
+            'take(-1)'          => fn() => ALinqLazyCollection::from([1])->take(-1),
+            'skip(-1)'          => fn() => ALinqLazyCollection::from([1])->skip(-1),
+            'pad(-1)'           => fn() => ALinqLazyCollection::from([1])->pad(-1, 0),
+            'chunk(0)'          => fn() => ALinqLazyCollection::from([1])->chunk(0),
+            'range(step 0)'     => fn() => ALinqLazyCollection::range(1, 5, 0),
+            'repeat(-1)'        => fn() => ALinqLazyCollection::repeat('x', -1),
+        ];
+        foreach ($calls as $label => $call) {
+            try {
+                $call();
+                $this->fail("$label did not throw");
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('at least', $e->getMessage(), $label);
+            }
+        }
+
+        // The boundary values are still accepted.
+        $this->assertSame([], ALinqLazyCollection::from([1])->take(0)->toArray());
+        $this->assertSame([1], ALinqLazyCollection::from([1])->skip(0)->toArray());
+        $this->assertSame([1], ALinqLazyCollection::from([1])->pad(0, 'p')->toArray());
+        $this->assertSame([[1]], self::chunks(ALinqLazyCollection::from([1])->chunk(1)));
+        $this->assertSame([], ALinqLazyCollection::repeat('x', 0)->toArray());
+    }
+
+    public function testAllIsVacuouslyTrueAndDefaultsToTruthiness(): void
+    {
+        // RN-14: before, all($pred) on an empty stream answered false and all() always false.
+        $this->assertTrue(ALinqLazyCollection::empty()->all(fn($v) => $v > 100));
+        $this->assertTrue(ALinqLazyCollection::empty()->all());
+        $this->assertTrue(ALinqLazyCollection::from([1, 'a', true, [0]])->all());
+        $this->assertFalse(ALinqLazyCollection::from([1, 0, 2])->all());
+        $this->assertFalse(ALinqLazyCollection::from([1, null])->all());
+
+        // any() without a predicate is unchanged: "has at least one item", truthy or not.
+        $this->assertTrue(ALinqLazyCollection::from([0, false])->any());
+        $this->assertFalse(ALinqLazyCollection::empty()->any());
+    }
+
+    public function testContainsAcceptsBoolOrSpaceshipComparer(): void
+    {
+        // RN-09: before, the lazy side took the comparer answer as truthy, so a `<=>` comparer
+        // reported a non-member as present (`1 <=> 99` is -1, truthy).
+        $numbers = ALinqLazyCollection::from([1, 2, 3]);
+        $this->assertTrue($numbers->contains(3, fn($a, $b) => $a == $b));
+        $this->assertTrue($numbers->contains(3, fn($a, $b) => $a <=> $b));
+        $this->assertFalse($numbers->contains(99, fn($a, $b) => $a == $b));
+        $this->assertFalse($numbers->contains(99, fn($a, $b) => $a <=> $b));
+        $this->assertTrue($numbers->contains('3', fn($a, $b) => $a == $b));
+        $this->assertFalse($numbers->contains('3'));
+        $this->assertSame(
+            ALinqCollection::from([1, 2, 3])->contains(99, fn($a, $b) => $a <=> $b),
+            $numbers->contains(99, fn($a, $b) => $a <=> $b)
+        );
+    }
+
+    public function testAggregationsIgnoreNullAndRejectNonNumeric(): void
+    {
+        // RN-15: null is skipped (nullable column semantics); before, average([1, null, 2])
+        // counted the null in the denominator and min([3, null, 1]) answered null.
+        $withNull = ALinqLazyCollection::from([1, null, 2]);
+        $this->assertSame(1.5, $withNull->average());
+        $this->assertSame(3, $withNull->sum());
+        $this->assertSame(1, $withNull->min());
+        $this->assertSame(2, $withNull->max());
+        $this->assertSame(1, ALinqLazyCollection::from([3, null, 1])->min());
+        $this->assertSame(3, ALinqLazyCollection::from([['v' => 1], ['v' => null], ['v' => 2]])->sum(fn($r) => $r['v']));
+
+        // Only null is an empty collection for average/min/max; sum is 0.
+        $this->assertSame(0, ALinqLazyCollection::from([null, null])->sum());
+        foreach (['average', 'min', 'max'] as $operation) {
+            try {
+                ALinqLazyCollection::from([null, null])->$operation();
+                $this->fail("$operation() over nulls did not throw");
+            } catch (UnderflowException $e) {
+                $this->assertStringContainsString($operation, $e->getMessage());
+            }
+        }
+
+        // Numeric strings and booleans are numbers; anything else throws, before a TypeError leaked.
+        $this->assertSame(3, ALinqLazyCollection::from(['1', '2'])->sum());
+        $this->assertSame(2, ALinqLazyCollection::from([true, false, true])->sum());
+        $this->assertSame(2.5, ALinqLazyCollection::from(['2.5'])->average());
+        foreach ([['a'], [[1]], [new \stdClass()]] as $items) {
+            try {
+                ALinqLazyCollection::from($items)->sum();
+                $this->fail('sum() over ' . get_debug_type($items[0]) . ' did not throw');
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('sum() expects numeric values', $e->getMessage());
+            }
+        }
+
+        // min()/max() compare scalars and DateTimeInterface; arrays and other objects throw.
+        $this->assertSame('a', ALinqLazyCollection::from(['b', 'a', 'c'])->min());
+        $dates = [new \DateTimeImmutable('2026-01-02'), new \DateTimeImmutable('2026-01-01')];
+        $this->assertSame('2026-01-01', ALinqLazyCollection::from($dates)->min()->format('Y-m-d'));
+        $this->expectException(\InvalidArgumentException::class);
+        ALinqLazyCollection::from([[1], [2]])->max();
+    }
+
+    public function testFirstAndLastThrowWhenNoElementMatches(): void
+    {
+        $numbers = ALinqLazyCollection::from([1, 2]);
+        try {
+            $numbers->first(fn($v) => $v > 5);
+            $this->fail('first() with no match did not throw');
+        } catch (UnderflowException $e) {
+            $this->assertStringContainsString('no element matches', $e->getMessage());
+        }
+        try {
+            $numbers->last(fn($v) => $v > 5);
+            $this->fail('last() with no match did not throw');
+        } catch (UnderflowException $e) {
+            $this->assertStringContainsString('no element matches', $e->getMessage());
+        }
+        $this->assertSame('d', $numbers->firstOrDefault('d', fn($v) => $v > 5));
+        $this->assertSame('d', $numbers->lastOrDefault('d', fn($v) => $v > 5));
+        $this->expectException(UnderflowException::class);
+        ALinqLazyCollection::empty()->last();
+    }
+
+    public function testSelectManyNonIterableThrows(): void
+    {
+        // RN-16: before, a scalar returned by the selector was emitted as an item.
+        $this->assertSame([1, 1, 2, 2], ALinqLazyCollection::from([1, 2])->selectMany(fn($v) => ALinqCollection::from([$v, $v]))->toArray());
+        $this->assertSame([1, 2], ALinqLazyCollection::from([[1], [2]])->selectMany(fn($v) => new ArrayIterator($v))->toArray());
+        $this->assertSame([1, 2], ALinqLazyCollection::from([1, 2])->selectMany(fn($v) => yield $v)->toArray());
+
+        try {
+            ALinqLazyCollection::from([1])->selectMany(fn($v) => $v)->toArray();
+            $this->fail('selectMany() with a scalar did not throw');
+        } catch (\UnexpectedValueException $e) {
+            $this->assertStringContainsString('int returned for key 0', $e->getMessage());
+        }
+    }
+
+    public function testCountWithPredicate(): void
+    {
+        // RN-23: before, count($predicate) ignored the predicate in silence.
+        $numbers = ALinqLazyCollection::from([1, 2, 3, 4]);
+        $this->assertSame(4, $numbers->count());
+        $this->assertSame(2, $numbers->count(fn($v) => $v > 2));
+        $this->assertSame(1, $numbers->count(fn($v, $k) => $k === 0));
+        $this->assertSame(2, ALinqLazyCollection::from([1, 'a', 2])->count('is_int'));
+        $this->assertSame(0, ALinqLazyCollection::empty()->count(fn() => true));
+    }
+
+    public function testJsonSerialize(): void
+    {
+        // RN-24: before, json_encode() of a lazy collection produced "{}".
+        $this->assertInstanceOf(\JsonSerializable::class, ALinqLazyCollection::empty());
+        $this->assertSame('[1,2]', json_encode(ALinqLazyCollection::from([1, 2])));
+        $this->assertSame('{"a":1}', json_encode(ALinqLazyCollection::from(['a' => 1])));
+        $this->assertSame('[2,3]', json_encode(ALinqLazyCollection::from([1, 2, 3])->where(fn($v) => $v > 1)));
+        $this->assertSame('[]', json_encode(ALinqLazyCollection::empty()));
+        $this->assertSame('{"10":"a"}', json_encode(ALinqLazyCollection::from([10 => 'a', 20 => 'b'])->take(1)));
+    }
+
+    public function testFromArrayCallableIsDataAndOnlyClosureIsAFactory(): void
+    {
+        // RN-18: before, a callable array was taken as a factory and threw ArgumentCountError.
+        $object = new class {
+            public function method(): string
+            {
+                return 'called';
+            }
+        };
+        $this->assertSame([$object, 'method'], ALinqLazyCollection::from([$object, 'method'])->toArray());
+        $this->assertSame(2, ALinqLazyCollection::from([$object, 'method'])->count());
+        $this->assertSame(['DateTime', 'createFromFormat'], ALinqLazyCollection::from(['DateTime', 'createFromFormat'])->toArray());
+
+        // A Closure is a re-iterable factory; a closure made from a callable works the same.
+        $this->assertSame([1, 2], ALinqLazyCollection::from(fn() => yield from [1, 2])->toArray());
+        $factory = static fn(): array => [3, 4];
+        $this->assertSame([3, 4], ALinqLazyCollection::from(Closure::fromCallable($factory))->toArray());
+
+        // A string callable cannot be iterated: refused with a clear message.
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Closure factory');
+        ALinqLazyCollection::from('strlen');
+    }
+
+    /**
+     * @return array<int, array> the chunks as native arrays (D10: chunk() yields collections)
+     */
+    private static function chunks(ALinqLazyCollection $chunked): array
+    {
+        return array_map(static fn(ALinqCollection $chunk) => $chunk->toArray(), $chunked->toArray());
     }
 }

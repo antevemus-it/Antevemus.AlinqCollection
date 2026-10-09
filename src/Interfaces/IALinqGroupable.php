@@ -5,9 +5,9 @@ namespace Antevemus\ALinq\Interfaces;
 /**
  * IALinqGroupable
  *
- * Interface for grouping operations on collections
+ * Interface for grouping operations on collections.
  *
- * @version    0.1.0
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -17,7 +17,11 @@ namespace Antevemus\ALinq\Interfaces;
 interface IALinqGroupable extends IALinqBaseCollection
 {
     /**
-     * Group elements by key (GroupBy in LINQ)
+     * Group elements by key (GroupBy in LINQ): a collection keyed by the group key whose
+     * values are ALinqCollection instances
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
+     * @throws \InvalidArgumentException when the key selector returns any other type
      */
     public function groupBy(callable $keySelector): IALinqCollection;
 }

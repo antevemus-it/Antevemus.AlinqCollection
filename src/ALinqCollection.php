@@ -2,6 +2,7 @@
 
 namespace Antevemus\ALinq;
 
+use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use Antevemus\ALinq\Traits\FilteringOperations;
 use Antevemus\ALinq\Traits\JoiningOperations;
@@ -19,7 +20,12 @@ use Traversable;
  *
  * A comprehensive LINQ-style collection class leveraging PHP 8.4 array functions
  *
- * @version    1.1.0
+ * Contract (1.3.0): a list (array_is_list) is reindexed by filtering and reordering
+ * operators, a dictionary keeps its keys; set operations compare by strict, type-aware
+ * identity; an empty collection throws on first/last/min/max/minBy/maxBy/average;
+ * json_encode() serializes the items (JsonSerializable).
+ *
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -53,11 +59,35 @@ final class ALinqCollection implements IALinqCollection
     }
 
     /**
-     * Implement Countable interface
+     * Number of items, or of the items that satisfy the predicate (Count in LINQ)
+     *
+     * Before 1.3.0 the predicate was silently discarded (review 2026-10-08, 3.6).
+     *
+     * @param callable|null $predicate `fn($item)` or `fn($item, $key)`
      */
-    public function count(): int
+    public function count(?callable $predicate = null): int
     {
-        return count($this->items);
+        if ($predicate === null) {
+            return count($this->items);
+        }
+
+        $predicate = ALinqCallable::withKey($predicate);
+        $total = 0;
+        foreach ($this->items as $key => $item) {
+            if ($predicate($item, $key)) {
+                $total++;
+            }
+        }
+        return $total;
+    }
+
+    /**
+     * Implement JsonSerializable: json_encode() of a list is a JSON array, of a dictionary
+     * a JSON object. Before 1.3.0 the private items made json_encode() return "{}".
+     */
+    public function jsonSerialize(): array
+    {
+        return $this->items;
     }
 
     /**

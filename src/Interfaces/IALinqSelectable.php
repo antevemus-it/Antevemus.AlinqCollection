@@ -7,9 +7,13 @@ use stdClass;
 /**
  * IALinqSelectable
  *
- * Interface for selection operations on collections
+ * Interface for selection operations on collections.
  *
- * @version    0.1.0
+ * Contract (1.3.0): `select` keeps the keys (one-to-one projection); `selectMany` flattens
+ * any iterable and throws for anything else; dictionary keys must be int, string or
+ * BackedEnum and a repeated key is an error.
+ *
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -19,12 +23,16 @@ use stdClass;
 interface IALinqSelectable extends IALinqBaseCollection
 {
     /**
-     * Project elements into a new form (Select in LINQ)
+     * Project elements into a new form, keeping the keys (Select in LINQ)
+     *
+     * @param callable $selector `fn($item)` or `fn($item, $key)`
      */
     public function select(callable $selector): IALinqCollection;
 
     /**
-     * Project elements and flatten results (SelectMany in LINQ)
+     * Project elements and flatten results into a list (SelectMany in LINQ)
+     *
+     * @throws \UnexpectedValueException when the selector returns a non-iterable value
      */
     public function selectMany(callable $selector): IALinqCollection;
 
@@ -35,6 +43,9 @@ interface IALinqSelectable extends IALinqBaseCollection
 
     /**
      * Convert to dictionary (ToDictionary in LINQ)
+     *
+     * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum,
+     *         or produces the same key twice
      */
     public function toDictionary(callable $keySelector, ?callable $elementSelector = null): array;
 

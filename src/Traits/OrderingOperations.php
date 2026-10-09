@@ -5,14 +5,17 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Traits;
 
 use Antevemus\ALinq\Helpers\ALinqCallable;
+use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 
 /**
  * OrderingOperations Trait
  *
- * Provides LINQ-style ordering and sorting operations for collections
+ * Provides LINQ-style ordering and sorting operations for collections.
+ * Key policy (RN-02, forward 015): every ordering reindexes a list and keeps the keys of
+ * a dictionary.
  *
- * @version    1.2.0
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -57,7 +60,7 @@ trait OrderingOperations
         $items = $this->items;
         uksort($items, static fn($a, $b) => $direction * ($sortKeys[$a] <=> $sortKeys[$b]));
 
-        return array_is_list($this->items) ? array_values($items) : $items;
+        return ALinqContract::shapeLike($this->items, $items);
     }
 
     /**
@@ -71,17 +74,17 @@ trait OrderingOperations
         } else {
             natcasesort($items);
         }
-        return new self($items);
+        return new self(ALinqContract::shapeLike($this->items, $items));
     }
 
     /**
-     * Sort using a custom comparison function
+     * Sort using a custom comparison function `fn($a, $b): int`
      */
     public function orderByCustom(callable $comparer): IALinqCollection
     {
         $items = $this->items;
-        usort($items, $comparer);
-        return new self($items);
+        uasort($items, $comparer);
+        return new self(ALinqContract::shapeLike($this->items, $items));
     }
 
     /**
@@ -95,7 +98,7 @@ trait OrderingOperations
         } else {
             ksort($items);
         }
-        return new self($items);
+        return new self(ALinqContract::shapeLike($this->items, $items));
     }
 
     /**
@@ -103,6 +106,6 @@ trait OrderingOperations
      */
     public function reverse(): IALinqCollection
     {
-        return new self(array_reverse($this->items));
+        return new self(ALinqContract::shapeLike($this->items, array_reverse($this->items, true)));
     }
 }

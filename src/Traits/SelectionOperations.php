@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Traits;
 
 use Antevemus\ALinq\Helpers\ALinqCallable;
+use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
+use InvalidArgumentException;
 use stdClass;
 use UnexpectedValueException;
 
@@ -16,7 +18,7 @@ use UnexpectedValueException;
  * Callbacks follow ALinqCallable::withKey(): `($item, $key)` when they accept two
  * parameters, the item alone otherwise (review 2026-10-08, decision 4a).
  *
- * @version    1.2.0
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -79,6 +81,12 @@ trait SelectionOperations
 
     /**
      * Convert to dictionary (ToDictionary in LINQ)
+     *
+     * The key must be an int, a string or a BackedEnum (RN-07) and must be unique: a key
+     * produced twice throws instead of silently overwriting the first element (RN-08,
+     * as ToDictionary does in LINQ).
+     *
+     * @throws InvalidArgumentException when a key is not int/string/BackedEnum or is produced twice
      */
     public function toDictionary(callable $keySelector, ?callable $elementSelector = null): array
     {
@@ -87,7 +95,14 @@ trait SelectionOperations
         $elementSelector = ALinqCallable::withKey($elementSelector ?? fn($item) => $item);
 
         foreach ($this->items as $itemKey => $item) {
-            $key = $keySelector($item, $itemKey);
+            $key = ALinqContract::groupKey($keySelector($item, $itemKey), $itemKey, 'toDictionary');
+            if (array_key_exists($key, $result)) {
+                throw new InvalidArgumentException(sprintf(
+                    'toDictionary() key %s produced twice (second time for item at key %s)',
+                    var_export($key, true),
+                    var_export($itemKey, true)
+                ));
+            }
             $result[$key] = $elementSelector($item, $itemKey);
         }
 

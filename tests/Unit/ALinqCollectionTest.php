@@ -228,4 +228,50 @@ class ALinqCollectionTest extends TestCase
         $this->expectException(\TypeError::class);
         new ALinqCollection(null);
     }
+
+    // ===== CONTRACT 1.3.0: count($predicate) (RN-23), JsonSerializable (RN-24), interfaces (RN-27) =====
+
+    public function testCountWithPredicate(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4]);
+
+        // Before 1.3.0 the predicate was silently discarded and count() answered 4
+        $this->assertSame(2, $collection->count(fn($v) => $v > 2));
+        $this->assertSame(2, $collection->count(fn($v, $k) => $k % 2 === 0), 'two-parameter predicates receive the key');
+        $this->assertSame(4, $collection->count('is_int'), 'native callables receive the item only');
+        $this->assertSame(0, ALinqCollection::empty()->count(fn($v) => true));
+        $this->assertSame(4, $collection->count());
+        $this->assertCount(4, $collection);
+    }
+
+    public function testJsonSerializeListAndDictionary(): void
+    {
+        // Before 1.3.0 json_encode() of a collection returned "{}"
+        $this->assertSame('[1,2,3]', json_encode(ALinqCollection::from([1, 2, 3])));
+        $this->assertSame('{"a":1,"b":2}', json_encode(ALinqCollection::from(['a' => 1, 'b' => 2])));
+        $this->assertSame('[]', json_encode(ALinqCollection::empty()));
+        $this->assertSame(
+            '{"items":[{"id":1}]}',
+            json_encode(['items' => ALinqCollection::from([['id' => 1]])]),
+            'nested inside another structure'
+        );
+        $this->assertInstanceOf(\JsonSerializable::class, ALinqCollection::empty());
+        $this->assertSame([10 => 'a'], ALinqCollection::from([10 => 'a'])->jsonSerialize());
+    }
+
+    public function testLazyFacadesAreDeclaredByTheInterface(): void
+    {
+        $interface = new \ReflectionClass(\Antevemus\ALinq\Interfaces\IALinqBaseCollection::class);
+
+        foreach (['lazy', 'fromFile', 'fromCsv', 'fromCursor', 'count', 'jsonSerialize'] as $method) {
+            $this->assertTrue($interface->hasMethod($method), "IALinqBaseCollection must declare $method()");
+        }
+        $this->assertTrue($interface->implementsInterface(\JsonSerializable::class));
+
+        $lazy = new \ReflectionClass(\Antevemus\ALinq\Interfaces\IALinqLazyCollection::class);
+        foreach (['fromCursor', 'count', 'jsonSerialize'] as $method) {
+            $this->assertTrue($lazy->hasMethod($method), "IALinqLazyCollection must declare $method()");
+        }
+        $this->assertTrue($lazy->implementsInterface(\JsonSerializable::class));
+    }
 }

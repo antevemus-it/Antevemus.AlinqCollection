@@ -133,11 +133,34 @@ class OrderingOperationsTest extends TestCase
         $collection = ALinqCollection::from(['item10', 'item2', 'item1', 'item20']);
         $result = $collection->orderByNatural();
 
-        $resultArray = array_values($result->toArray());
-        $this->assertEquals('item1', $resultArray[0]);
-        $this->assertEquals('item2', $resultArray[1]);
-        $this->assertEquals('item10', $resultArray[2]);
-        $this->assertEquals('item20', $resultArray[3]);
+        // RN-02: a list comes out reindexed (natsort() alone would keep the old indexes)
+        $this->assertSame(['item1', 'item2', 'item10', 'item20'], $result->toArray());
+    }
+
+    /**
+     * RN-02 (forward 015, decision 1a): every ordering reindexes a list and keeps the keys of
+     * a dictionary. Before 1.3.0 orderByNatural()/orderByKey() kept the old indexes of a list
+     * and orderByCustom() lost the keys of a dictionary (review 2026-10-08, 2.8).
+     */
+    public function testOrderingsReindexListsAndKeepDictionaryKeys(): void
+    {
+        $dict = ALinqCollection::from(['b' => 'item10', 'a' => 'item2', 'c' => 'item1']);
+        $this->assertSame(['c' => 'item1', 'a' => 'item2', 'b' => 'item10'], $dict->orderByNatural()->toArray());
+        $this->assertSame(['c' => 'item1', 'a' => 'item2', 'b' => 'item10'], $dict->orderByCustom(fn($x, $y) => strnatcmp($x, $y))->toArray());
+        $this->assertSame(['a' => 'item2', 'b' => 'item10', 'c' => 'item1'], $dict->orderByKey()->toArray());
+        $this->assertSame(['c' => 'item1', 'b' => 'item10', 'a' => 'item2'], $dict->orderByKey(true)->toArray());
+        $this->assertSame(['c' => 'item1', 'a' => 'item2', 'b' => 'item10'], $dict->reverse()->toArray());
+
+        $intKeyed = ALinqCollection::from([10 => 'b', 20 => 'a']);
+        $this->assertSame([20 => 'a', 10 => 'b'], $intKeyed->orderBy(fn($v) => $v)->toArray());
+        $this->assertSame([20 => 'a', 10 => 'b'], $intKeyed->orderByCustom(fn($x, $y) => $x <=> $y)->toArray());
+        $this->assertSame([20 => 'a', 10 => 'b'], $intKeyed->reverse()->toArray());
+
+        $list = ALinqCollection::from(['item10', 'item2', 'item1']);
+        $this->assertSame(['item1', 'item2', 'item10'], $list->orderByNatural()->toArray());
+        $this->assertSame(['item1', 'item10', 'item2'], $list->orderByCustom(fn($x, $y) => strcmp($x, $y))->toArray());
+        $this->assertSame(['item1', 'item2', 'item10'], $list->orderByKey(true)->toArray());
+        $this->assertSame(['item1', 'item2', 'item10'], $list->reverse()->toArray());
     }
 
     /**
@@ -148,8 +171,7 @@ class OrderingOperationsTest extends TestCase
         $collection = ALinqCollection::from(['Item2', 'item1', 'Item10']);
         $result = $collection->orderByNatural(true);
 
-        $resultArray = array_values($result->toArray());
-        $this->assertCount(3, $resultArray);
+        $this->assertSame(['Item2', 'Item10', 'item1'], $result->toArray());
     }
 
     /**
@@ -160,8 +182,7 @@ class OrderingOperationsTest extends TestCase
         $collection = ALinqCollection::from(['ITEM10', 'item2', 'Item1']);
         $result = $collection->orderByNatural(false);
 
-        $resultArray = array_values($result->toArray());
-        $this->assertCount(3, $resultArray);
+        $this->assertSame(['Item1', 'item2', 'ITEM10'], $result->toArray());
     }
 
     /**

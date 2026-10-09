@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Antevemus\ALinq;
 
 use Antevemus\ALinq\Helpers\ALinqCallable;
+use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqLazyCollection;
 use ArrayIterator;
 use Closure;
@@ -13,28 +14,50 @@ use InvalidArgumentException;
 use Iterator;
 use IteratorAggregate;
 use IteratorIterator;
+use JsonSerializable;
 use OverflowException;
 use PDOStatement;
 use RuntimeException;
 use stdClass;
 use Traversable;
 use UnderflowException;
+use UnexpectedValueException;
 
 /**
  * ALinqLazyCollection
  *
  * A generator-based streaming LINQ-style collection with deferred execution and constant
  * O(1) memory overhead, designed for multi-gigabyte files, CSV streams and unbuffered
- * database cursors, interoperable with the in-memory ALinqCollection
+ * database cursors, interoperable with the in-memory ALinqCollection.
  *
- * @version    1.2.0
+ * Contract shared with ALinqCollection since 1.3.0 (review 2026-10-08, forward 015):
+ *
+ * - Keys: "a list reindexes, a dictionary keeps its keys". The collection knows whether its
+ *   source is a list (`from(array)` by array_is_list(); files, CSV, cursors, range(),
+ *   repeat() and empty() are lists; a Generator, a Traversable or a factory closure is
+ *   unknown). Filtering and projecting operators inherit that knowledge and, while
+ *   streaming, a list emits renumbered keys and a dictionary (or an unknown source) emits
+ *   the original key; chunk(), pad() padding, concat(), zip() and selectMany() produce
+ *   lists. Materialization never loses an item: a known list is reindexed, a dictionary
+ *   keeps its keys and appends on collision, an unknown source is a list when every key
+ *   is an integer.
+ * - Only a Closure is a re-iterable factory; an array (even a callable one) is data.
+ * - Empty throws: first(), last(), min(), max(), minBy(), maxBy() and average() throw
+ *   UnderflowException; the *OrDefault() variants return the default.
+ * - Numeric aggregations skip null and throw InvalidArgumentException on a non-numeric
+ *   value; min()/max() compare scalars and DateTimeInterface.
+ * - A negative take()/skip()/pad() size, chunk(0) or range step 0 throw
+ *   InvalidArgumentException instead of being ignored.
+ * - A comparer given to contains() may answer bool or `<=>` style int.
+ *
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
-final class ALinqLazyCollection implements IALinqLazyCollection
+final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializable
 {
     /**
      * @var Closure(): iterable
@@ -42,25 +65,62 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     private Closure $sourceFactory;
 
     /**
-     * Initialize lazy collection with an iterable or generator factory closure.
+     * Whether the source is a list (true), a dictionary (false) or unknown (null): the key
+     * rule of the 1.3.0 contract (RN-03). Set once at construction and propagated by every
+     * operator through pipe().
+     */
+    private ?bool $sourceIsList = null;
+
+    /**
+     * Initialize lazy collection with an iterable or a generator factory closure.
+     *
+     * Only a Closure is treated as a re-iterable factory (RN-18): an array is data even when
+     * it happens to be callable (`[$object, 'method']`), and a string or an invokable object
+     * is refused, because neither can be iterated.
      *
      * @param iterable|callable $source
+     * @throws InvalidArgumentException When the source is a callable that is not a Closure and not iterable
      */
     public function __construct(iterable|callable $source)
     {
-        if (is_callable($source)) {
-            $this->sourceFactory = $source instanceof Closure ? $source : $source(...);
+        if ($source instanceof Closure) {
+            $this->sourceFactory = $source;
+            $this->sourceIsList = null;
         } elseif (is_array($source)) {
             $this->sourceFactory = static fn(): array => $source;
+            $this->sourceIsList = array_is_list($source);
         } elseif ($source instanceof PDOStatement) {
             // A PDO cursor is single-pass: a second traversal would silently yield nothing.
             $this->sourceFactory = self::singlePassCursorFactory($source, null);
+            $this->sourceIsList = true;
         } elseif ($source instanceof Traversable && !($source instanceof Generator)) {
             $this->sourceFactory = static fn(): Traversable => $source;
-        } else {
+            $this->sourceIsList = null;
+        } elseif (is_iterable($source)) {
             // For single-use Generators or raw iterables:
             $this->sourceFactory = static fn(): iterable => $source;
+            $this->sourceIsList = null;
+        } else {
+            throw new InvalidArgumentException(sprintf(
+                'ALinqLazyCollection accepts an iterable or a Closure factory, %s given; wrap a callable with Closure::fromCallable() or $callable(...) to use it as a factory',
+                get_debug_type($source)
+            ));
         }
+    }
+
+    /**
+     * Builds a downstream stage: a generator factory plus the list/dictionary knowledge it
+     * inherits (or produces).
+     *
+     * @param Closure(): iterable $factory
+     * @param bool|null $isList
+     * @return self
+     */
+    private static function pipe(Closure $factory, ?bool $isList): self
+    {
+        $stage = new self($factory);
+        $stage->sourceIsList = $isList;
+        return $stage;
     }
 
     /**
@@ -73,6 +133,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * @throws InvalidArgumentException When the buffer size is not positive
+     * @throws RuntimeException When the file cannot be opened (deferred to the first traversal)
      */
     public static function fromFile(string $filePath, int $bufferSize = 4096, ?callable $lineParser = null): self
     {
@@ -80,7 +143,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
             throw new InvalidArgumentException('Buffer size must be greater than zero.');
         }
 
-        return new self(function () use ($filePath, $bufferSize, $lineParser) {
+        return self::pipe(function () use ($filePath, $bufferSize, $lineParser) {
             $handle = @fopen($filePath, 'r');
             if ($handle === false) {
                 throw new RuntimeException(sprintf('Unable to open file for streaming: "%s"', $filePath));
@@ -103,11 +166,13 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                     fclose($handle);
                 }
             }
-        });
+        }, true);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws RuntimeException When the file cannot be opened (deferred to the first traversal)
      */
     public static function fromCsv(
         string $filePath,
@@ -116,7 +181,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         string $escape = '\\',
         bool $hasHeader = true
     ): self {
-        return new self(function () use ($filePath, $separator, $enclosure, $escape, $hasHeader) {
+        return self::pipe(function () use ($filePath, $separator, $enclosure, $escape, $hasHeader) {
             $handle = @fopen($filePath, 'r');
             if ($handle === false) {
                 throw new RuntimeException(sprintf('Unable to open CSV file for streaming: "%s"', $filePath));
@@ -148,7 +213,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                     fclose($handle);
                 }
             }
-        });
+        }, true);
     }
 
     /**
@@ -157,10 +222,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      * @param PDOStatement $statement
      * @param callable|null $rowMapper fn($row, $index): mixed
      * @return self
+     * @throws RuntimeException On a second traversal of the consumed cursor (use remember())
      */
     public static function fromCursor(PDOStatement $statement, ?callable $rowMapper = null): self
     {
-        return new self(self::singlePassCursorFactory($statement, $rowMapper));
+        return self::pipe(self::singlePassCursorFactory($statement, $rowMapper), true);
     }
 
     /**
@@ -202,19 +268,19 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public static function empty(): self
     {
-        return new self(static fn() => []);
+        return self::pipe(static fn() => [], true);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws InvalidArgumentException When the step is below 1
      */
     public static function range(int $start, int $end, int $step = 1): self
     {
-        if ($step <= 0) {
-            throw new InvalidArgumentException('Range step must be greater than zero.');
-        }
+        ALinqContract::requireAtLeast($step, 1, 'step', 'range');
 
-        return new self(function () use ($start, $end, $step) {
+        return self::pipe(function () use ($start, $end, $step) {
             if ($start <= $end) {
                 for ($i = $start; $i <= $end; $i += $step) {
                     yield $i;
@@ -224,23 +290,23 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                     yield $i;
                 }
             }
-        });
+        }, true);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws InvalidArgumentException When the count is negative
      */
     public static function repeat(mixed $element, int $count): self
     {
-        if ($count < 0) {
-            throw new InvalidArgumentException('Repeat count must be greater than or equal to zero.');
-        }
+        ALinqContract::requireAtLeast($count, 0, 'count', 'repeat');
 
-        return new self(function () use ($element, $count) {
+        return self::pipe(function () use ($element, $count) {
             for ($i = 0; $i < $count; $i++) {
                 yield $i => $element;
             }
-        });
+        }, true);
     }
 
     /**
@@ -262,13 +328,18 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     public function where(callable $predicate): self
     {
         $predicate = ALinqCallable::withKey($predicate);
-        return new self(function () use ($predicate) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($predicate, $isList) {
             foreach ($this as $key => $item) {
                 if ($predicate($item, $key)) {
-                    yield $key => $item;
+                    if ($isList) {
+                        yield $item;
+                    } else {
+                        yield $key => $item;
+                    }
                 }
             }
-        });
+        }, $isList);
     }
 
     /**
@@ -286,69 +357,100 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     public function select(callable $selector): self
     {
         $selector = ALinqCallable::withKey($selector);
-        return new self(function () use ($selector) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($selector, $isList) {
             foreach ($this as $key => $item) {
-                yield $key => $selector($item, $key);
+                if ($isList) {
+                    yield $selector($item, $key);
+                } else {
+                    yield $key => $selector($item, $key);
+                }
             }
-        });
+        }, $isList);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * Any iterable returned by the selector is flattened; a non-iterable return is an
+     * error, not an item (RN-16). The result is a list.
+     *
+     * @throws UnexpectedValueException When the selector returns a non-iterable value (at traversal)
      */
     public function selectMany(callable $selector): self
     {
         $selector = ALinqCallable::withKey($selector);
-        return new self(function () use ($selector) {
+        return self::pipe(function () use ($selector) {
             foreach ($this as $key => $item) {
                 $inner = $selector($item, $key);
-                if (is_iterable($inner)) {
-                    foreach ($inner as $innerKey => $innerItem) {
-                        yield $innerItem;
-                    }
-                } else {
-                    yield $inner;
+                if (!is_iterable($inner)) {
+                    throw new UnexpectedValueException(sprintf(
+                        'selectMany() expects the selector to return an iterable, %s returned for key %s',
+                        get_debug_type($inner),
+                        var_export($key, true)
+                    ));
+                }
+                foreach ($inner as $innerItem) {
+                    yield $innerItem;
                 }
             }
-        });
+        }, true);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws InvalidArgumentException When the count is negative
      */
     public function take(int $count): self
     {
-        return new self(function () use ($count) {
-            if ($count <= 0) {
+        ALinqContract::requireAtLeast($count, 0, 'count', 'take');
+        $isList = $this->sourceIsList;
+
+        return self::pipe(function () use ($count, $isList) {
+            if ($count === 0) {
                 return;
             }
 
             $taken = 0;
             foreach ($this as $key => $item) {
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
                 $taken++;
                 if ($taken >= $count) {
                     break;
                 }
             }
-        });
+        }, $isList);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws InvalidArgumentException When the count is negative
      */
     public function skip(int $count): self
     {
-        return new self(function () use ($count) {
+        ALinqContract::requireAtLeast($count, 0, 'count', 'skip');
+        $isList = $this->sourceIsList;
+
+        return self::pipe(function () use ($count, $isList) {
             $skipped = 0;
             foreach ($this as $key => $item) {
                 if ($skipped < $count) {
                     $skipped++;
                     continue;
                 }
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
             }
-        });
+        }, $isList);
     }
 
     /**
@@ -357,14 +459,19 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     public function takeWhile(callable $predicate): self
     {
         $predicate = ALinqCallable::withKey($predicate);
-        return new self(function () use ($predicate) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($predicate, $isList) {
             foreach ($this as $key => $item) {
                 if (!$predicate($item, $key)) {
                     break;
                 }
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
             }
-        });
+        }, $isList);
     }
 
     /**
@@ -373,7 +480,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     public function skipWhile(callable $predicate): self
     {
         $predicate = ALinqCallable::withKey($predicate);
-        return new self(function () use ($predicate) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($predicate, $isList) {
             $skipping = true;
             foreach ($this as $key => $item) {
                 if ($skipping) {
@@ -382,18 +490,26 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                     }
                     $skipping = false;
                 }
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
             }
-        });
+        }, $isList);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * Identity by ALinqCallable::hashKey(): typed and strict for scalars, by value for
+     * arrays, by identity for objects (RN-06).
      */
     public function distinct(?callable $keySelector = null): self
     {
         $keySelector = $keySelector === null ? null : ALinqCallable::withKey($keySelector);
-        return new self(function () use ($keySelector) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($keySelector, $isList) {
             $seen = [];
             foreach ($this as $key => $item) {
                 $identifier = $keySelector !== null ? $keySelector($item, $key) : $item;
@@ -401,10 +517,14 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
                 if (!isset($seen[$hash])) {
                     $seen[$hash] = true;
-                    yield $key => $item;
+                    if ($isList) {
+                        yield $item;
+                    } else {
+                        yield $key => $item;
+                    }
                 }
             }
-        });
+        }, $isList);
     }
 
     /**
@@ -418,73 +538,85 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * The result is a list of eager ALinqCollection chunks (each chunk is materialized by
+     * nature, and stays queryable). Inside each chunk the key rule of the source applies:
+     * a list is reindexed, a dictionary (or an unknown source) keeps its keys and appends on
+     * collision, so a repeated key never overwrites an item (review 2026-10-08, 4.3).
+     *
+     * @throws InvalidArgumentException When the size is below 1
      */
     public function chunk(int $size): self
     {
-        if ($size <= 0) {
-            throw new InvalidArgumentException('Chunk size must be greater than zero.');
-        }
+        ALinqContract::requireAtLeast($size, 1, 'size', 'chunk');
+        $isList = $this->sourceIsList;
 
-        return new self(function () use ($size) {
-            // Chunks are reindexed lists, as array_chunk() does on the eager side. Keying the
-            // chunk by the source key made a repeated key overwrite the previous item and
-            // count($chunk) never reach $size: six items with key 0 came out as one chunk of
-            // one (review 2026-10-08, 4.3).
-            $chunk = [];
-            $filled = 0;
-            foreach ($this as $item) {
-                $chunk[] = $item;
-                if (++$filled === $size) {
-                    yield $chunk;
-                    $chunk = [];
-                    $filled = 0;
+        return self::pipe(function () use ($size, $isList) {
+            $pairs = [];
+            foreach ($this as $key => $item) {
+                $pairs[] = [$key, $item];
+                if (count($pairs) === $size) {
+                    yield new ALinqCollection(self::materializePairs($pairs, $isList));
+                    $pairs = [];
                 }
             }
 
-            if ($chunk !== []) {
-                yield $chunk;
+            if ($pairs !== []) {
+                yield new ALinqCollection(self::materializePairs($pairs, $isList));
             }
-        });
+        }, true);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * Follows the key rule of the source: a list is reindexed, a dictionary keeps its keys;
+     * the padding is appended without an explicit key, so it never collides with a real
+     * item (review 2026-10-08, 4.4).
+     *
+     * @throws InvalidArgumentException When the size is negative
      */
     public function pad(int $size, mixed $value): self
     {
-        return new self(function () use ($size, $value) {
+        ALinqContract::requireAtLeast($size, 0, 'size', 'pad');
+        $isList = $this->sourceIsList;
+
+        return self::pipe(function () use ($size, $value, $isList) {
             $count = 0;
             foreach ($this as $key => $item) {
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
                 $count++;
             }
 
-            // Padding is yielded without an explicit key: the generator continues from the
-            // highest integer key already emitted, as array_pad() does. Keying it by the
-            // counter collided with the source keys after where()/skip() and overwrote real
-            // items (review 2026-10-08, 4.4).
             while ($count < $size) {
                 yield $value;
                 $count++;
             }
-        });
+        }, $isList);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * A sequence operation (RN-17): the result is always a reindexed list, nothing is
+     * overwritten.
      */
     public function concat(iterable|callable $second): self
     {
-        return new self(function () use ($second) {
-            foreach ($this as $key => $item) {
+        return self::pipe(function () use ($second) {
+            foreach ($this as $item) {
                 yield $item;
             }
 
-            $secondIterable = is_callable($second) ? $second() : $second;
-            foreach ($secondIterable as $key => $item) {
+            $secondIterable = is_callable($second) && !is_array($second) ? $second() : $second;
+            foreach ($secondIterable as $item) {
                 yield $item;
             }
-        });
+        }, true);
     }
 
     /**
@@ -492,8 +624,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function zip(iterable|callable $second, ?callable $resultSelector = null): self
     {
-        return new self(function () use ($second, $resultSelector) {
-            $secondIterable = is_callable($second) ? $second() : $second;
+        return self::pipe(function () use ($second, $resultSelector) {
+            $secondIterable = is_callable($second) && !is_array($second) ? $second() : $second;
             $secondIterator = is_array($secondIterable)
                 ? new ArrayIterator($secondIterable)
                 : ($secondIterable instanceof Traversable ? $secondIterable : new ArrayIterator(iterator_to_array($secondIterable)));
@@ -504,7 +636,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
             $secondIterator->rewind();
 
-            foreach ($this as $key => $firstItem) {
+            foreach ($this as $firstItem) {
                 if (!$secondIterator->valid()) {
                     break;
                 }
@@ -513,7 +645,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                 yield $resultSelector !== null ? $resultSelector($firstItem, $secondItem) : [$firstItem, $secondItem];
                 $secondIterator->next();
             }
-        });
+        }, true);
     }
 
     /**
@@ -522,12 +654,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection
     public function tap(callable $callback): self
     {
         $callback = ALinqCallable::withKey($callback);
-        return new self(function () use ($callback) {
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($callback, $isList) {
             foreach ($this as $key => $item) {
                 $callback($item, $key);
-                yield $key => $item;
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
             }
-        });
+        }, $isList);
     }
 
     /**
@@ -546,7 +683,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         $upstream = null;
         $complete = false;
 
-        return new self(function () use (&$buffer, &$upstream, &$complete): Generator {
+        return self::pipe(function () use (&$buffer, &$upstream, &$complete): Generator {
             $index = 0;
             while (true) {
                 if ($index < count($buffer)) {
@@ -574,11 +711,13 @@ final class ALinqLazyCollection implements IALinqLazyCollection
                 $buffer[] = [$upstream->key(), $upstream->current()];
                 $upstream->next();
             }
-        });
+        }, $this->sourceIsList);
     }
 
     /**
      * {@inheritdoc}
+     *
+     * @throws UnderflowException When the collection is empty or no element matches
      */
     public function first(?callable $predicate = null): mixed
     {
@@ -589,7 +728,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
             }
         }
 
-        throw new UnderflowException('Collection is empty or no element matches the predicate.');
+        throw new UnderflowException(
+            $predicate === null
+                ? 'Cannot take first() of an empty collection.'
+                : 'first(): no element matches the predicate.'
+        );
     }
 
     /**
@@ -609,6 +752,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * @throws UnderflowException When the collection is empty or no element matches
      */
     public function last(?callable $predicate = null): mixed
     {
@@ -624,7 +769,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         if (!$found) {
-            throw new UnderflowException('Collection is empty or no element matches the predicate.');
+            throw new UnderflowException(
+                $predicate === null
+                    ? 'Cannot take last() of an empty collection.'
+                    : 'last(): no element matches the predicate.'
+            );
         }
 
         return $last;
@@ -649,6 +798,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * @throws OverflowException When more than one element matches
      */
     public function singleOrDefault(mixed $default = null, ?callable $predicate = null): mixed
     {
@@ -671,6 +822,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * Without a predicate, answers whether the collection has at least one item (LINQ Any()).
      */
     public function any(?callable $predicate = null): bool
     {
@@ -686,32 +839,36 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * Vacuous truth: an empty collection satisfies every predicate (RN-14). Without a
+     * predicate, answers whether every item is truthy.
      */
     public function all(?callable $predicate = null): bool
     {
-        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
-        if ($predicate === null) {
-            return false;
-        }
+        $predicate = $predicate === null
+            ? static fn(mixed $item): bool => (bool) $item
+            : ALinqCallable::withKey($predicate);
 
-        $hasItems = false;
         foreach ($this as $key => $item) {
-            $hasItems = true;
             if (!$predicate($item, $key)) {
                 return false;
             }
         }
 
-        return $hasItems;
+        return true;
     }
 
     /**
      * {@inheritdoc}
+     *
+     * Without a comparer the match is strict (===). A comparer may answer bool (true =
+     * equal) or an int in the `<=>` convention (0 = equal), RN-09.
      */
     public function contains(mixed $value, ?callable $comparer = null): bool
     {
-        foreach ($this as $key => $item) {
-            if ($comparer !== null ? $comparer($item, $value) : $item === $value) {
+        $equals = $comparer === null ? null : ALinqContract::equality($comparer);
+        foreach ($this as $item) {
+            if ($equals !== null ? $equals($item, $value) : $item === $value) {
                 return true;
             }
         }
@@ -721,12 +878,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * With a predicate, counts the items that satisfy it (RN-23).
      */
-    public function count(): int
+    public function count(?callable $predicate = null): int
     {
+        $predicate = $predicate === null ? null : ALinqCallable::withKey($predicate);
         $count = 0;
-        foreach ($this as $_) {
-            $count++;
+        foreach ($this as $key => $item) {
+            if ($predicate === null || $predicate($item, $key)) {
+                $count++;
+            }
         }
 
         return $count;
@@ -734,13 +896,20 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * null values are skipped; an empty collection sums to 0 (RN-15).
+     *
+     * @throws InvalidArgumentException When a value is not numeric
      */
     public function sum(?callable $selector = null): int|float
     {
         $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $sum = 0;
         foreach ($this as $key => $item) {
-            $sum += $selector !== null ? $selector($item, $key) : $item;
+            $value = ALinqContract::numericValue($selector !== null ? $selector($item, $key) : $item, $key, 'sum');
+            if ($value !== null) {
+                $sum += $value;
+            }
         }
 
         return $sum;
@@ -748,6 +917,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * null values are skipped and do not count in the denominator (RN-15).
+     *
+     * @throws UnderflowException When the collection is empty or holds only null
+     * @throws InvalidArgumentException When a value is not numeric
      */
     public function average(?callable $selector = null): int|float
     {
@@ -756,12 +930,15 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         $count = 0;
 
         foreach ($this as $key => $item) {
-            $sum += $selector !== null ? $selector($item, $key) : $item;
-            $count++;
+            $value = ALinqContract::numericValue($selector !== null ? $selector($item, $key) : $item, $key, 'average');
+            if ($value !== null) {
+                $sum += $value;
+                $count++;
+            }
         }
 
         if ($count === 0) {
-            throw new UnderflowException('Cannot compute average on an empty collection.');
+            throw new UnderflowException('Cannot compute average() of an empty collection (null values are skipped).');
         }
 
         return $sum / $count;
@@ -769,6 +946,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * null values are skipped (RN-15).
+     *
+     * @throws UnderflowException When the collection is empty or holds only null
+     * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
     public function min(?callable $selector = null): mixed
     {
@@ -777,7 +959,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         $first = true;
 
         foreach ($this as $key => $item) {
-            $val = $selector !== null ? $selector($item, $key) : $item;
+            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, 'min');
+            if ($val === null) {
+                continue;
+            }
             if ($first || $val < $min) {
                 $min = $val;
                 $first = false;
@@ -785,7 +970,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute min on an empty collection.');
+            throw new UnderflowException('Cannot compute min() of an empty collection (null values are skipped).');
         }
 
         return $min;
@@ -793,6 +978,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * null values are skipped (RN-15).
+     *
+     * @throws UnderflowException When the collection is empty or holds only null
+     * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
     public function max(?callable $selector = null): mixed
     {
@@ -801,7 +991,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         $first = true;
 
         foreach ($this as $key => $item) {
-            $val = $selector !== null ? $selector($item, $key) : $item;
+            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, 'max');
+            if ($val === null) {
+                continue;
+            }
             if ($first || $val > $max) {
                 $max = $val;
                 $first = false;
@@ -809,7 +1002,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute max on an empty collection.');
+            throw new UnderflowException('Cannot compute max() of an empty collection (null values are skipped).');
         }
 
         return $max;
@@ -817,6 +1010,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * @throws UnderflowException When the collection is empty
      */
     public function minBy(callable $keySelector): mixed
     {
@@ -835,7 +1030,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute minBy on an empty collection.');
+            throw new UnderflowException('Cannot compute minBy() of an empty collection.');
         }
 
         return $bestItem;
@@ -843,6 +1038,8 @@ final class ALinqLazyCollection implements IALinqLazyCollection
 
     /**
      * {@inheritdoc}
+     *
+     * @throws UnderflowException When the collection is empty
      */
     public function maxBy(callable $keySelector): mixed
     {
@@ -861,7 +1058,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute maxBy on an empty collection.');
+            throw new UnderflowException('Cannot compute maxBy() of an empty collection.');
         }
 
         return $bestItem;
@@ -898,36 +1095,76 @@ final class ALinqLazyCollection implements IALinqLazyCollection
      */
     public function toArray(): array
     {
-        return self::materialize($this);
+        return self::materialize($this, $this->sourceIsList);
     }
 
     /**
-     * Materializes a stream without ever losing an item (key policy of the 2026-10-08
-     * review, decision 1a: "a list is reindexed, a dictionary keeps its keys").
+     * JsonSerializable: a list becomes a JSON array, a dictionary a JSON object (RN-24).
      *
-     * A stream whose keys are all integers is a list and comes out reindexed, exactly as
-     * the eager ALinqCollection does after where()/take()/skip(); a stream with at least one
-     * string key is a dictionary and keeps its keys, appending an item whose key collides
-     * instead of overwriting it. Before, every materializer did `$result[$key] = $item`:
-     * a source built from two `yield from`, or any where()/skip() over a plain list,
-     * reported count() = 4 and returned two items from toArray().
-     *
-     * @param iterable $items
      * @return array
      */
-    private static function materialize(iterable $items): array
+    public function jsonSerialize(): array
     {
-        $pairs = [];
-        $allIntegerKeys = true;
-        foreach ($items as $key => $item) {
-            $pairs[] = [$key, $item];
-            if (!is_int($key)) {
-                $allIntegerKeys = false;
+        return $this->toArray();
+    }
+
+    /**
+     * Materializes a stream without ever losing an item (key rule, RN-04).
+     *
+     * A known list is reindexed; a known dictionary keeps its keys and appends an item
+     * whose key collides instead of overwriting it; an unknown source (Generator, factory)
+     * is a list when every key is an integer and a dictionary otherwise (the 1.1.2 rule).
+     * Before 1.1.2 every materializer did `$result[$key] = $item`: a source built from two
+     * `yield from`, or any where()/skip() over a plain list, reported count() = 4 and
+     * returned two items from toArray().
+     *
+     * @param iterable $items
+     * @param bool|null $isList
+     * @return array
+     */
+    private static function materialize(iterable $items, ?bool $isList): array
+    {
+        if ($isList === true) {
+            $result = [];
+            foreach ($items as $item) {
+                $result[] = $item;
             }
+            return $result;
         }
 
-        if ($allIntegerKeys) {
+        $pairs = [];
+        foreach ($items as $key => $item) {
+            $pairs[] = [$key, $item];
+        }
+
+        return self::materializePairs($pairs, $isList);
+    }
+
+    /**
+     * The key rule applied to a buffered run of [key, item] pairs (materialize() and the
+     * chunks of chunk()).
+     *
+     * @param array<int, array{0: mixed, 1: mixed}> $pairs
+     * @param bool|null $isList
+     * @return array
+     */
+    private static function materializePairs(array $pairs, ?bool $isList): array
+    {
+        if ($isList === true) {
             return array_column($pairs, 1);
+        }
+
+        if ($isList === null) {
+            $allIntegerKeys = true;
+            foreach ($pairs as [$key]) {
+                if (!is_int($key)) {
+                    $allIntegerKeys = false;
+                    break;
+                }
+            }
+            if ($allIntegerKeys) {
+                return array_column($pairs, 1);
+            }
         }
 
         $result = [];

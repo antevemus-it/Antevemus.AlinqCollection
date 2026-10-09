@@ -68,7 +68,7 @@ Para consumir diretamente via GitHub antes ou em paralelo ao Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.1"
+        "antevemus/alinq-collection": "^1.3"
     }
 }
 ```
@@ -240,7 +240,8 @@ $primeiroOuNulo = $colecao->firstOrDefault(null, fn($x) => $x > 100); // null
 $unico = $colecao->where(fn($x) => $x === 3)->singleOrDefault(); // 3
 
 // chunk(tamanho) & pad(tamanho, valor)
-$grupos = $colecao->chunk(3); // [[1, 2, 3], [4, 5, 6], [7, 8, 9], [10]]
+$grupos = $colecao->chunk(3);                        // 4 coleções: [1, 2, 3], [4, 5, 6], [7, 8, 9], [10]
+$somas = $grupos->select(fn($grupo) => $grupo->sum()); // [6, 15, 24, 10]
 $preenchido = ALinqCollection::from([1, 2])->pad(5, 0); // [1, 2, 0, 0, 0]
 ```
 
@@ -529,6 +530,23 @@ $totalCount = $streamComCache->count(); // O generator roda uma única vez
 $media      = $streamComCache->average(); // Lê do cache local em memória, sem reexecutar o generator
 ```
 
+### 11. O Contrato: Chaves, Igualdade, Coleções Vazias (desde a 1.3.0)
+
+As duas coleções obedecem a um único contrato escrito, garantido por um teste de paridade que executa toda operação compartilhada sobre as mesmas entradas no lado eager e no lado lazy (`tests/Contract/ParityTest.php`, zero divergências permitidas).
+
+| Regra | Comportamento |
+|---|---|
+| **Chaves** | Uma **lista** (`array_is_list()`) sai **reindexada** de toda operação de filtragem, fatiamento, conjunto ou ordenação; um **dicionário** (qualquer outro formato de chaves, inclusive `[10 => 'a', 20 => 'b']`) **mantém as chaves**. `select()` sempre preserva as chaves. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `zip()`, `unionBy()` sempre produzem lista. `chunk()` é uma lista de coleções (cada pedaço segue a regra da sua origem). A coleção lazy sabe se a fonte é lista (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `range()`, `repeat()`); um generator cru é "desconhecido": mantém as chaves durante o streaming e `toArray()` só reindexa quando todas as chaves são inteiras. A materialização nunca perde item: chave repetida é anexada. |
+| **Igualdade** | Elementos e chaves são comparados por **identidade estrita e tipada** em toda parte: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `contains`. `1`, `'1'`, `1.0` e `true` são quatro valores diferentes; arrays comparam por valor; objetos por identidade. Chave `null` nunca casa em `join`/`groupJoin` (semântica do LINQ e do SQL). Uma coluna de banco que chega como string não casa com uma chave inteira: faça o cast do seu lado. Um comparador customizado (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) pode devolver `bool` (`true` = iguais) ou um inteiro no estilo `<=>` (`0` = iguais). |
+| **Chaves de grupo** | `groupBy`, `countBy`, `aggregateBy` e `toDictionary` aceitam chaves `int`, `string` e `BackedEnum` (o seu valor); `null`, `bool`, `float`, arrays e objetos lançam `InvalidArgumentException` em vez de serem coagidos em silêncio. `toDictionary()` lança em chave repetida. |
+| **Coleções vazias** | Como no LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` lançam `UnderflowException` em coleção vazia ou quando nenhum elemento casa; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` devolvem o default; `singleOrDefault()` lança `OverflowException` com mais de um resultado; `random()` lança `UnderflowException` como `first()` e `random(n > 1)` devolve coleção vazia como `take(n)`; `sum()` de nada é `0`, `product()` de nada é `1`; `any()` significa "tem ao menos um item"; `all($p)` de nada é `true`; `all()` sem predicado significa "todo item é truthy". |
+| **Argumentos** | `take`/`skip`/`pad` com contagem negativa, `chunk(0)`, `random(0)`, `range()` com passo não positivo lançam `InvalidArgumentException` (nada fatia pela cauda nem é ignorado em silêncio). |
+| **Números** | `sum`, `average`, `min`, `max`, `product` **ignoram `null`** (`average([1, null, 2])` é `1.5`); quando só resta `null`, a coleção conta como vazia. Valor não numérico (string, array, objeto) lança `InvalidArgumentException` em `sum`/`average`/`product`; `min`/`max` comparam qualquer escalar ou `DateTimeInterface`. |
+| **Callbacks** | Um callback recebe `($item, $key)` quando aceita dois parâmetros e só o item caso contrário, então `where('is_int')`, `select('trim')` e `fn($v, $k) => ...` funcionam em todo operador das duas coleções. |
+| **Imutabilidade** | Nenhuma operação de consulta altera a coleção de origem. `each()` itera sobre uma cópia: callback por referência não altera a coleção (use `select()` para transformar). |
+| **Query builder** | `toPredicate()` é um snapshot: chamadas posteriores a `where()` não alteram um predicado já devolvido. `create($mode)` aceita `and`/`or` (qualquer caixa) e lança para o resto. Quando a propriedade resolve para `null`, `>`, `>=`, `<`, `<=`, `between`, `notBetween`, `contains`, `startsWith`, `endsWith` são `false`; `=`/`==` e `!=`/`<>` comparam estritamente com `null` (`where('x', '=', null)` significa "é nulo"); propriedade ausente resolve para `null`. |
+| **JSON** | As duas coleções implementam `JsonSerializable`: lista vira array JSON, dicionário vira objeto JSON. |
+
 ---
 
 ## 🧪 Qualidade de Código & Cobertura de Testes
@@ -544,22 +562,24 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 387 ( 18%)
-............................................................... 126 / 387 ( 37%)
-............................................................... 189 / 387 ( 56%)
-............................................................... 252 / 387 ( 75%)
-............................................................... 315 / 387 ( 94%)
-....................                                            387 / 387 (100%)
+...............................................................  63 / 442 ( 14%)
+............................................................... 126 / 442 ( 28%)
+............................................................... 189 / 442 ( 42%)
+............................................................... 252 / 442 ( 57%)
+............................................................... 315 / 442 ( 71%)
+............................................................... 378 / 442 ( 85%)
+............................................................... 441 / 442 ( 99%)
+.                                                               442 / 442 (100%)
 
-Time: 00:06.312, Memory: 6.00 MB
+Time: 00:00.330, Memory: 8.00 MB
 
-OK (387 tests, 1050 assertions)
+OK (442 tests, 1381 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **387 Testes Unitários & 1050 Asserções** certificando todos os 8 traits funcionais e o motor de streaming.
+- **442 Testes & 1381 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 
@@ -573,6 +593,9 @@ OK (387 tests, 1050 assertions)
 - [x] **v1.1.1**: Correções do motor de streaming: `remember()` só guarda passagens completas, `fromFile()` preserva linhas longas inteiras, cursores de passagem única falham alto na segunda travessia.
 - [x] **v1.1.2**: Materializadores lazy nunca perdem itens (lista reindexada, dicionário preservado), `remember()` resumível, `last()` com a chave real.
 - [x] **v1.2.0**: Promessas do README I: grupos de `groupBy()` são coleções, `select()` recebe a chave, todo operador aceita callables nativos, `distinct()` estrito e seguro para arrays/objetos, `selectMany()` achata qualquer iterable, `between`/`notIn`/`isNull` no query builder, dot-notation e resolução de getters no `ALinqPropertyAccess`.
+- [x] **v1.3.0**: O contrato: uma regra de chaves, identidade estrita, semântica LINQ em coleções vazias, argumentos e chaves de grupo validados, agregações e query builder cientes de `null`, `count($predicate)`, `JsonSerializable`; paridade eager × lazy garantida por teste (§11).
+- [ ] **Robustez das fontes lazy**: linhas irregulares de CSV, BOM, diretórios em `fromFile()`, um statement por coleção em `fromCursor()`.
+- [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução; extrair um pacote comum é assunto da 2.0).
 - [ ] **`thenBy()` / `thenByDescending()`**: ordenação composta e estável por várias chaves (hoje: `orderByCustom()`).
 - [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: anunciados nas notas da 0.1.0 e nunca entregues; ver a errata no CHANGELOG.
 - [ ] **Futuro**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.

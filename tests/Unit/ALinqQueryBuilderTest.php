@@ -652,6 +652,139 @@ class ALinqQueryBuilderTest extends TestCase
         $between = $people->where(ALinqQueryBuilder::create()->where('age', 'between', [18, 40])->toPredicate());
         $this->assertSame(['Alice'], $between->select(fn($p) => $p->getName())->toArray());
     }
+
+    // ===== CONTRACT 1.3.0: null rule (RN-20), snapshot (RN-21), mode (RN-22) =====
+
+    public function testNullIsNeverLessThanNorGreaterThanAnything(): void
+    {
+        $rows = [['age' => 30], ['name' => 'sem idade'], ['age' => null]];
+
+        foreach (['<', '<=', '>', '>='] as $operator) {
+            $predicate = ALinqQueryBuilder::create()->where('age', $operator, 18)->toPredicate();
+            $matched = array_values(array_filter($rows, $predicate));
+            $this->assertSame(
+                $operator[0] === '>' ? [['age' => 30]] : [],
+                $matched,
+                "operator $operator must not accept a null or missing age"
+            );
+        }
+
+        // Before 1.3.0 a missing property satisfied '<' (null < 18 is true in PHP)
+        $this->assertCount(0, array_filter($rows, ALinqQueryBuilder::create()->where('age', '<', 18)->toPredicate()));
+    }
+
+    public function testNullIsNeverInsideNorOutsideARange(): void
+    {
+        $between = ALinqQueryBuilder::create()->where('age', 'between', [18, 40])->toPredicate();
+        $notBetween = ALinqQueryBuilder::create()->where('age', 'notBetween', [18, 40])->toPredicate();
+
+        $this->assertFalse($between(['age' => null]));
+        $this->assertFalse($between(['other' => 1]));
+        $this->assertFalse($notBetween(['age' => null]));
+        $this->assertFalse($notBetween(['other' => 1]));
+        $this->assertTrue($notBetween(['age' => 50]));
+    }
+
+    public function testEqualsNullMeansIsNull(): void
+    {
+        $rows = [['age' => 30], ['name' => 'sem idade'], ['age' => null], ['age' => 0], ['age' => ''], ['age' => false], ['age' => []]];
+
+        $equalsNull = ALinqQueryBuilder::create()->where('age', '=', null)->toPredicate();
+        $this->assertSame(2, count(array_filter($rows, $equalsNull)), 'only the missing and the null age');
+
+        $equalsZero = ALinqQueryBuilder::create()->where('age', '=', 0)->toPredicate();
+        $this->assertFalse($equalsZero(['age' => null]), 'null is not 0');
+        $this->assertFalse($equalsZero(['other' => 1]), 'a missing property is not 0');
+        $this->assertTrue($equalsZero(['age' => 0]));
+        $this->assertTrue($equalsZero(['age' => '0']), 'loose equality is kept when neither side is null');
+
+        $notNull = ALinqQueryBuilder::create()->where('age', '!=', null)->toPredicate();
+        $this->assertTrue($notNull(['age' => 0]));
+        $this->assertTrue($notNull(['age' => '']));
+        $this->assertFalse($notNull(['age' => null]));
+
+        $notZero = ALinqQueryBuilder::create()->where('age', '<>', 0)->toPredicate();
+        $this->assertTrue($notZero(['age' => null]), 'null is different from 0');
+        $this->assertFalse($notZero(['age' => '0']));
+    }
+
+    public function testInAndNotInAreStrictForANullValue(): void
+    {
+        $in = ALinqQueryBuilder::create()->where('age', 'in', [0, '', false])->toPredicate();
+        $notIn = ALinqQueryBuilder::create()->where('age', 'notIn', [0, '', false])->toPredicate();
+
+        $this->assertFalse($in(['age' => null]), 'null is not in [0, "", false]');
+        $this->assertTrue($notIn(['age' => null]));
+        $this->assertTrue($in(['age' => '0']), 'loose membership is kept for non-null values');
+        $this->assertTrue(ALinqQueryBuilder::create()->where('age', 'in', [null, 1])->toPredicate()(['age' => null]));
+    }
+
+    public function testStringOperatorsNeverMatchNull(): void
+    {
+        foreach (['contains', 'startsWith', 'endsWith'] as $operator) {
+            $predicate = ALinqQueryBuilder::create()->where('name', $operator, '')->toPredicate();
+            $this->assertFalse($predicate(['name' => null]), $operator);
+            $this->assertFalse($predicate(['other' => 1]), $operator);
+            $this->assertTrue($predicate(['name' => 'x']), $operator);
+        }
+    }
+
+    public function testCreatePredicateFollowsTheSameNullRule(): void
+    {
+        $collection = ALinqCollection::from([30, null, 10]);
+
+        $this->assertFalse($collection->createPredicate('<', 18)(null));
+        $this->assertTrue($collection->createPredicate('=', null)(null));
+        $this->assertFalse($collection->createPredicate('=', 0)(null));
+    }
+
+    public function testToPredicateIsSnapshot(): void
+    {
+        $query = ALinqQueryBuilder::create('and')->where('a', '=', 1);
+        $predicate = $query->toPredicate();
+
+        $query->where('b', '=', 2);
+
+        $this->assertTrue($predicate(['a' => 1]), 'a where() added later must not alter the predicate already handed out');
+        $this->assertFalse($query->toPredicate()(['a' => 1]));
+        $this->assertTrue($query->toPredicate()(['a' => 1, 'b' => 2]));
+    }
+
+    public function testEmptyBuilderPredicateIsTrueOnlyForThatCall(): void
+    {
+        $query = ALinqQueryBuilder::create();
+        $alwaysTrue = $query->toPredicate();
+
+        $query->where('a', '=', 1);
+
+        $this->assertTrue($alwaysTrue(['a' => 2]));
+        $this->assertFalse($query->toPredicate()(['a' => 2]));
+    }
+
+    public function testInvalidModeThrows(): void
+    {
+        foreach (['xor', '', 'andor', 'nand'] as $mode) {
+            try {
+                ALinqQueryBuilder::create($mode);
+                $this->fail("mode '$mode' must be rejected");
+            } catch (\InvalidArgumentException $e) {
+                $this->assertStringContainsString('Supported modes: and, or', $e->getMessage());
+            }
+        }
+    }
+
+    public function testModeIsTrimmedAndCaseInsensitive(): void
+    {
+        $predicate = ALinqQueryBuilder::create(' OR ')
+            ->where('value', '<', 5)
+            ->where('value', '>', 10)
+            ->toPredicate();
+
+        $this->assertTrue($predicate(['value' => 3]));
+        $this->assertFalse($predicate(['value' => 7]));
+
+        $this->assertInstanceOf(ALinqQueryBuilder::class, ALinqQueryBuilder::create("\tAnd\n"));
+    }
 }
 
 final class QueryBuilderPerson

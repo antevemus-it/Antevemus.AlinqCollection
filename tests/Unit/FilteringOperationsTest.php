@@ -92,8 +92,8 @@ class FilteringOperationsTest extends TestCase
         $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
         $result = $collection->skip(2);
 
-        // array_slice reindexa arrays numéricos por padrão
-        $this->assertEquals([3, 4, 5], array_values($result->toArray()));
+        // RN-02: a list comes out reindexed
+        $this->assertSame([3, 4, 5], $result->toArray());
     }
 
     /**
@@ -323,7 +323,7 @@ class FilteringOperationsTest extends TestCase
     public function testSingleOrDefaultThrowsExceptionWithMultiple(): void
     {
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage("Sequence contains more than one matching element");
+        $this->expectExceptionMessage("Collection contains more than one matching element.");
 
         $collection = ALinqCollection::from([1, 2, 3]);
         $collection->singleOrDefault();
@@ -390,26 +390,53 @@ class FilteringOperationsTest extends TestCase
     // ===== CHUNK TESTS =====
 
     /**
-     * Test chunk splits collection into smaller collections
+     * D10 (forward 015): chunk() splits the collection into ALinqCollection chunks that stay
+     * queryable (before 1.3.0: native arrays, which lose the collection API).
      */
-    public function testChunkSplitsCollection(): void
+    public function testChunkSplitsCollectionIntoCollections(): void
     {
         $collection = ALinqCollection::from([1, 2, 3, 4, 5, 6, 7]);
         $result = $collection->chunk(3);
 
-        $expected = [[1, 2, 3], [4, 5, 6], [7]];
-        $this->assertEquals($expected, $result->toArray());
+        $this->assertContainsOnlyInstancesOf(ALinqCollection::class, $result->toArray());
+        $this->assertSame([[1, 2, 3], [4, 5, 6], [7]], self::chunks($result));
+        $this->assertSame([6, 15, 7], $result->select(fn(ALinqCollection $chunk) => $chunk->sum())->toArray());
+        $this->assertSame('[[1,2,3],[4,5,6],[7]]', json_encode($result));
     }
 
     /**
-     * Test chunk preserves keys
+     * RN-02: chunk() is a list of collections; inside each chunk a dictionary keeps its keys
+     * and a list is reindexed. Before 1.3.0 this test only counted the chunks and chunk()
+     * never preserved keys (review 2026-10-08, 2.8).
      */
     public function testChunkPreservesKeys(): void
     {
         $collection = ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
         $result = $collection->chunk(2);
 
-        $this->assertCount(2, $result->toArray());
+        $this->assertSame([['a' => 1, 'b' => 2], ['c' => 3]], self::chunks($result));
+        $this->assertSame([[1, 2], [3]], self::chunks(ALinqCollection::from([1, 2, 3])->chunk(2)));
+        $this->assertSame([[10 => 'x', 20 => 'y']], self::chunks(ALinqCollection::from([10 => 'x', 20 => 'y'])->chunk(5)));
+    }
+
+    /**
+     * @return array<int, array> the chunks as native arrays
+     */
+    private static function chunks(ALinqCollection $chunked): array
+    {
+        return array_map(static fn(ALinqCollection $chunk) => $chunk->toArray(), $chunked->toArray());
+    }
+
+    /**
+     * RN-13 (forward 015, D4): chunk(0) throws the library's own InvalidArgumentException
+     * instead of a native ValueError.
+     */
+    public function testChunkWithSizeBelowOneThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('chunk() expects size to be at least 1, 0 given');
+
+        ALinqCollection::from([1, 2])->chunk(0);
     }
 
     // ===== PAD TESTS =====
@@ -426,14 +453,24 @@ class FilteringOperationsTest extends TestCase
     }
 
     /**
-     * Test pad with negative size pads at beginning
+     * RN-13 (forward 015, D4): a negative pad size throws. Before 1.3.0 array_pad() padded
+     * at the beginning, which the lazy side cannot do without buffering.
      */
-    public function testPadWithNegativeSizePadsAtBeginning(): void
+    public function testPadWithNegativeSizeThrows(): void
     {
-        $collection = ALinqCollection::from([1, 2, 3]);
-        $result = $collection->pad(-5, 0);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('pad() expects size to be at least 0, -5 given');
 
-        $this->assertEquals([0, 0, 1, 2, 3], $result->toArray());
+        ALinqCollection::from([1, 2, 3])->pad(-5, 0);
+    }
+
+    /**
+     * RN-02: pad() on a dictionary keeps the keys and appends the padding.
+     */
+    public function testPadKeepsDictionaryKeysAndAppendsPadding(): void
+    {
+        $this->assertSame(['a' => 1, 'b' => 2, 0 => 'p', 1 => 'p'], ALinqCollection::from(['a' => 1, 'b' => 2])->pad(4, 'p')->toArray());
+        $this->assertSame([5 => 'x', 6 => 'p'], ALinqCollection::from([5 => 'x'])->pad(2, 'p')->toArray());
     }
 
     /**
@@ -523,6 +560,163 @@ class FilteringOperationsTest extends TestCase
     }
 
     /**
+     * RN-09 (forward 015): a comparer may answer bool (true = equal) or `<=>` (0 = equal).
+     * Before 1.3.0 only `=== 0` was accepted, so `fn($a, $b) => $a == $b` never found anything
+     * (review 2026-10-08, 2.9) while the lazy side accepted only truthy (4.6).
+     */
+    public function testContainsAcceptsBooleanOrSpaceshipComparer(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+
+        $this->assertTrue($collection->contains(2, fn($a, $b) => $a == $b));
+        $this->assertFalse($collection->contains(9, fn($a, $b) => $a == $b));
+        $this->assertTrue($collection->contains(3, fn($a, $b) => $a <=> $b));
+        $this->assertFalse($collection->contains(99, fn($a, $b) => $a <=> $b));
+        $this->assertTrue($collection->contains('3', fn($a, $b) => $a === (int) $b));
+    }
+
+    /**
+     * RN-02 (forward 015, decision 1a): subset operations reindex a list and keep the keys of
+     * a dictionary, including a dictionary with non-sequential integer keys. Before 1.3.0
+     * distinct() always reindexed and take()/skip() reindexed integer keys (review 2026-10-08, 2.8).
+     */
+    public function testSubsetOperationsReindexListsAndKeepDictionaryKeys(): void
+    {
+        $dict = ALinqCollection::from(['x' => 10, 'y' => 20, 'z' => 30, 'w' => 20]);
+        $this->assertSame(['x' => 10, 'y' => 20, 'z' => 30], $dict->distinct()->toArray());
+        $this->assertSame(['x' => 10, 'y' => 20], $dict->distinctBy(fn($v) => $v > 15)->toArray());
+        $this->assertSame(['x' => 10, 'y' => 20], $dict->take(2)->toArray());
+        $this->assertSame(['z' => 30, 'w' => 20], $dict->skip(2)->toArray());
+        $this->assertSame(['z' => 30], $dict->where(fn($v) => $v > 25)->toArray());
+        $this->assertSame(['y' => 20, 'z' => 30, 'w' => 20], $dict->where(fn($v) => $v > 15)->skip(0)->toArray());
+
+        $intKeyed = ALinqCollection::from([10 => 'a', 20 => 'b', 30 => 'a']);
+        $this->assertSame([10 => 'a', 20 => 'b'], $intKeyed->distinct()->toArray());
+        $this->assertSame([20 => 'b', 30 => 'a'], $intKeyed->skip(1)->toArray());
+        $this->assertSame([10 => 'a'], $intKeyed->take(1)->toArray());
+
+        $list = ALinqCollection::from([10, 20, 30, 20]);
+        $this->assertSame([10, 20, 30], $list->distinct()->toArray());
+        $this->assertSame([30, 20], $list->skip(2)->toArray());
+        $this->assertSame([10, 20], $list->take(2)->toArray());
+        $this->assertSame([20, 30, 20], $list->where(fn($v) => $v > 15)->toArray());
+    }
+
+    /**
+     * RN-02: shuffle() of a dictionary keeps every item under its key.
+     */
+    public function testShuffleKeepsDictionaryKeys(): void
+    {
+        $dict = ['a' => 1, 'b' => 2, 'c' => 3, 'd' => 4];
+        $shuffled = ALinqCollection::from($dict)->shuffle()->toArray();
+
+        $this->assertCount(4, $shuffled);
+        foreach ($dict as $key => $value) {
+            $this->assertSame($value, $shuffled[$key]);
+        }
+
+        $list = ALinqCollection::from([1, 2, 3, 4])->shuffle()->toArray();
+        $this->assertTrue(array_is_list($list));
+        sort($list);
+        $this->assertSame([1, 2, 3, 4], $list);
+    }
+
+    /**
+     * RN-13 (forward 015, D4): negative take()/skip() throw. Before 1.3.0 array_slice()
+     * counted from the end (take(-2) on [1..5] returned [1, 2, 3], review 2026-10-08, 2.7).
+     */
+    public function testNegativeTakeAndSkipThrow(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3, 4, 5]);
+
+        try {
+            $collection->take(-2);
+            $this->fail('take(-2) must throw');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('take() expects count to be at least 0, -2 given', $e->getMessage());
+        }
+        try {
+            $collection->skip(-2);
+            $this->fail('skip(-2) must throw');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('skip() expects count to be at least 0, -2 given', $e->getMessage());
+        }
+
+        $this->assertSame([], $collection->take(0)->toArray());
+        $this->assertSame([1, 2, 3, 4, 5], $collection->skip(0)->toArray());
+    }
+
+    /**
+     * RN-11 (forward 015, decision 2a): first()/last() throw UnderflowException when the
+     * collection is empty or nothing matches; the *OrDefault variants return the default.
+     * Before 1.3.0 first()/last() returned null.
+     */
+    public function testFirstAndLastThrowOnEmptyOrNoMatch(): void
+    {
+        $empty = ALinqCollection::empty();
+        $items = ALinqCollection::from([1, 2, 3]);
+
+        $calls = [
+            'Cannot take first() of an empty collection.' => fn() => $empty->first(),
+            'Cannot take last() of an empty collection.' => fn() => $empty->last(),
+            'first(): no element matches the predicate.' => fn() => $items->first(fn($v) => $v > 5),
+            'last(): no element matches the predicate.' => fn() => $items->last(fn($v) => $v > 5),
+        ];
+        foreach ($calls as $message => $call) {
+            try {
+                $call();
+                $this->fail('first()/last() must throw');
+            } catch (\UnderflowException $e) {
+                // Same text as the lazy side: the contract is the class and the message.
+                $this->assertSame($message, $e->getMessage());
+            }
+        }
+
+        $this->assertSame('d', $empty->firstOrDefault('d'));
+        $this->assertSame('d', $empty->lastOrDefault('d'));
+        $this->assertSame('d', $items->firstOrDefault('d', fn($v) => $v > 5));
+        $this->assertSame('d', $items->lastOrDefault('d', fn($v) => $v > 5));
+    }
+
+    /**
+     * RN-05: a stored null is an element; only the absence of a match returns the default.
+     * first()/last() no longer move the internal pointer (review 2026-10-08, 2.13 and 2.14).
+     */
+    public function testNullElementIsDistinguishedFromAbsence(): void
+    {
+        $withNull = ALinqCollection::from([null, 1]);
+
+        $this->assertNull($withNull->first());
+        $this->assertNull($withNull->firstOrDefault('DEF'));
+        $this->assertNull($withNull->firstOrDefault('DEF', fn($v) => $v === null));
+        $this->assertNull($withNull->lastOrDefault('DEF', fn($v) => $v === null));
+        $this->assertSame('DEF', $withNull->firstOrDefault('DEF', fn($v) => $v === 2));
+
+        $pointer = ALinqCollection::from([1, 2, 3]);
+        $pointer->next();
+        $this->assertSame(2, $pointer->current());
+        $pointer->first();
+        $pointer->last();
+        $this->assertSame(2, $pointer->current());
+    }
+
+    /**
+     * RN-12: singleOrDefault() with more than one match throws OverflowException, which
+     * still extends RuntimeException (the exception type before 1.3.0).
+     */
+    public function testSingleOrDefaultThrowsOverflowException(): void
+    {
+        try {
+            ALinqCollection::from([1, 2])->singleOrDefault();
+            $this->fail('singleOrDefault() with two items must throw');
+        } catch (\OverflowException $e) {
+            $this->assertInstanceOf(\RuntimeException::class, $e);
+        }
+
+        $this->assertSame(2, ALinqCollection::from(['a' => 1, 'b' => 2])->singleOrDefault(null, fn($v) => $v === 2));
+    }
+
+    /**
      * Test fluent API chaining with filtering operations
      */
     public function testFluentApiChaining(): void
@@ -535,8 +729,8 @@ class FilteringOperationsTest extends TestCase
             ->skip(1)
             ->distinct();
 
-        // skip() reindexa o array, então usamos array_values para comparar valores
-        $this->assertEquals([5, 6, 7, 8], array_values($result->toArray()));
+        // RN-02: every step reindexes the list
+        $this->assertSame([5, 6, 7, 8], $result->toArray());
     }
 
     /**

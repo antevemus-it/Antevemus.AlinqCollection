@@ -32,7 +32,17 @@ use InvalidArgumentException;
  * The same evaluator backs `ALinqCollection::createPredicate()`, so both entry points
  * accept the same operators with the same semantics.
  *
- * @version    1.2.0
+ * `null` rule (1.3.0 contract, RN-20): a `null` value (including a missing property, which
+ * resolves to `null`) is never `>`, `>=`, `<`, `<=`, `between`, `notBetween`, nor does it
+ * `contain`/`startWith`/`endWith` anything; `=`/`==`/`!=`/`<>` compare strictly when either
+ * side is `null` (`= null` means `isNull`, `= 0` does not match `null`); `in`/`notIn` are
+ * strict when the value read is `null`.
+ *
+ * Mode (RN-22): `create()` accepts `and`/`or`, case-insensitive and trimmed; anything else
+ * throws. `toPredicate()` (RN-21) is a snapshot: conditions added afterwards do not alter a
+ * predicate already handed out.
+ *
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -54,12 +64,22 @@ class ALinqQueryBuilder
     private string $mode = 'and';
 
     /**
-     * Create a new query with the specified mode
+     * Create a new query with the specified mode (`and` or `or`, case-insensitive, trimmed)
+     *
+     * @throws InvalidArgumentException for any other mode (before 1.3.0 it silently became OR)
      */
     public static function create(string $mode = 'and'): self
     {
+        $normalized = strtolower(trim($mode));
+        if ($normalized !== 'and' && $normalized !== 'or') {
+            throw new InvalidArgumentException(sprintf(
+                'Unknown query mode: %s. Supported modes: and, or',
+                var_export($mode, true)
+            ));
+        }
+
         $instance = new self();
-        $instance->mode = strtolower($mode);
+        $instance->mode = $normalized;
         return $instance;
     }
 
@@ -91,22 +111,24 @@ class ALinqQueryBuilder
 
     /**
      * Create a compound predicate from all conditions
+     *
+     * The predicate is a snapshot of the conditions and the mode at the moment of the call:
+     * a where() added afterwards does not change it, and an empty builder yields an
+     * always-true predicate only for that call (review 2026-10-08, 3.11).
      */
     public function toPredicate(): Closure
     {
-        if (empty($this->conditions)) {
-            return fn($item) => true;
+        $conditions = $this->conditions;
+
+        if ($conditions === []) {
+            return static fn($item) => true;
         }
 
         if ($this->mode === 'and') {
-            return function($item) {
-                return array_all($this->conditions, fn($condition) => $condition($item));
-            };
+            return static fn($item): bool => array_all($conditions, fn($condition) => $condition($item));
         }
 
-        return function($item) {
-            return array_any($this->conditions, fn($condition) => $condition($item));
-        };
+        return static fn($item): bool => array_any($conditions, fn($condition) => $condition($item));
     }
 
     /**
@@ -125,28 +147,37 @@ class ALinqQueryBuilder
      * This is the single operator evaluator shared by where() and by
      * ALinqCollection::createPredicate().
      *
+     * The `null` rule (RN-20): a `null` actual value never satisfies a relational or string
+     * operator; loose equality becomes strict when either side is `null`; `in`/`notIn` are
+     * strict for a `null` actual. Before 1.3.0 `'<' 18` accepted an item without the
+     * property and `'=' null` matched `0`, `''`, `false` and `[]` (review 2026-10-08, 3.13).
+     *
      * @throws InvalidArgumentException for an unknown operator or a malformed between/notBetween range
      */
     public static function operatorPredicate(string $operator, mixed $value = null): Closure
     {
         return match (self::normalizeOperator($operator)) {
-            '=', '==' => fn(mixed $actual): bool => $actual == $value,
-            '===' => fn(mixed $actual): bool => $actual === $value,
-            '!=', '<>' => fn(mixed $actual): bool => $actual != $value,
-            '!==' => fn(mixed $actual): bool => $actual !== $value,
-            '>' => fn(mixed $actual): bool => $actual > $value,
-            '>=' => fn(mixed $actual): bool => $actual >= $value,
-            '<' => fn(mixed $actual): bool => $actual < $value,
-            '<=' => fn(mixed $actual): bool => $actual <= $value,
-            'in' => fn(mixed $actual): bool => in_array($actual, (array)$value),
-            'notin' => fn(mixed $actual): bool => !in_array($actual, (array)$value),
+            '=', '==' => static fn(mixed $actual): bool => ($actual === null || $value === null)
+                ? $actual === $value
+                : $actual == $value,
+            '===' => static fn(mixed $actual): bool => $actual === $value,
+            '!=', '<>' => static fn(mixed $actual): bool => ($actual === null || $value === null)
+                ? $actual !== $value
+                : $actual != $value,
+            '!==' => static fn(mixed $actual): bool => $actual !== $value,
+            '>' => static fn(mixed $actual): bool => $actual !== null && $actual > $value,
+            '>=' => static fn(mixed $actual): bool => $actual !== null && $actual >= $value,
+            '<' => static fn(mixed $actual): bool => $actual !== null && $actual < $value,
+            '<=' => static fn(mixed $actual): bool => $actual !== null && $actual <= $value,
+            'in' => static fn(mixed $actual): bool => in_array($actual, (array)$value, $actual === null),
+            'notin' => static fn(mixed $actual): bool => !in_array($actual, (array)$value, $actual === null),
             'between' => self::betweenPredicate($operator, $value, false),
             'notbetween' => self::betweenPredicate($operator, $value, true),
-            'isnull' => fn(mixed $actual): bool => $actual === null,
-            'isnotnull' => fn(mixed $actual): bool => $actual !== null,
-            'contains' => fn(mixed $actual): bool => is_string($actual) && str_contains($actual, (string)$value),
-            'startswith' => fn(mixed $actual): bool => is_string($actual) && str_starts_with($actual, (string)$value),
-            'endswith' => fn(mixed $actual): bool => is_string($actual) && str_ends_with($actual, (string)$value),
+            'isnull' => static fn(mixed $actual): bool => $actual === null,
+            'isnotnull' => static fn(mixed $actual): bool => $actual !== null,
+            'contains' => static fn(mixed $actual): bool => is_string($actual) && str_contains($actual, (string)$value),
+            'startswith' => static fn(mixed $actual): bool => is_string($actual) && str_starts_with($actual, (string)$value),
+            'endswith' => static fn(mixed $actual): bool => is_string($actual) && str_ends_with($actual, (string)$value),
             default => throw new InvalidArgumentException(
                 sprintf('Unknown operator: %s. Supported operators: %s', $operator, implode(', ', self::OPERATORS))
             ),
@@ -176,10 +207,11 @@ class ALinqQueryBuilder
 
         [$min, $max] = array_values($range);
 
+        // null is neither inside nor outside a range (RN-20): both forms answer false
         if ($negate) {
-            return fn(mixed $actual): bool => $actual < $min || $actual > $max;
+            return static fn(mixed $actual): bool => $actual !== null && ($actual < $min || $actual > $max);
         }
 
-        return fn(mixed $actual): bool => $actual >= $min && $actual <= $max;
+        return static fn(mixed $actual): bool => $actual !== null && $actual >= $min && $actual <= $max;
     }
 }

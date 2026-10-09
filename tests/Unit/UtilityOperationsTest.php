@@ -207,14 +207,27 @@ class UtilityOperationsTest extends TestCase
     }
 
     /**
-     * Test random on empty collection returns null
+     * D11 (forward 015): random() of an empty collection throws like first() (before 1.3.0:
+     * null, which neither LINQ's First() nor PHP's array_rand() would answer).
      */
-    public function testRandomOnEmptyCollectionReturnsNull(): void
+    public function testRandomOnEmptyCollectionThrowsLikeFirst(): void
     {
-        $collection = ALinqCollection::empty();
-        $result = $collection->random();
+        $this->expectException(\UnderflowException::class);
+        $this->expectExceptionMessage('Cannot take random() of an empty collection.');
 
-        $this->assertNull($result);
+        ALinqCollection::empty()->random();
+    }
+
+    /**
+     * D11 (forward 015): random(n > 1) of an empty collection is an empty collection, like
+     * take(n), so the pipeline keeps chaining (before 1.3.0: null).
+     */
+    public function testRandomOfManyOnEmptyCollectionIsAnEmptyCollection(): void
+    {
+        $result = ALinqCollection::empty()->random(3);
+
+        $this->assertInstanceOf(ALinqCollection::class, $result);
+        $this->assertSame([], $result->toArray());
     }
 
     /**
@@ -253,30 +266,99 @@ class UtilityOperationsTest extends TestCase
     // ===== EXTRACT TESTS =====
 
     /**
-     * Test extract exports variables to current scope
+     * RN-26 (forward 015): extract() cannot export into the caller's scope (review 2026-10-08,
+     * 3.10). It is deprecated since 1.3.0: emits E_USER_DEPRECATED, exports nothing to the
+     * caller and still returns the count. Before, this test only asserted the count.
      */
-    public function testExtractExportsVariablesToCurrentScope(): void
+    public function testExtractIsDeprecatedAndExportsNothingToTheCaller(): void
     {
         $collection = ALinqCollection::from([
             'var1' => 'value1',
             'var2' => 'value2'
         ]);
 
-        $count = $collection->extract(EXTR_SKIP);
+        $count = $this->capturingDeprecation(fn() => $collection->extract(EXTR_SKIP), $message);
 
-        $this->assertEquals(2, $count);
+        $this->assertSame('ALinqCollection::extract() is deprecated since 1.3.0 and will be removed in 2.0: a method cannot export variables into the scope of its caller.', $message);
+        $this->assertSame(2, $count);
+        $this->assertFalse(isset($var1), 'extract() never reached this scope');
     }
 
     /**
-     * Test extract returns count of extracted variables
+     * Runs $call with an E_USER_DEPRECATED handler that records the message, so the
+     * deprecation is asserted here instead of being reported by the runner.
+     */
+    private function capturingDeprecation(callable $call, ?string &$message): mixed
+    {
+        $message = null;
+        set_error_handler(static function (int $level, string $text) use (&$message): bool {
+            $message = $text;
+            return true;
+        }, E_USER_DEPRECATED);
+        try {
+            return $call();
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
+     * RN-26: the count is still returned for every flag.
      */
     public function testExtractReturnsCountOfExtractedVariables(): void
     {
         $collection = ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
 
-        $count = $collection->extract();
+        $this->assertSame(3, $this->capturingDeprecation(fn() => $collection->extract(), $message));
+        $this->assertStringContainsString('deprecated since 1.3.0', $message);
+    }
 
-        $this->assertEquals(3, $count);
+    /**
+     * RN-25 (forward 015, D9): each()/eachRecursive() never mutate the collection, even with
+     * a by-reference callback (before 1.3.0 array_walk() on the property did, review
+     * 2026-10-08, 2.12); the callback follows the arity rule, so a native one-parameter
+     * callable works.
+     */
+    public function testEachNeverMutatesTheCollection(): void
+    {
+        $collection = ALinqCollection::from([1, 2, 3]);
+        $nested = ALinqCollection::from(['a' => [1, 2], 'b' => 3]);
+
+        $seen = [];
+        $result = $collection->each(function (&$value, $key) use (&$seen) {
+            $seen[$key] = $value;
+            $value *= 10;
+        });
+        $this->assertSame($collection, $result);
+        $this->assertSame([1, 2, 3], $collection->toArray());
+        $this->assertSame([1, 2, 3], $seen);
+
+        $nested->eachRecursive(function (&$value) {
+            $value = 'x';
+        });
+        $this->assertSame(['a' => [1, 2], 'b' => 3], $nested->toArray());
+
+        $collection->each('intval');
+        $collection->eachRecursive('intval');
+        $this->assertSame([1, 2, 3], $collection->toArray());
+    }
+
+    /**
+     * RN-13 and RN-02: random(0) throws; random(n > 1) keeps the keys of a dictionary.
+     */
+    public function testRandomRejectsCountBelowOneAndKeepsDictionaryKeys(): void
+    {
+        $dict = ['a' => 1, 'b' => 2, 'c' => 3];
+        $picked = ALinqCollection::from($dict)->random(2)->toArray();
+        $this->assertCount(2, $picked);
+        foreach ($picked as $key => $value) {
+            $this->assertSame($dict[$key], $value);
+        }
+        $this->assertTrue(array_is_list(ALinqCollection::from([1, 2, 3])->random(2)->toArray()));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('random() expects num to be at least 1, 0 given');
+        ALinqCollection::from([1, 2, 3])->random(0);
     }
 
     // ===== CREATE PREDICATE TESTS =====

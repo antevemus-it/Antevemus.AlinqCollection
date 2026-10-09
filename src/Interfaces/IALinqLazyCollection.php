@@ -7,6 +7,8 @@ namespace Antevemus\ALinq\Interfaces;
 use Antevemus\ALinq\ALinqCollection;
 use Countable;
 use IteratorAggregate;
+use JsonSerializable;
+use PDOStatement;
 use stdClass;
 use Traversable;
 
@@ -14,16 +16,24 @@ use Traversable;
  * IALinqLazyCollection
  *
  * Interface for generator-based lazy streaming collection operations with deferred
- * execution and constant O(1) memory overhead
+ * execution and constant O(1) memory overhead.
  *
- * @version    1.1.1
+ * Contract (1.3.0), the same as the eager ALinqCollection: a source known to be a list
+ * (array list, file, CSV, cursor, range, repeat) streams reindexed keys through filtering
+ * operators and a dictionary streams its original keys; materialization never loses an
+ * item; set operators use the strict, type-aware identity of `ALinqCallable::hashKey()`;
+ * callbacks receive `($item, $key)` only when they accept two parameters; an empty stream
+ * throws on first/last/min/max/minBy/maxBy/average; numeric aggregations skip `null`;
+ * a comparer may answer `bool` or `<=>`.
+ *
+ * @version    1.3.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
  * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
-interface IALinqLazyCollection extends Countable, IteratorAggregate
+interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSerializable
 {
     /**
      * Create a lazy collection from any iterable or generator factory closure.
@@ -62,6 +72,15 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
     ): self;
 
     /**
+     * Create a lazy stream over a single-pass PDOStatement cursor (one statement, one collection).
+     *
+     * @param PDOStatement $statement
+     * @param callable|null $rowMapper fn($row, $index): mixed
+     * @return self
+     */
+    public static function fromCursor(PDOStatement $statement, ?callable $rowMapper = null): self;
+
+    /**
      * Create an empty lazy collection.
      *
      * @return self
@@ -75,6 +94,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      * @param int $end
      * @param int $step
      * @return self
+     * @throws \InvalidArgumentException when $step is lower than 1
      */
     public static function range(int $start, int $end, int $step = 1): self;
 
@@ -84,6 +104,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      * @param mixed $element
      * @param int $count
      * @return self
+     * @throws \InvalidArgumentException when $count is negative
      */
     public static function repeat(mixed $element, int $count): self;
 
@@ -116,6 +137,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param callable $selector fn($item, $key): iterable
      * @return self
+     * @throws \UnexpectedValueException when the selector returns a non-iterable value
      */
     public function selectMany(callable $selector): self;
 
@@ -124,6 +146,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param int $count
      * @return self
+     * @throws \InvalidArgumentException when $count is negative
      */
     public function take(int $count): self;
 
@@ -132,6 +155,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param int $count
      * @return self
+     * @throws \InvalidArgumentException when $count is negative
      */
     public function skip(int $count): self;
 
@@ -168,10 +192,12 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
     public function distinctBy(callable $keySelector): self;
 
     /**
-     * Yield chunks of elements of size $size as native arrays.
+     * Yield chunks of $size elements (the last one may be shorter), each chunk an eager
+     * ALinqCollection; inside each chunk a list is reindexed and a dictionary keeps its keys.
      *
      * @param int $size
      * @return self
+     * @throws \InvalidArgumentException when $size is lower than 1
      */
     public function chunk(int $size): self;
 
@@ -181,6 +207,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      * @param int $size
      * @param mixed $value
      * @return self
+     * @throws \InvalidArgumentException when $size is negative
      */
     public function pad(int $size, mixed $value): self;
 
@@ -221,6 +248,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param callable|null $predicate
      * @return mixed
+     * @throws \UnderflowException when the stream is empty or no element matches
      */
     public function first(?callable $predicate = null): mixed;
 
@@ -238,6 +266,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param callable|null $predicate
      * @return mixed
+     * @throws \UnderflowException when the stream is empty or no element matches
      */
     public function last(?callable $predicate = null): mixed;
 
@@ -256,6 +285,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      * @param mixed $default
      * @param callable|null $predicate
      * @return mixed
+     * @throws \OverflowException when more than one element matches
      */
     public function singleOrDefault(mixed $default = null, ?callable $predicate = null): mixed;
 
@@ -268,7 +298,8 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
     public function any(?callable $predicate = null): bool;
 
     /**
-     * Check if all elements satisfy the predicate with short-circuiting.
+     * Check if all elements satisfy the predicate with short-circuiting; vacuously true on
+     * an empty stream. Without a predicate, whether every element is truthy.
      *
      * @param callable|null $predicate
      * @return bool
@@ -276,7 +307,9 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
     public function all(?callable $predicate = null): bool;
 
     /**
-     * Check if the stream contains a specific value with short-circuiting.
+     * Check if the stream contains a specific value with short-circuiting. Without a
+     * comparer the comparison is strict; a comparer may answer `bool` (`true` = equal) or an
+     * int in the `<=>` convention (`0` = equal).
      *
      * @param mixed $value
      * @param callable|null $comparer
@@ -285,34 +318,41 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
     public function contains(mixed $value, ?callable $comparer = null): bool;
 
     /**
-     * Compute the running sum of elements.
+     * Compute the running sum of elements; `null` values are skipped, an empty stream sums to 0.
      *
      * @param callable|null $selector
      * @return int|float
+     * @throws \InvalidArgumentException when a value is not numeric
      */
     public function sum(?callable $selector = null): int|float;
 
     /**
-     * Compute the running arithmetic mean of elements.
+     * Compute the running arithmetic mean of elements; `null` values are skipped.
      *
      * @param callable|null $selector
      * @return int|float
+     * @throws \UnderflowException when there is no non-null value to average
+     * @throws \InvalidArgumentException when a value is not numeric
      */
     public function average(?callable $selector = null): int|float;
 
     /**
-     * Find the minimum value in the stream.
+     * Find the minimum value in the stream; `null` values are skipped.
      *
      * @param callable|null $selector
      * @return mixed
+     * @throws \UnderflowException when there is no non-null value
+     * @throws \InvalidArgumentException when a value is not comparable
      */
     public function min(?callable $selector = null): mixed;
 
     /**
-     * Find the maximum value in the stream.
+     * Find the maximum value in the stream; `null` values are skipped.
      *
      * @param callable|null $selector
      * @return mixed
+     * @throws \UnderflowException when there is no non-null value
+     * @throws \InvalidArgumentException when a value is not comparable
      */
     public function max(?callable $selector = null): mixed;
 
@@ -321,6 +361,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param callable $keySelector
      * @return mixed
+     * @throws \UnderflowException when the stream is empty
      */
     public function minBy(callable $keySelector): mixed;
 
@@ -329,6 +370,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      *
      * @param callable $keySelector
      * @return mixed
+     * @throws \UnderflowException when the stream is empty
      */
     public function maxBy(callable $keySelector): mixed;
 
@@ -348,6 +390,21 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate
      * @return self
      */
     public function each(callable $callback): self;
+
+    /**
+     * Count the elements, or the elements that satisfy the predicate, consuming the stream.
+     *
+     * @param callable|null $predicate fn($item) or fn($item, $key): bool
+     * @return int
+     */
+    public function count(?callable $predicate = null): int;
+
+    /**
+     * Implement JsonSerializable: materializes the stream (list → JSON array, dictionary → JSON object).
+     *
+     * @return array
+     */
+    public function jsonSerialize(): array;
 
     /**
      * Materialize the lazy stream into a native PHP array.

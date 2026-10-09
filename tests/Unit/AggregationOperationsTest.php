@@ -164,13 +164,14 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test average on empty collection returns zero
+     * RN-11 (forward 015, decision 2a): average on an empty collection throws, as in LINQ.
+     * Before 1.3.0 it returned 0.
      */
-    public function testAverageOnEmptyCollectionReturnsZero(): void
+    public function testAverageOnEmptyCollectionThrowsUnderflow(): void
     {
-        $collection = ALinqCollection::empty();
+        $this->expectException(\UnderflowException::class);
 
-        $this->assertEquals(0, $collection->average());
+        ALinqCollection::empty()->average();
     }
 
     /**
@@ -212,13 +213,13 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test min on empty collection returns null
+     * RN-11: min on an empty collection throws (before 1.3.0: null).
      */
-    public function testMinOnEmptyCollectionReturnsNull(): void
+    public function testMinOnEmptyCollectionThrowsUnderflow(): void
     {
-        $collection = ALinqCollection::empty();
+        $this->expectException(\UnderflowException::class);
 
-        $this->assertNull($collection->min());
+        ALinqCollection::empty()->min();
     }
 
     /**
@@ -260,13 +261,13 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test max on empty collection returns null
+     * RN-11: max on an empty collection throws (before 1.3.0: null).
      */
-    public function testMaxOnEmptyCollectionReturnsNull(): void
+    public function testMaxOnEmptyCollectionThrowsUnderflow(): void
     {
-        $collection = ALinqCollection::empty();
+        $this->expectException(\UnderflowException::class);
 
-        $this->assertNull($collection->max());
+        ALinqCollection::empty()->max();
     }
 
     // ===== PRODUCT TESTS =====
@@ -298,13 +299,11 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test product on empty collection returns zero
+     * RN-11: the empty product is 1 (before 1.3.0: 0).
      */
-    public function testProductOnEmptyCollectionReturnsZero(): void
+    public function testProductOnEmptyCollectionReturnsOne(): void
     {
-        $collection = ALinqCollection::empty();
-
-        $this->assertEquals(0, $collection->product());
+        $this->assertSame(1, ALinqCollection::empty()->product());
     }
 
     /**
@@ -483,15 +482,13 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test maxBy on empty collection returns null
+     * RN-11: maxBy on an empty collection throws (before 1.3.0: null).
      */
-    public function testMaxByOnEmptyCollectionReturnsNull(): void
+    public function testMaxByOnEmptyCollectionThrowsUnderflow(): void
     {
-        $collection = ALinqCollection::empty();
+        $this->expectException(\UnderflowException::class);
 
-        $result = $collection->maxBy(fn($item) => $item['value']);
-
-        $this->assertNull($result);
+        ALinqCollection::empty()->maxBy(fn($item) => $item['value']);
     }
 
     /**
@@ -530,15 +527,13 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test minBy on empty collection returns null
+     * RN-11: minBy on an empty collection throws (before 1.3.0: null).
      */
-    public function testMinByOnEmptyCollectionReturnsNull(): void
+    public function testMinByOnEmptyCollectionThrowsUnderflow(): void
     {
-        $collection = ALinqCollection::empty();
+        $this->expectException(\UnderflowException::class);
 
-        $result = $collection->minBy(fn($item) => $item['value']);
-
-        $this->assertNull($result);
+        ALinqCollection::empty()->minBy(fn($item) => $item['value']);
     }
 
     /**
@@ -574,18 +569,95 @@ class AggregationOperationsTest extends TestCase
     }
 
     /**
-     * Test all() with null predicate returns false
-     * This tests the edge case where predicate is null (lines 39-40)
+     * RN-14 (forward 015, D5): all() without a predicate asks whether every item is truthy,
+     * vacuously true on an empty collection; any() without a predicate still means "has at
+     * least one item", whatever its truthiness. Before 1.3.0 all() without a predicate was
+     * always false.
      */
-    public function testAllWithNullPredicateReturnsFalse(): void
+    public function testAllWithoutPredicateMeansAllTruthyAndAnyMeansNonEmpty(): void
     {
-        $collection = ALinqCollection::from([1, 2, 3]);
+        $this->assertTrue(ALinqCollection::from([1, 'a', true])->all());
+        $this->assertFalse(ALinqCollection::from([1, 0, true])->all());
+        $this->assertTrue(ALinqCollection::empty()->all());
 
-        // Call with null predicate should return false
-        $result = $collection->all(null);
+        $this->assertTrue(ALinqCollection::from([0, false])->any());
+        $this->assertFalse(ALinqCollection::empty()->any());
+    }
 
-        // Should return false when predicate is null
-        $this->assertFalse($result);
+    /**
+     * RN-15 (forward 015, D6): null is ignored by the numeric aggregations; only nulls is
+     * an empty collection; a numeric string converts, a bool counts as 0/1, anything else
+     * throws with the type and the key. Before 1.3.0 min([3, null, 1]) was null and
+     * average([1, null, 2]) divided by 3.
+     */
+    public function testNumericAggregationsIgnoreNullAndRejectNonNumeric(): void
+    {
+        $withNull = ALinqCollection::from([1, null, 2]);
+        $this->assertSame(1.5, $withNull->average());
+        $this->assertSame(1, $withNull->min());
+        $this->assertSame(2, $withNull->max());
+        $this->assertSame(3, $withNull->sum());
+        $this->assertSame(2, $withNull->product());
+
+        $this->assertSame(1, ALinqCollection::from([3, null, 1])->min());
+        $this->assertSame(0, ALinqCollection::from([null, null])->sum());
+        $this->assertSame(1, ALinqCollection::from([null, null])->product());
+        $this->assertSame(6, ALinqCollection::from(['1', '2', 3])->sum());
+        $this->assertSame(2, ALinqCollection::from([true, false, true])->sum());
+
+        $this->assertSame(2.5, ALinqCollection::from([['v' => 2], ['v' => null], ['v' => 3]])->average(fn($i) => $i['v']));
+
+        try {
+            ALinqCollection::from([null, null])->average();
+            $this->fail('average() over nulls only must throw');
+        } catch (\UnderflowException) {
+        }
+        try {
+            ALinqCollection::from([null])->max();
+            $this->fail('max() over nulls only must throw');
+        } catch (\UnderflowException) {
+        }
+
+        try {
+            ALinqCollection::from([1, 'a'])->sum();
+            $this->fail('sum() of a non-numeric string must throw');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertStringContainsString('sum() expects numeric values, string found at key 1', $e->getMessage());
+        }
+        try {
+            ALinqCollection::from([[1]])->average();
+            $this->fail('average() of an array must throw');
+        } catch (\InvalidArgumentException) {
+        }
+        try {
+            ALinqCollection::from([1, new \stdClass()])->min();
+            $this->fail('min() of an object must throw');
+        } catch (\InvalidArgumentException) {
+        }
+    }
+
+    /**
+     * RN-15: min()/max() compare any scalar and DateTimeInterface with PHP's `<=>`.
+     */
+    public function testMinAndMaxAcceptStringsAndDates(): void
+    {
+        $this->assertSame('a', ALinqCollection::from(['b', 'a', 'c'])->min());
+        $this->assertSame('c', ALinqCollection::from(['b', 'a', 'c'])->max());
+
+        $d1 = new \DateTimeImmutable('2026-01-01');
+        $d2 = new \DateTimeImmutable('2026-06-01');
+        $this->assertSame($d2, ALinqCollection::from([$d1, $d2, null])->max());
+        $this->assertSame($d1, ALinqCollection::from([$d2, $d1])->min());
+    }
+
+    /**
+     * RN-11: minBy()/maxBy() return the first item holding the extreme key.
+     */
+    public function testMinByAndMaxByReturnFirstExtremeItem(): void
+    {
+        $items = ALinqCollection::from([['n' => 2, 'id' => 'a'], ['n' => 1, 'id' => 'b'], ['n' => 1, 'id' => 'c'], ['n' => 2, 'id' => 'd']]);
+        $this->assertSame('b', $items->minBy(fn($i) => $i['n'])['id']);
+        $this->assertSame('a', $items->maxBy(fn($i) => $i['n'])['id']);
     }
 
 

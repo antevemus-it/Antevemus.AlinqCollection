@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-08
+
+The contract release: the eager `ALinqCollection` and the lazy `ALinqLazyCollection` now obey one written contract (README §11), enforced by a parity test that runs every shared operation over the same inputs on both sides with zero divergences allowed (the 2026-10-08 review measured 114 divergences in 350 comparisons on 1.1.1). Several behaviours change on purpose; each is listed below with the previous and the new answer.
+
+### Changed (breaking, by contract)
+- **Empty collections throw, as in LINQ.** Eager `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches the predicate (before: `null`, and `average()` returned `0`). `firstOrDefault()`/`lastOrDefault()`/`singleOrDefault()` keep returning the default. `product()` of an empty collection is `1` (before: `0`). `singleOrDefault()` with more than one match throws `OverflowException` on both sides (the eager side threw `RuntimeException`; `OverflowException` extends it).
+- **Keys follow one rule on both sides: a list is reindexed, a dictionary keeps its keys.** Eager `take`, `skip`, `reverse`, `pad`, `chunk` (inside each chunk), `distinct`, `distinctBy`, `shuffle`, `orderByNatural`, `orderByCustom`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `random(n)` now keep string **and** non-sequential integer keys of a dictionary (before: integer keys were dropped, and the set operations dropped every key). The lazy collection knows whether its source is a list (`from(array)`, `fromFile`, `fromCsv`, `fromCursor`, `range`, `repeat`) and streams a list with sequential keys after `where`/`skip`/`take`/`distinct` (before: the original keys, with gaps); a raw generator keeps its keys while streaming and `toArray()` applies the 1.1.2 rule.
+- **Strict, type-aware identity in every set operation and join.** `intersect()`, `except()`, `intersectBy()`, `exceptBy()`, `unionBy()`, `join()`, `groupJoin()` compare with `ALinqCallable::hashKey()` (before: `(string)` casts, `spl_object_hash`, array-key coercion, or `===` depending on the method). `1`, `'1'`, `1.0` and `true` are distinct; arrays compare by value without warnings; `except()` now deduplicates like `intersect()` (set semantics). A `groupJoin()` whose keys arrive as `int` on one side and `string` on the other no longer matches: cast on the caller side. A `null` key never matches in `join()`/`groupJoin()`, as in LINQ and SQL (before: an outer row with a `null` key matched every inner row with a `null` key).
+- **Group keys are validated.** `groupBy()`, `countBy()`, `aggregateBy()` and `toDictionary()` accept `int`, `string` and `BackedEnum` keys and throw `InvalidArgumentException` for `null`, `bool`, `float`, arrays and objects (before: PHP coercion with a deprecation, or a raw `TypeError`). `toDictionary()` throws `InvalidArgumentException` on a repeated key (before: last value won silently).
+- **`concat()` is a sequence operation**: the result is always a reindexed list on both sides (before: eager `array_merge`, which overwrote string keys). Use `replace()`, `replaceRecursive()` or `unionBy()` to merge by key.
+- **`chunk()` returns collections of collections** on both sides (before: native arrays, which lose the collection API; LINQ's `Chunk` returns `T[]` because a .NET array is still enumerable, a PHP array is not). `chunk(100)->select(fn($c) => $c->sum())` and `foreach ($rows->chunk(500) as $batch) { $batch->count(); }` now work; inside each chunk a list is reindexed and a dictionary keeps its keys. **Breaking for** code that handed a chunk to an array function: use `$chunk->toArray()` (no copy). The lazy side yields eager `ALinqCollection` chunks (a chunk is materialized by nature).
+- **`random()` of an empty collection throws `UnderflowException`**, like `first()` (before: `null`, which neither LINQ's `First()` nor PHP's `array_rand()` would answer); `random(n > 1)` of an empty collection returns an empty collection, like `take(n)` (before: `null`, which broke the pipeline).
+- **Numeric aggregations ignore `null` and refuse non-numbers.** `sum`, `average`, `min`, `max`, `product` skip `null` (`average([1, null, 2])` is `1.5`, `min([3, null, 1])` is `1`; before: `null` counted in the denominator and `min` returned `null`); a collection of only `null` counts as empty. A non-numeric value throws `InvalidArgumentException` in `sum`/`average`/`product` on both sides (before: eager `Warning` and `0`, lazy `TypeError`); `min`/`max` accept any scalar or `DateTimeInterface` and throw for arrays and other objects.
+- **`all()`**: `all($predicate)` on an empty collection is `true` on both sides (the lazy side answered `false`); `all()` without a predicate means "every item is truthy" (before: always `false`). `any()` is unchanged.
+- **Invalid arguments throw** `InvalidArgumentException` on both sides: `take`/`skip` with a negative count (before: eager sliced from the tail, lazy ignored), `pad` with a negative size (before: eager padded on the left, lazy ignored), `chunk(0)` (before: `ValueError`), `random(0)`.
+- **`each()` / `eachRecursive()` no longer mutate the collection**: they iterate over a copy and a by-reference callback has no effect (before: `array_walk` on the internal array). Use `select()` to transform.
+- **Custom comparers answer `bool` or `<=>`.** `contains($value, $comparer)`, `intersectWith()`, `exceptWith()` accept a comparer that returns `true` for equal or `0` in the `<=>` convention, on both sides (before: eager required `0`, lazy required truthy; `intersectWith`/`exceptWith` delegated to `array_uintersect`/`array_udiff`, which deprecate boolean comparers).
+- **`ALinqLazyCollection::from()` treats only a `Closure` as a re-iterable factory**; an array callable such as `[$object, 'method']` is data (before: it was invoked as a factory and threw `ArgumentCountError`), and a string or invokable object that is not iterable throws `InvalidArgumentException` pointing to `Closure::fromCallable()`. `unionBy()` always returns a list (it is a distinct concatenation, like `concat()`).
+- **Lazy `selectMany()`** throws `UnexpectedValueException` when the selector returns a non-iterable (before: the scalar was emitted as an item), matching the eager side.
+- **Query builder `null` semantics.** When the property resolves to `null`, `>`, `>=`, `<`, `<=`, `between`, `notBetween`, `contains`, `startsWith`, `endsWith` are `false` (before: `null < 18` was `true`, so an item without the property passed `where('age', '<', 18)`); `=`/`==` and `!=`/`<>` compare strictly when either side is `null` (`where('x', '=', null)` means "is null"; before it also matched `0`, `''`, `false`, `[]`); `in`/`notIn` compare strictly when the value is `null`.
+- **`ALinqQueryBuilder::create($mode)`** accepts `and`/`or` in any case, trimmed, and throws `InvalidArgumentException` for anything else (before: any other string silently meant OR).
+- **`ALinqQueryBuilder::toPredicate()` is a snapshot**: `where()` calls made after it do not change the predicate already returned (before: the closure read the live condition list).
+
+### Added
+- `count(?callable $predicate = null): int` on both collections (`IALinqBaseCollection`); the argument used to be silently discarded.
+- `JsonSerializable` on both collections: `json_encode($collection)` gives a JSON array for a list and an object for a dictionary (before: `{}`).
+- `Helpers\ALinqContract`: the shared rules (`shapeLike`, `groupKey`, `equality`, `numericValue`, `comparableValue`, `requireAtLeast`).
+- `IALinqLazyCollection::fromCursor()` and the `lazy()`/`fromFile()`/`fromCsv()`/`fromCursor()` facades declared in the eager interface.
+- `tests/Contract/ParityTest.php` (eager × lazy matrix) and `tests/Contract/AccessorContractTest.php` (`ALinqPropertyAccess` is the single property resolver behind `getPropertyAccessor`, `getNestedPropertyAccessor`, `createPropertyComparer`, `createPropertySelector` and `ALinqQueryBuilder::where`).
+- `@throws` on every interface method that throws.
+- Regression tests for everything above (suite **442 tests, 1381 assertions**, from 387/1050).
+
+### Deprecated
+- `extract()`: a method cannot export variables into its caller's scope, so it never did what its name says. It still returns the count, now with an `E_USER_DEPRECATED` notice; removal planned for 2.0.
+
+### Fixed
+- `join()` indexes the inner side by key (O(n + m), as `groupJoin()` already did) instead of a nested loop: 10k × 10k went from seconds to milliseconds in the review's measurement.
+- Eager `first()`/`last()` no longer move the internal array pointer; `firstOrDefault()`/`lastOrDefault()` distinguish an element that is `null` from "no element".
+- Tests that hid key behaviour behind `array_values()` now assert the real keys.
+
 ## [1.2.0] - 2026-10-08
 
 README promises I: every code block of the README runs as written (15/15; five did not on 1.1.2).
@@ -221,7 +261,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.0...v1.1.1
