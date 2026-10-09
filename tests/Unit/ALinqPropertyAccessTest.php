@@ -468,6 +468,25 @@ class ALinqPropertyAccessTest extends TestCase
         $this->assertFalse(ALinqPropertyAccess::hasProperty('string', 'name'));
         $this->assertFalse(ALinqPropertyAccess::hasProperty(42, 'name'));
     }
+
+    /**
+     * L4: hasProperty() on a declared but non-public property without getter or __isset
+     * answers false (the reflection branch), and getValue() answers null, consistently.
+     */
+    public function testHasPropertyIsFalseForANonPublicPropertyWithoutGetter(): void
+    {
+        $entity = new class {
+            private string $secret = 's';
+            protected int $level = 1;
+            public string $name = 'n';
+        };
+
+        $this->assertFalse(ALinqPropertyAccess::hasProperty($entity, 'secret'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty($entity, 'level'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($entity, 'name'));
+        $this->assertNull(ALinqPropertyAccess::getValue($entity, 'secret'));
+        $this->assertSame('n', ALinqPropertyAccess::getValue($entity, 'name'));
+    }
 }
 
 // ===== Fixtures for the resolution-order tests (one per row of REVISAO-2026-10-08 §3.15) =====

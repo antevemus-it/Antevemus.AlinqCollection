@@ -25,7 +25,7 @@ use ReflectionFunction;
  *   `1.0` stay distinct, arrays are compared by value, objects by identity, and no
  *   "Array to string conversion" warning is emitted (bug #39).
  *
- * @version    1.2.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior

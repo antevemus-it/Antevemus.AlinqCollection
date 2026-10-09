@@ -15,9 +15,6 @@
         <testsuite name="Contract Tests">
             <directory>tests/Contract</directory>
         </testsuite>
-        <testsuite name="Trait Tests">
-            <directory>tests/Traits</directory>
-        </testsuite>
     </testsuites>
 
     <source>
@@ -33,11 +30,6 @@
             <clover outputFile="coverage/clover.xml"/>
         </report>
     </coverage>
-
-    <logging>
-        <testdoxHtml outputFile="coverage/testdox.html"/>
-        <testdoxText outputFile="coverage/testdox.txt"/>
-    </logging>
 
     <php>
         <ini name="display_errors" value="1"/>

@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.1.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.3.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-387%20passed%20%7C%201050%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-449%20passed%20%7C%201418%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -562,24 +562,25 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 442 ( 14%)
-............................................................... 126 / 442 ( 28%)
-............................................................... 189 / 442 ( 42%)
-............................................................... 252 / 442 ( 57%)
-............................................................... 315 / 442 ( 71%)
-............................................................... 378 / 442 ( 85%)
-............................................................... 441 / 442 ( 99%)
-.                                                               442 / 442 (100%)
+...............................................................  63 / 449 ( 14%)
+............................................................... 126 / 449 ( 28%)
+............................................................... 189 / 449 ( 42%)
+............................................................... 252 / 449 ( 56%)
+............................................................... 315 / 449 ( 70%)
+............................................................... 378 / 449 ( 84%)
+............................................................... 441 / 449 ( 98%)
+........                                                        449 / 449 (100%)
 
 Time: 00:00.330, Memory: 8.00 MB
 
-OK (442 tests, 1381 assertions)
+OK (449 tests, 1418 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **442 Tests & 1381 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
+- **449 Tests & 1418 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
+- **Measured coverage** (pcov, 1.3.1): 164 of 166 methods and 950 of 953 lines of `src/`; the three uncovered lines are defensive `catch` blocks in the property accessor.
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -598,7 +599,10 @@ OK (442 tests, 1381 assertions)
 - [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order; extracting a common package is a 2.0 topic).
 - [ ] **`thenBy()` / `thenByDescending()`**: composite, stable multi-key ordering (today: `orderByCustom()`).
 - [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: announced in the 0.1.0 release notes and never shipped; see the CHANGELOG erratum.
+- [ ] **`leftJoin()` / `rightJoin()` / `fullJoin()`**: outer joins returning `[$outer, $inner]` pairs with `null` on the side without a match, as `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` in .NET 10/11 (today: `groupJoin()` + `selectMany()` by hand).
 - [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
+
+The milestone view of this list, with target releases, lives in [ROADMAP.md](ROADMAP.md).
 
 ---
 

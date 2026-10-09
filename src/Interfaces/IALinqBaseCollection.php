@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Interfaces;
 
 use Antevemus\ALinq\ALinqLazyCollection;
@@ -14,11 +16,11 @@ use Traversable;
  * *dictionary* otherwise. Filtering and reordering operators reindex a list and keep the
  * keys of a dictionary; projections keep keys; materialization never loses an item.
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 interface IALinqBaseCollection extends \Countable, \IteratorAggregate, \JsonSerializable

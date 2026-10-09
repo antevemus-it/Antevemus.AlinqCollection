@@ -22,11 +22,11 @@ use InvalidArgumentException;
  * cannot export into its caller's scope (RN-26); random() keeps the keys of a dictionary
  * and rejects a count below 1 (RN-02, RN-13).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 trait UtilityOperations

@@ -968,4 +968,80 @@ final class ALinqLazyCollectionTest extends TestCase
     {
         return array_map(static fn(ALinqCollection $chunk) => $chunk->toArray(), $chunked->toArray());
     }
+
+    /**
+     * L4: the constructor branches for a raw Generator (single use, keys kept) and for a
+     * non-Generator Traversable (re-iterable, keys kept) had no test.
+     */
+    public function testConstructorAcceptsARawGeneratorAndANonGeneratorTraversable(): void
+    {
+        $generator = (static function () {
+            yield 'a' => 1;
+            yield 'b' => 2;
+        })();
+        $once = ALinqLazyCollection::from($generator);
+        $this->assertSame(['a' => 1, 'b' => 2], $once->toArray());
+
+        $twice = ALinqLazyCollection::from(new ArrayIterator(['x' => 10, 'y' => 20]));
+        $this->assertSame(['x' => 10, 'y' => 20], $twice->toArray());
+        $this->assertSame(['x' => 10, 'y' => 20], $twice->toArray());
+        $this->assertSame([['x', 10], ['y', 20]], self::streamed($twice));
+    }
+
+    /**
+     * L4: fromFile()/fromCsv() argument validation is eager, the open failure is deferred to
+     * the first traversal, and a CSV row whose width differs from the header is handed over
+     * as a plain list (today's behaviour; the lazy-sources hardening lot revisits it).
+     */
+    public function testFromFileAndFromCsvFailLoudlyAndKeepIrregularRows(): void
+    {
+        try {
+            ALinqLazyCollection::fromFile('/nonexistent/alinq.txt', 0);
+            $this->fail('fromFile() must reject a non-positive buffer size');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('Buffer size must be greater than zero.', $e->getMessage());
+        }
+
+        $missing = ALinqLazyCollection::fromFile('/nonexistent/alinq.txt');
+        try {
+            $missing->toArray();
+            $this->fail('fromFile() must fail on the first traversal of a missing file');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Unable to open file for streaming', $e->getMessage());
+        }
+
+        $missingCsv = ALinqLazyCollection::fromCsv('/nonexistent/alinq.csv');
+        try {
+            $missingCsv->toArray();
+            $this->fail('fromCsv() must fail on the first traversal of a missing file');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Unable to open CSV file for streaming', $e->getMessage());
+        }
+
+        $csv = tempnam(sys_get_temp_dir(), 'alinq_irregular_csv_');
+        file_put_contents($csv, "a,b\n1,2\n3\n");
+        try {
+            $this->assertSame([['a' => '1', 'b' => '2'], ['3']], ALinqLazyCollection::fromCsv($csv)->toArray());
+        } finally {
+            unlink($csv);
+        }
+    }
+
+    /**
+     * L4: skipWhile() and tap() on a dictionary keep the original keys while streaming
+     * (the list branch was tested, the dictionary branch was not).
+     */
+    public function testSkipWhileAndTapKeepDictionaryKeys(): void
+    {
+        $dict = ALinqLazyCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
+
+        $this->assertSame([['b', 2], ['c', 3]], self::streamed($dict->skipWhile(fn($v) => $v < 2)));
+
+        $seen = [];
+        $tapped = $dict->tap(function ($v) use (&$seen) {
+            $seen[] = $v;
+        });
+        $this->assertSame([['a', 1], ['b', 2], ['c', 3]], self::streamed($tapped));
+        $this->assertSame([1, 2, 3], $seen);
+    }
 }

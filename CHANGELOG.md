@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-09
+
+Process hygiene, no contract change: what the 2026-10-08 review listed under "process and distribution".
+
+### Added
+- `ROADMAP.md`: the milestone view of the README checklist (shipped, short-term, medium-term, long-term), including the outer joins returning pairs (`leftJoin`/`rightJoin`/`fullJoin`, as in .NET 10/11 LINQ), `thenBy()`, the lazy-sources hardening and the 0.1.0 erratum backlog.
+- `suggest` of `antevemus/aspecification` in `composer.json` (the reciprocal of the ASpecification `suggest`).
+- Tests for what had none: the eager `fromCsv()`/`fromCursor()` facades, the lazy constructor with a raw `Generator` and with a non-`Generator` `Traversable`, `fromFile()`/`fromCsv()` failing loudly (buffer size, missing file) and the irregular CSV row, `skipWhile()`/`tap()` over a dictionary, `ALinqCallable` (variadic callbacks, `hashKey()` buckets) and `hasProperty()` on a non-public property. Suite **449 tests, 1418 assertions** (from 442/1381). Measured coverage (pcov): 164 of 166 methods, 950 of 953 lines; the three uncovered lines are defensive `catch` blocks in `ALinqPropertyAccess`.
+
+### Changed
+- `declare(strict_types=1)` in every file of `src/` (25/25; it was 13/25: `ALinqCollection`, `IteratorOperations` and the ten interfaces had none).
+- `phpunit.xml.dist`: the empty "Trait Tests" suite is gone and so is the `<logging>` block that wrote `coverage/testdox.*` on every run, including `--no-coverage`.
+- Copyright years in the file headers (`2025-2026`, as in `LICENSE`); `@version 1.3.1` on every file of `src/` (all were touched).
+- No residual Portuguese in the tree (`.gitignore` comments); `NULL` → `null` in `any()`.
+
 ## [1.3.0] - 2026-10-08
 
 The contract release: the eager `ALinqCollection` and the lazy `ALinqLazyCollection` now obey one written contract (README §11), enforced by a parity test that runs every shared operation over the same inputs on both sides with zero divergences allowed (the 2026-10-08 review measured 114 divergences in 350 comparisons on 1.1.1). Several behaviours change on purpose; each is listed below with the previous and the new answer.
@@ -261,7 +276,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...v1.2.0
 [1.1.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.1...v1.1.2

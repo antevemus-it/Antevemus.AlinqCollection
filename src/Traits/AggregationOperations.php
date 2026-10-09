@@ -24,11 +24,11 @@ use UnderflowException;
  * vacuously true on an empty collection; any() without a predicate still means "has at
  * least one item" (RN-14).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 trait AggregationOperations
@@ -37,7 +37,7 @@ trait AggregationOperations
      * Check if any element satisfies predicate (Any in LINQ)
      * Without a predicate: whether the collection has at least one element.
      */
-    public function any(?callable $predicate = NULL): bool
+    public function any(?callable $predicate = null): bool
     {
         if ($predicate === null) {
             return count($this->items) > 0;

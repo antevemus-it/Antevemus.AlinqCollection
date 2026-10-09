@@ -33,11 +33,11 @@ use Throwable;
  * through this helper; it is read as `$target['a']['b']`. This follows the ASpecification
  * accessor on purpose (review 2026-10-08, decision 3a).
  *
- * @version    1.2.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 class ALinqPropertyAccess

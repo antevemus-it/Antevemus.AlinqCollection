@@ -36,6 +36,9 @@
   "require-dev": {
     "phpunit/phpunit": "^11.0"
   },
+  "suggest": {
+    "antevemus/aspecification": "^1.4 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy)"
+  },
   "autoload": {
     "psr-4": {
       "Antevemus\\ALinq\\": "src/"

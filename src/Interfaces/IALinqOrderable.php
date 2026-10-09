@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Interfaces;
 
 /**
@@ -11,11 +13,11 @@ namespace Antevemus\ALinq\Interfaces;
  * dictionary; sorts are stable; each `orderBy*` call orders the whole collection
  * (there is no `thenBy` yet: use `orderByCustom` with a composite key).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 interface IALinqOrderable extends IALinqBaseCollection

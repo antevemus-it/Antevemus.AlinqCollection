@@ -42,11 +42,11 @@ use InvalidArgumentException;
  * throws. `toPredicate()` (RN-21) is a snapshot: conditions added afterwards do not alter a
  * predicate already handed out.
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 class ALinqQueryBuilder

@@ -15,11 +15,11 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  * Key policy (RN-02, forward 015): every ordering reindexes a list and keeps the keys of
  * a dictionary.
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 trait OrderingOperations

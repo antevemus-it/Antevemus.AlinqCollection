@@ -16,11 +16,11 @@ use InvalidArgumentException;
  * ALinqCollection, as the README promises, so `->select(fn($group, $key) => $group->count())`
  * and nested pipelines work (review 2026-10-08, 2.1).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 trait GroupingOperations

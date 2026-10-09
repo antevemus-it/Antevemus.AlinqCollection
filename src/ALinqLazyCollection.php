@@ -50,7 +50,7 @@ use UnexpectedValueException;
  *   InvalidArgumentException instead of being ignored.
  * - A comparer given to contains() may answer bool or `<=>` style int.
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior

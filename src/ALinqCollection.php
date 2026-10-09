@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq;
 
 use Antevemus\ALinq\Helpers\ALinqCallable;
@@ -25,11 +27,11 @@ use Traversable;
  * identity; an empty collection throws on first/last/min/max/minBy/maxBy/average;
  * json_encode() serializes the items (JsonSerializable).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 final class ALinqCollection implements IALinqCollection

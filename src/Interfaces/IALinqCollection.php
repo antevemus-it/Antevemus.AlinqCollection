@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Interfaces;
 
 /**
@@ -7,11 +9,11 @@ namespace Antevemus\ALinq\Interfaces;
  *
  * Comprehensive interface that combines all LINQ-style collection operations
  *
- * @version    0.1.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 interface IALinqCollection extends

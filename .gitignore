@@ -41,7 +41,7 @@ NEXT-STEPS.md
 !/.vscode/launch.json
 !/.vscode/extensions.json
 
-# IDE - Visual Studio (caso esteja usando no Windows)
+# IDE - Visual Studio (Windows)
 /.vs/
 *.suo
 *.user
@@ -80,7 +80,7 @@ Desktop.ini
 /docs/_build/
 /docs/.doctrees/
 
-# Package files (quando gerar para distribuição)
+# Package files (distribution builds)
 *.tar
 *.tar.gz
 *.zip

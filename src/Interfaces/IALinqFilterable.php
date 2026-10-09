@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Interfaces;
 
 /**
@@ -13,11 +15,11 @@ namespace Antevemus\ALinq\Interfaces;
  * by value, objects by identity); callbacks receive `($item, $key)` only when they accept
  * two parameters; an empty result throws where LINQ throws.
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
- * @copyright  Copyright (c) 2025 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
+ * @copyright  Copyright (c) 2025-2026 Antevemus Soluções Inovadoras em TI Ltda. (https://antevemus.com.br)
  * @license    MIT License
  */
 interface IALinqFilterable extends IALinqBaseCollection

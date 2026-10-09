@@ -3,6 +3,7 @@
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 use ArrayIterator;
 
@@ -273,5 +274,30 @@ class ALinqCollectionTest extends TestCase
             $this->assertTrue($lazy->hasMethod($method), "IALinqLazyCollection must declare $method()");
         }
         $this->assertTrue($lazy->implementsInterface(\JsonSerializable::class));
+    }
+
+    /**
+     * L4 (review 2026-10-08, process): the eager fromCsv()/fromCursor() facades had no test.
+     * They hand the work to ALinqLazyCollection and return it.
+     */
+    public function testFromCsvAndFromCursorFacadesDelegateToTheLazyCollection(): void
+    {
+        $csv = tempnam(sys_get_temp_dir(), 'alinq_facade_csv_');
+        file_put_contents($csv, "id,name\n1,Ana\n2,Bia\n");
+        try {
+            $rows = ALinqCollection::fromCsv($csv);
+            $this->assertInstanceOf(ALinqLazyCollection::class, $rows);
+            $this->assertSame([['id' => '1', 'name' => 'Ana'], ['id' => '2', 'name' => 'Bia']], $rows->toArray());
+            $this->assertSame(['1;Ana', '2;Bia'], ALinqCollection::fromCsv($csv, ',', '"', '\\', false)->skip(1)->select(fn($r) => implode(';', $r))->toArray());
+        } finally {
+            unlink($csv);
+        }
+
+        $pdo = new \PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE t (id INTEGER PRIMARY KEY, n TEXT)');
+        $pdo->exec("INSERT INTO t (n) VALUES ('a'), ('b')");
+        $cursor = ALinqCollection::fromCursor($pdo->query('SELECT id, n FROM t ORDER BY id'), fn(array $row) => $row['n']);
+        $this->assertInstanceOf(ALinqLazyCollection::class, $cursor);
+        $this->assertSame(['a', 'b'], $cursor->toArray());
     }
 }

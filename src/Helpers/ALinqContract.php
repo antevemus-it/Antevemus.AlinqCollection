@@ -23,7 +23,7 @@ use InvalidArgumentException;
  * - requireAtLeast(): a negative or zero argument that has no meaning throws instead of
  *   slicing from the tail or being ignored (RN-13).
  *
- * @version    1.3.0
+ * @version    1.3.1
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
