@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Helpers;
 
+use Antevemus\ALinq\ALinqQueryBuilder;
 use BackedEnum;
 use Closure;
 use DateTimeInterface;
+use Generator;
 use InvalidArgumentException;
+use OverflowException;
+use UnderflowException;
 
 /**
  * ALinqContract - The rules every operator of the eager and the lazy collection shares
@@ -23,7 +27,15 @@ use InvalidArgumentException;
  * - requireAtLeast(): a negative or zero argument that has no meaning throws instead of
  *   slicing from the tail or being ignored (RN-13).
  *
- * @version    1.3.1
+ * Since 1.4.0 (forward 021) the operators added to both collections run on one shared
+ * implementation, so the eager and the lazy side cannot drift apart:
+ *
+ * - single(): the LINQ `Single`, with the same exception classes and messages on both sides.
+ * - fieldPredicate(): the predicates of whereIn()/whereNotIn()/whereBetween().
+ * - outerJoin(): leftJoin()/rightJoin()/fullJoin(), as `Enumerable.LeftJoin/RightJoin/FullJoin`.
+ * - orderPositions(): the stable, composite sort behind orderBy()/thenBy().
+ *
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -165,5 +177,209 @@ final class ALinqContract
                 $value
             ));
         }
+    }
+
+    /**
+     * The single element of a sequence, or the single element that satisfies the predicate
+     * (Single in LINQ). Stops at the second match.
+     *
+     * @param iterable $items
+     * @param Closure(mixed, mixed): mixed|null $predicate normalized by ALinqCallable::withKey()
+     * @return mixed
+     * @throws UnderflowException When the sequence is empty or no element matches
+     * @throws OverflowException When more than one element (or matching element) exists
+     */
+    public static function single(iterable $items, ?Closure $predicate): mixed
+    {
+        $found = false;
+        $match = null;
+        foreach ($items as $key => $item) {
+            if ($predicate !== null && !$predicate($item, $key)) {
+                continue;
+            }
+            if ($found) {
+                throw new OverflowException(
+                    $predicate === null
+                        ? 'Sequence contains more than one element.'
+                        : 'Sequence contains more than one matching element.'
+                );
+            }
+            $found = true;
+            $match = $item;
+        }
+
+        if (!$found) {
+            throw new UnderflowException(
+                $predicate === null
+                    ? 'Sequence contains no elements.'
+                    : 'Sequence contains no matching element.'
+            );
+        }
+
+        return $match;
+    }
+
+    /**
+     * The predicate behind the collections' whereIn()/whereNotIn()/whereBetween(): the field
+     * is read through ALinqPropertyAccess (dot notation allowed); `in`/`notIn` compare with
+     * strict identity (`in_array(..., true)`, so `'1'` is not in `[1]`); `between` is
+     * inclusive and follows the null rule of the query builder (a null value is never
+     * between, RN-20).
+     *
+     * @param string $operation 'in', 'notIn' or 'between'
+     * @param string $field Property name or dot-notation path
+     * @param array $arguments [$values] for in/notIn, [$min, $max] for between
+     * @return Closure(mixed): bool
+     */
+    public static function fieldPredicate(string $operation, string $field, array $arguments): Closure
+    {
+        $accessor = ALinqPropertyAccess::getPropertyAccessor($field);
+
+        if ($operation === 'between') {
+            // the builder's evaluator: inclusive, and null is never between (one rule, RN-20)
+            $inRange = ALinqQueryBuilder::operatorPredicate('between', [$arguments[0], $arguments[1]]);
+            return static fn(mixed $item): bool => $inRange($accessor($item));
+        }
+
+        [$values] = $arguments;
+        return match ($operation) {
+            'in' => static fn(mixed $item): bool => in_array($accessor($item), $values, true),
+            'notIn' => static fn(mixed $item): bool => !in_array($accessor($item), $values, true),
+            default => throw new InvalidArgumentException(sprintf('Unknown field predicate: %s', $operation)),
+        };
+    }
+
+    /**
+     * The outer joins of .NET 10/11 LINQ (`Enumerable.LeftJoin`, `RightJoin`, `FullJoin`),
+     * shared by both collections. The result selector receives `($outer, $inner)` with `null`
+     * on the side without a match; without a selector each result is the pair
+     * `[$outer, $inner]`. Keys match by the strict identity of ALinqCallable::hashKey() and a
+     * null key never matches (the item with a null key comes out without a partner). The
+     * output is a sequence (yielded without keys, so it materializes as a list):
+     *
+     * - left: the outer side is streamed in its order; the inner side is indexed first.
+     * - right: the inner side is streamed in its order; the outer side is indexed first.
+     * - full: the outer side is streamed (pairs and unmatched outer items, in outer order),
+     *   then the unmatched inner items follow in inner order; the inner side is indexed first.
+     *
+     * @param 'left'|'right'|'full' $kind
+     * @param iterable $outer
+     * @param iterable $inner
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable|null $resultSelector `fn($outer, $inner)`
+     * @return Generator<int, mixed>
+     */
+    public static function outerJoin(
+        string $kind,
+        iterable $outer,
+        iterable $inner,
+        callable $outerKeySelector,
+        callable $innerKeySelector,
+        ?callable $resultSelector
+    ): Generator {
+        $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
+        $innerKeySelector = ALinqCallable::withKey($innerKeySelector);
+        $result = $resultSelector ?? static fn(mixed $o, mixed $i): array => [$o, $i];
+
+        if ($kind === 'right') {
+            // RightJoin: the outer side becomes the lookup, the inner side drives the order.
+            [$outerItems, $outerIndex] = self::indexPositions($outer, $outerKeySelector);
+            foreach ($inner as $innerKey => $innerItem) {
+                $key = $innerKeySelector($innerItem, $innerKey);
+                $positions = $key === null ? [] : ($outerIndex[ALinqCallable::hashKey($key)] ?? []);
+                if ($positions === []) {
+                    yield $result(null, $innerItem);
+                    continue;
+                }
+                foreach ($positions as $position) {
+                    yield $result($outerItems[$position], $innerItem);
+                }
+            }
+            return;
+        }
+
+        if ($kind !== 'left' && $kind !== 'full') {
+            throw new InvalidArgumentException(sprintf('Unknown outer join kind: %s', $kind));
+        }
+
+        [$innerItems, $innerIndex] = self::indexPositions($inner, $innerKeySelector);
+        $matched = [];
+
+        foreach ($outer as $outerKey => $outerItem) {
+            $key = $outerKeySelector($outerItem, $outerKey);
+            $positions = $key === null ? [] : ($innerIndex[ALinqCallable::hashKey($key)] ?? []);
+            if ($positions === []) {
+                yield $result($outerItem, null);
+                continue;
+            }
+            foreach ($positions as $position) {
+                $matched[$position] = true;
+                yield $result($outerItem, $innerItems[$position]);
+            }
+        }
+
+        if ($kind === 'full') {
+            foreach ($innerItems as $position => $innerItem) {
+                if (!isset($matched[$position])) {
+                    yield $result(null, $innerItem);
+                }
+            }
+        }
+    }
+
+    /**
+     * Buffers a sequence and indexes the position of every item by the identity of its
+     * selected key; items whose key is null are buffered but never indexed (they cannot
+     * match).
+     *
+     * @param iterable $items
+     * @param Closure(mixed, mixed): mixed $keySelector
+     * @return array{0: list<mixed>, 1: array<string, list<int>>}
+     */
+    private static function indexPositions(iterable $items, Closure $keySelector): array
+    {
+        $buffer = [];
+        $index = [];
+        foreach ($items as $key => $item) {
+            $position = count($buffer);
+            $buffer[] = $item;
+            $selected = $keySelector($item, $key);
+            if ($selected !== null) {
+                $index[ALinqCallable::hashKey($selected)][] = $position;
+            }
+        }
+        return [$buffer, $index];
+    }
+
+    /**
+     * Stable composite ordering (orderBy()/orderByDescending() followed by any number of
+     * thenBy()/thenByDescending()). Every criterion carries its keys already computed, one
+     * per position (Schwartzian transform, so each selector runs once per item); the first
+     * criterion that tells two items apart decides, and a full tie keeps the original order.
+     *
+     * @param int $count Number of items
+     * @param list<array{0: array<int, mixed>, 1: int, 2: callable|null}> $criteria
+     *        [keys by position, direction (1 ascending, -1 descending), comparer `fn($a, $b): int` or null for `<=>`]
+     * @return list<int> The positions in sorted order
+     */
+    public static function orderPositions(int $count, array $criteria): array
+    {
+        if ($count === 0) {
+            return [];
+        }
+
+        $positions = range(0, $count - 1);
+        usort($positions, static function (int $a, int $b) use ($criteria): int {
+            foreach ($criteria as [$keys, $direction, $comparer]) {
+                $order = $comparer === null ? $keys[$a] <=> $keys[$b] : ($comparer($keys[$a], $keys[$b]) <=> 0);
+                if ($order !== 0) {
+                    return $direction * $order;
+                }
+            }
+            return $a <=> $b;
+        });
+
+        return $positions;
     }
 }

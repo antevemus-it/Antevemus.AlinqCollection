@@ -6,6 +6,7 @@ namespace Antevemus\ALinq\Helpers;
 
 use ArrayAccess;
 use Closure;
+use ReflectionClass;
 use ReflectionProperty;
 use Throwable;
 
@@ -24,8 +25,13 @@ use Throwable;
  *        `public $active` paired with `isActive()` reads the method);
  *     b. an accessible, non-null property (`isset`, which also honours `__get` + `__isset`);
  *     c. a declared PUBLIC property (static or instance) that is initialized (reflection);
- *        private/protected properties, uninitialized typed properties and private getters
- *        resolve to `null` instead of raising an Error.
+ *     d. since 1.4.0, as the last resort: a private or protected property declared by the
+ *        class or one of its ancestors (reflection, the PropertyAccessor of ASpecification
+ *        1.4.4, Domian `ReflectionUtils.getFieldByName()`), read without calling any method;
+ *        an uninitialized one resolves to `null`. Before 1.4.0 such a property resolved to
+ *        `null`.
+ *     Uninitialized typed properties and private getters resolve to `null` instead of
+ *     raising an Error.
  *  3. Anything else (scalars, null, missing member) resolves to `null`.
  *
  * Dot notation: a property name containing `.` is always a nested path (`user.address.city`),
@@ -33,7 +39,7 @@ use Throwable;
  * through this helper; it is read as `$target['a']['b']`. This follows the ASpecification
  * accessor on purpose (review 2026-10-08, decision 3a).
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -66,9 +72,10 @@ class ALinqPropertyAccess
      * Check whether a property (or a nested dot-notation path) exists on the target.
      *
      * Existence follows the same resolution order as getValue(): a public getter-style method,
-     * an accessible (`isset`) property, a declared public property, or an array/ArrayAccess key.
-     * An array key whose value is null still exists; a missing key, a private property without
-     * getter or a non-object/non-array target does not.
+     * an accessible (`isset`) property, a declared public property, a private or protected
+     * property declared by the class or an ancestor (1.4.0), or an array/ArrayAccess key.
+     * An array key whose value is null still exists; a missing key, a private getter without
+     * a property or a non-object/non-array target does not.
      *
      * @param mixed $item The item to inspect
      * @param string $property The property name or dot-notation path
@@ -181,6 +188,46 @@ class ALinqPropertyAccess
             }
         }
 
+        // Last resort (1.4.0): a non-public property of the class or an ancestor.
+        $field = self::declaredField($target, $property);
+        if ($field !== null && !$field->isPublic()) {
+            try {
+                if ($field->isStatic()) {
+                    return $field->getValue();
+                }
+
+                return $field->isInitialized($target) ? $field->getValue($target) : null;
+            } catch (Throwable) {
+                // Unresolvable through reflection: treat as missing
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The property declared under this name by the class of $target or by the nearest
+     * ancestor that declares it, whatever its visibility (a private property of a parent
+     * class is found too); null when no class in the hierarchy declares it. Mirrors
+     * ReflectionUtils::getFieldByName() of ASpecification 1.4.4.
+     */
+    private static function declaredField(object $target, string $property): ?ReflectionProperty
+    {
+        if ($property === '') {
+            return null;
+        }
+
+        $class = new ReflectionClass($target);
+        while ($class !== false) {
+            if ($class->hasProperty($property)) {
+                $field = $class->getProperty($property);
+                if ($field->getDeclaringClass()->getName() === $class->getName()) {
+                    return $field;
+                }
+            }
+            $class = $class->getParentClass();
+        }
+
         return null;
     }
 
@@ -213,15 +260,16 @@ class ALinqPropertyAccess
 
         if (property_exists($target, $property)) {
             try {
-                $reflection = new ReflectionProperty($target, $property);
-
-                return $reflection->isPublic();
+                if ((new ReflectionProperty($target, $property))->isPublic()) {
+                    return true;
+                }
             } catch (Throwable) {
                 return false;
             }
         }
 
-        return false;
+        // Last resort (1.4.0): a non-public property of the class or an ancestor.
+        return self::declaredField($target, $property) !== null;
     }
 
     /**

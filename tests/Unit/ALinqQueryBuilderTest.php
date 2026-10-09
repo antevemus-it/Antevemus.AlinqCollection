@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqQueryBuilder;
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -784,6 +787,58 @@ class ALinqQueryBuilderTest extends TestCase
         $this->assertFalse($predicate(['value' => 7]));
 
         $this->assertInstanceOf(ALinqQueryBuilder::class, ALinqQueryBuilder::create("\tAnd\n"));
+    }
+
+    // ===== whereIn() / whereNotIn() / whereBetween() shortcuts (1.4.0, forward 021, RN-04) =====
+
+    public function testWhereInShortcutsAreTheInNotInBetweenOperators(): void
+    {
+        $rows = [
+            ['status' => 'A', 'age' => 17],
+            ['status' => 'B', 'age' => 18],
+            ['status' => 'C', 'age' => 65],
+            ['status' => 'A', 'age' => 66],
+            ['status' => null, 'age' => null],
+        ];
+        $collection = ALinqCollection::from($rows);
+        $same = fn(ALinqQueryBuilder $shortcut, ALinqQueryBuilder $long) => $this->assertSame(
+            $collection->where($long->toPredicate())->toArray(),
+            $collection->where($shortcut->toPredicate())->toArray()
+        );
+
+        $same(ALinqQueryBuilder::create()->whereIn('status', ['A', 'B']), ALinqQueryBuilder::create()->where('status', 'in', ['A', 'B']));
+        $same(ALinqQueryBuilder::create()->whereNotIn('status', ['A', 'B']), ALinqQueryBuilder::create()->where('status', 'notIn', ['A', 'B']));
+        $same(ALinqQueryBuilder::create()->whereBetween('age', 18, 65), ALinqQueryBuilder::create()->where('age', 'between', [18, 65]));
+
+        $this->assertSame([18, 65], $collection->where(ALinqQueryBuilder::create()->whereBetween('age', 18, 65)->toPredicate())->select(fn($r) => $r['age'])->toArray());
+        $this->assertCount(3, $collection->where(ALinqQueryBuilder::create()->whereIn('status', ['A', 'B'])->toPredicate()));
+    }
+
+    public function testWhereInShortcutsAreFluentAndComposeWithTheMode(): void
+    {
+        $builder = ALinqQueryBuilder::create();
+        $this->assertSame($builder, $builder->whereIn('a', [1]));
+        $this->assertSame($builder, $builder->whereNotIn('b', [1]));
+        $this->assertSame($builder, $builder->whereBetween('c', 1, 2));
+
+        $any = ALinqQueryBuilder::create('or')->whereIn('status', ['X'])->whereBetween('age', 60, 70)->toPredicate();
+        $this->assertTrue($any(['status' => 'Y', 'age' => 65]));
+        $this->assertFalse($any(['status' => 'Y', 'age' => 50]));
+    }
+
+    public function testBuilderShortcutsKeepTheBuilderSemantics(): void
+    {
+        // the builder's `in` is loose (strict only for null); the collection's whereIn() is strict
+        $loose = ALinqQueryBuilder::create()->whereIn('id', [1])->toPredicate();
+        $this->assertTrue($loose(['id' => '1']));
+        $this->assertSame([], ALinqCollection::from([['id' => '1']])->whereIn('id', [1])->toArray());
+
+        // null is never between, and a missing field reads null
+        $between = ALinqQueryBuilder::create()->whereBetween('age', 0, 200)->toPredicate();
+        $this->assertFalse($between(['age' => null]));
+        $this->assertFalse($between([]));
+        $this->assertFalse(ALinqQueryBuilder::create()->whereIn('age', [0])->toPredicate()(['age' => null]));
+        $this->assertTrue(ALinqQueryBuilder::create()->whereNotIn('age', [0])->toPredicate()(['age' => null]));
     }
 }
 

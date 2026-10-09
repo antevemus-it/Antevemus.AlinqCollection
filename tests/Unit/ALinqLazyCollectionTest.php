@@ -20,7 +20,7 @@ use UnderflowException;
  * Validates O(1) memory guarantees, generator rewindability, file/CSV/cursor streams,
  * LINQ pipeline transformations, short-circuiting, and eager materialization.
  *
- * @version    1.3.2
+ * @version    1.4.0
  * @package    Antevemus\ALinq\Tests
  * @subpackage Unit
  * @author     Heliton Junior (CTO) - <contato@antevemus.com.br>
@@ -1277,5 +1277,108 @@ final class ALinqLazyCollectionTest extends TestCase
         });
         $this->assertSame([['a', 1], ['b', 2], ['c', 3]], self::streamed($tapped));
         $this->assertSame([1, 2, 3], $seen);
+    }
+
+    // ===== 1.4.0 (forward 021): single, where*, outer joins, composite ordering =====
+
+    public function testNewOperatorsDeferEverythingUntilTraversal(): void
+    {
+        $pulled = 0;
+        $source = ALinqLazyCollection::from(function () use (&$pulled) {
+            foreach ([3, 1, 2] as $v) {
+                $pulled++;
+                yield ['n' => $v];
+            }
+        });
+
+        $pipeline = $source->whereIn('n', [1, 2, 3])
+            ->whereNotIn('n', [9])
+            ->whereBetween('n', 0, 9)
+            ->orderBy(fn($r) => $r['n'])
+            ->thenByDescending(fn($r) => $r['n'])
+            ->leftJoin([['n' => 1]], fn($r) => $r['n'], fn($r) => $r['n'])
+            ->rightJoin([1], fn($p) => $p[0]['n'], fn($v) => $v)
+            ->fullJoin([], fn($p) => 0, fn($v) => 0);
+        $this->assertSame(0, $pulled);
+
+        // n = 1, 2, 3 -> leftJoin pairs only n = 1 -> rightJoin keeps the inner 1 with it
+        $this->assertSame([[[[['n' => 1], ['n' => 1]], 1], null]], $pipeline->toArray());
+        $this->assertSame(3, $pulled);
+        $this->assertCount(1, $pipeline->toArray(), 're-traversable from a factory source');
+    }
+
+    public function testSingleStopsAtTheSecondMatch(): void
+    {
+        $pulled = 0;
+        $source = ALinqLazyCollection::from(function () use (&$pulled) {
+            foreach ([1, 2, 3, 4, 5] as $v) {
+                $pulled++;
+                yield $v;
+            }
+        });
+
+        try {
+            $source->single(fn($v) => $v > 1);
+            $this->fail('expected OverflowException');
+        } catch (OverflowException $e) {
+            $this->assertSame('Sequence contains more than one matching element.', $e->getMessage());
+        }
+        $this->assertSame(3, $pulled);
+
+        $this->expectException(UnderflowException::class);
+        $this->expectExceptionMessage('Sequence contains no elements.');
+        ALinqLazyCollection::empty()->single();
+    }
+
+    public function testLeftJoinStreamsTheOuterSide(): void
+    {
+        $pulled = 0;
+        $outer = ALinqLazyCollection::from(function () use (&$pulled) {
+            foreach ([1, 2, 3, 4] as $v) {
+                $pulled++;
+                yield $v;
+            }
+        });
+
+        $this->assertSame([[1, null]], $outer->leftJoin([2, 3], fn($v) => $v, fn($v) => $v)->take(1)->toArray());
+        $this->assertSame(1, $pulled);
+    }
+
+    public function testOrderByFollowsTheKeyRuleOfTheSource(): void
+    {
+        $this->assertSame([[0, 1], [1, 2], [2, 3]], self::streamed(ALinqLazyCollection::from([3, 1, 2])->orderBy(fn($v) => $v)));
+        $this->assertSame(['b' => 1, 'c' => 2, 'a' => 3], ALinqLazyCollection::from(['a' => 3, 'b' => 1, 'c' => 2])->orderBy(fn($v) => $v)->toArray());
+        $this->assertSame(['a' => 3, 'c' => 2, 'b' => 1], ALinqLazyCollection::from(['a' => 3, 'b' => 1, 'c' => 2])->orderByDescending(fn($v) => $v)->toArray());
+
+        $generator = ALinqLazyCollection::from(function () {
+            yield 'x' => 2;
+            yield 'y' => 1;
+        });
+        $this->assertSame(['y' => 1, 'x' => 2], $generator->orderBy(fn($v) => $v)->toArray());
+    }
+
+    public function testThenByNeedsAnOrderedStage(): void
+    {
+        $ordered = ALinqLazyCollection::from([['a' => 1, 'b' => 2], ['a' => 1, 'b' => 1], ['a' => 0, 'b' => 9]])->orderBy(fn($r) => $r['a']);
+        $this->assertSame([9, 1, 2], $ordered->thenBy(fn($r) => $r['b'])->select(fn($r) => $r['b'])->toArray());
+        $this->assertSame([9, 2, 1], $ordered->thenByDescending(fn($r) => $r['b'])->select(fn($r) => $r['b'])->toArray());
+        // the ordered stage itself is unchanged
+        $this->assertSame([9, 2, 1], $ordered->select(fn($r) => $r['b'])->toArray());
+
+        foreach (['remember()' => $ordered->remember(), 'where()' => $ordered->where(fn() => true), 'source' => ALinqLazyCollection::from([1])] as $case => $stage) {
+            try {
+                $stage->thenBy(fn($r) => $r);
+                $this->fail("$case: expected LogicException");
+            } catch (\LogicException $e) {
+                $this->assertSame('thenBy() requires a preceding orderBy().', $e->getMessage(), $case);
+            }
+        }
+    }
+
+    public function testTheLazyInterfaceDeclaresTheNewOperators(): void
+    {
+        foreach (['single', 'whereIn', 'whereNotIn', 'whereBetween', 'leftJoin', 'rightJoin', 'fullJoin', 'orderBy', 'orderByDescending', 'thenBy', 'thenByDescending'] as $method) {
+            $this->assertTrue(method_exists(IALinqLazyCollection::class, $method), $method);
+        }
     }
 }

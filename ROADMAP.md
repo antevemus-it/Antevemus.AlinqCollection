@@ -30,39 +30,28 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 - **Description:** `declare(strict_types=1)` in every file of `src/`, test coverage of the facades and branches the 2026-10 review found untested, a `phpunit.xml.dist` without a phantom suite or logging that writes files on every run, the reciprocal `suggest` of `antevemus/aspecification`, no residual Portuguese, copyright years, and the release contract (`docs/RELEASING.md`) for the two-repository model where every public tag lives on the `release` line.
 - **Goal:** The repository states what it does (coverage, counts, versions) and the release rite is written down.
 
----
-
-## 🎯 Short-Term Milestones (v1.3.x)
-
 ### 7. Lazy Sources Hardening 🛡️ (Shipped in v1.3.2)
 - **Description:** `fromCsv()` records whose width differs from the header throw (`strict: false` keeps the 1.3.1 list), blank lines are skipped, the UTF-8 BOM is consumed before parsing in `fromCsv()` and `fromFile()`, a directory passed to `fromFile()`/`fromCsv()` throws, and one `PDOStatement` is bound to one lazy collection so two collections never share a cursor. Specified before code (Reversa forward 016).
 - **Goal:** Irregular input fails loudly or is an explicit choice, never silently reshaped.
 
-### 8. Announced-but-Unshipped Backlog (CHANGELOG erratum, 2026-10) 📋
-- **Description:** `whereIn()`, `whereNotIn()`, `whereBetween()` and `single()` were announced in the 0.1.0 release notes and never existed (see the erratum in the CHANGELOG). `single()` is the LINQ `Single` (exactly one element or throw); the `where*` trio are query-builder shortcuts over `in`/`notIn`/`between`.
-- **Goal:** Each item is scheduled into a milestone or explicitly declined in the CHANGELOG.
-- **Target Release:** v1.4.0 (MINOR; additive)
+### 8. Announced-but-Unshipped Backlog (CHANGELOG erratum, 2026-10) 📋 (Shipped in v1.4.0)
+- **Description:** `whereIn()`, `whereNotIn()`, `whereBetween()` and `single()` had been announced in the 0.1.0 release notes and never existed (see the erratum in the CHANGELOG). All four shipped on both collections: `single()` is the LINQ `Single` (exactly one element, or `UnderflowException`/`OverflowException` with the same messages on both sides); the `where*` trio became shortcuts in the query builder over `in`/`notIn`/`between` and, on the collections, sugar over `where()` with strict `in`/`notIn` and an inclusive, `null`-never-between `between`. Specified before code (Reversa forward 021).
+- **Goal:** Every item of the erratum is either shipped or explicitly declined; none is left as a promise.
 
----
-
-## 🚀 Medium-Term Milestones (v1.4.x)
-
-### 9. Outer Joins Returning Pairs: `leftJoin()`, `rightJoin()`, `fullJoin()` 🔗
-- **Description:** The three outer joins of .NET 10/11 LINQ (`Enumerable.LeftJoin`, `RightJoin`, `FullJoin`), returning `[$outer, $inner]` pairs with `null` on the side without a match, on both collections, with the same strict identity and `null`-key rule as `join()`/`groupJoin()`. Today a left join is `groupJoin()` plus `selectMany()` by hand.
+### 9. Outer Joins Returning Pairs: `leftJoin()`, `rightJoin()`, `fullJoin()` 🔗 (Shipped in v1.4.0)
+- **Description:** The three outer joins of .NET 10/11 LINQ (`Enumerable.LeftJoin`, `RightJoin`, `FullJoin`) shipped on both collections: the result selector receives `($outer, $inner)` with `null` on the side without a match, and without a selector each result is the pair `[$outer, $inner]`; always a list, with the same strict identity and `null`-key rule as `join()`/`groupJoin()`. `rightJoin()` follows the inner order, as in .NET; `fullJoin()` yields the outer side first, then the unmatched inner items. They replaced the `groupJoin()` plus `selectMany()` written by hand.
 - **Goal:** Relational completeness of the joining family with pattern-matching-friendly results.
-- **Target Release:** v1.4.0
 
-### 10. Composite Ordering: `thenBy()` / `thenByDescending()` 🪜
-- **Description:** Stable multi-key ordering chained after `orderBy()`/`orderByDescending()` (today: `orderByCustom()` with a composite comparer; the README §7 example only coincides by luck of the data).
+### 10. Composite Ordering: `thenBy()` / `thenByDescending()` 🪜 (Shipped in v1.4.0)
+- **Description:** Stable multi-key ordering chained after `orderBy()`/`orderByDescending()` shipped on both collections (the lazy collection also gained `orderBy()`/`orderByDescending()`), with an optional comparer over the keys and a `LogicException` when no ordering precedes. The README §7 example now reads as it does in LINQ instead of relying on `orderByCustom()`.
 - **Goal:** `orderBy(dept)->thenByDescending(salary)` reads as it does in LINQ.
-- **Target Release:** v1.4.0
 
 ---
 
 ## 🔮 Long-Term Vision (v2.0+)
 
 ### 11. Shared Property Accessor with ASpecification 🧩
-- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` ship the same resolution order (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, else `null`) as two copies. Extracting one package both depend on changes the dependency graph of both libraries.
+- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` ship the same resolution order (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, since ALinq 1.4.0 and ASpecification 1.4.4 a non-public property as the last resort, else `null`) as two copies. Extracting one package both depend on changes the dependency graph of both libraries.
 - **Goal:** One accessor, one set of tests (`tests/Contract/AccessorContractTest.php` is the seed).
 - **Target Release:** v2.0.0
 

@@ -13,9 +13,12 @@ namespace Antevemus\ALinq\Interfaces;
  * keys of a dictionary; `distinct`/`distinctBy` use the strict, type-aware identity of
  * `ALinqCallable::hashKey()` (`1`, `'1'`, `1.0` and `true` are four values, arrays compare
  * by value, objects by identity); callbacks receive `($item, $key)` only when they accept
- * two parameters; an empty result throws where LINQ throws.
+ * two parameters; an empty result throws where LINQ throws. `whereIn`/`whereNotIn`/
+ * `whereBetween` (1.4.0) are sugar over `where()` reading a field through
+ * `ALinqPropertyAccess`: `in`/`notIn` by strict identity, `between` inclusive with `null`
+ * never between.
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -30,6 +33,27 @@ interface IALinqFilterable extends IALinqBaseCollection
      * @param callable $predicate `fn($item)` or `fn($item, $key)`
      */
     public function where(callable $predicate): IALinqCollection;
+
+    /**
+     * Keep the items whose field is one of $values, by strict identity (`in_array(..., true)`)
+     *
+     * @param string $field Property name or dot-notation path
+     */
+    public function whereIn(string $field, array $values): IALinqCollection;
+
+    /**
+     * Keep the items whose field is none of $values, by strict identity (`in_array(..., true)`)
+     *
+     * @param string $field Property name or dot-notation path
+     */
+    public function whereNotIn(string $field, array $values): IALinqCollection;
+
+    /**
+     * Keep the items whose field lies in [$min, $max], bounds included; `null` is never between
+     *
+     * @param string $field Property name or dot-notation path
+     */
+    public function whereBetween(string $field, mixed $min, mixed $max): IALinqCollection;
 
     /**
      * Take first n elements (Take in LINQ)

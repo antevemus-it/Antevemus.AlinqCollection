@@ -25,9 +25,10 @@ use Traversable;
  * Contract (1.3.0): a list (array_is_list) is reindexed by filtering and reordering
  * operators, a dictionary keeps its keys; set operations compare by strict, type-aware
  * identity; an empty collection throws on first/last/min/max/minBy/maxBy/average;
- * json_encode() serializes the items (JsonSerializable).
+ * json_encode() serializes the items (JsonSerializable). Since 1.4.0 an orderBy*() result
+ * carries its pending ordering, so thenBy*() can refine it.
  *
- * @version    1.3.2
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -46,6 +47,15 @@ final class ALinqCollection implements IALinqCollection
     use UtilityOperations;
 
     private array $items;
+
+    /**
+     * The ordering pending on a collection returned by orderBy*()/thenBy*() (1.4.0): the
+     * source items before ordering and the criteria already applied, so thenBy*() can append
+     * one. Null on every other collection, where thenBy*() throws LogicException.
+     *
+     * @var array{0: array, 1: list<array{0: list<mixed>, 1: int, 2: callable|null}>}|null
+     */
+    private ?array $pendingOrdering = null;
 
     public function __construct(array $items = [])
     {

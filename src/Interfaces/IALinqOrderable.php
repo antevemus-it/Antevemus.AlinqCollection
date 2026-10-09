@@ -10,10 +10,15 @@ namespace Antevemus\ALinq\Interfaces;
  * Interface for ordering operations on collections.
  *
  * Contract (1.3.0): every ordering operator reindexes a list and keeps the keys of a
- * dictionary; sorts are stable; each `orderBy*` call orders the whole collection
- * (there is no `thenBy` yet: use `orderByCustom` with a composite key).
+ * dictionary; sorts are stable; each `orderBy*` call orders the whole collection.
  *
- * @version    1.3.1
+ * Composite ordering (1.4.0): the collection returned by `orderBy()`/`orderByDescending()`
+ * keeps the ordering pending, and `thenBy()`/`thenByDescending()` refine it with one more
+ * key (stable, each key selector called once per item). `thenBy*()` on any other
+ * collection, including the result of `orderByNatural`/`orderByCustom`/`orderByKey`,
+ * throws `LogicException`.
+ *
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -35,6 +40,24 @@ interface IALinqOrderable extends IALinqBaseCollection
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
      */
     public function orderByDescending(callable $keySelector): IALinqCollection;
+
+    /**
+     * Subsequent ascending ordering (ThenBy in LINQ)
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (`<=>` convention); `<=>` when null
+     * @throws \LogicException when the collection does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenBy(callable $keySelector, ?callable $comparer = null): IALinqCollection;
+
+    /**
+     * Subsequent descending ordering (ThenByDescending in LINQ)
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (`<=>` convention); `<=>` when null
+     * @throws \LogicException when the collection does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenByDescending(callable $keySelector, ?callable $comparer = null): IALinqCollection;
 
     /**
      * Sort by natural order (similar to human sorting)

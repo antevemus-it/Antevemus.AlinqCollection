@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -691,5 +694,81 @@ class AggregationOperationsTest extends TestCase
 
         $this->assertSame(['Sales' => 300, 'IT' => 400], $sales->aggregateBy(fn($s) => $s['dept'], 0, fn($carry, $s) => $carry + $s['amount'])->toArray());
         $this->assertSame(['Sales' => 2, 'IT' => 2], $sales->countBy(fn($s) => $s['dept'])->toArray());
+    }
+
+    // ===== single() (1.4.0, forward 021, RN-03, D1 a) =====
+
+    public function testSingleReturnsTheOnlyElement(): void
+    {
+        $this->assertSame(7, ALinqCollection::from([7])->single());
+        $this->assertSame(7, ALinqCollection::from(['a' => 7])->single());
+        // a stored null is an element like any other
+        $this->assertNull(ALinqCollection::from([null])->single());
+    }
+
+    public function testSingleWithAPredicateReturnsTheOnlyMatch(): void
+    {
+        $this->assertSame(3, ALinqCollection::from([1, 2, 3])->single(fn($x) => $x > 2));
+        $this->assertSame('two', ALinqCollection::from(['a' => 'one', 'b' => 'two'])->single(fn($v, $k) => $k === 'b'));
+        $this->assertSame('x', ALinqCollection::from([1, 'x', 2])->single('is_string'));
+    }
+
+    public function testSingleThrowsUnderflowWhenThereIsNoElement(): void
+    {
+        $this->assertThrowsWithMessage(\UnderflowException::class, 'Sequence contains no elements.', fn() => ALinqCollection::from([])->single());
+        $this->assertThrowsWithMessage(\UnderflowException::class, 'Sequence contains no matching element.', fn() => ALinqCollection::from([1, 2])->single(fn($x) => $x > 5));
+        $this->assertThrowsWithMessage(\UnderflowException::class, 'Sequence contains no matching element.', fn() => ALinqCollection::from([])->single(fn($x) => true));
+    }
+
+    public function testSingleThrowsOverflowWhenThereIsMoreThanOne(): void
+    {
+        $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one element.', fn() => ALinqCollection::from([1, 2])->single());
+        $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one matching element.', fn() => ALinqCollection::from([1, 2, 3])->single(fn($x) => $x > 1));
+    }
+
+    public function testSingleAnswersLikeTheLazySideWithTheSameMessages(): void
+    {
+        $cases = [
+            'one' => [[7], null],
+            'empty' => [[], null],
+            'two' => [[1, 2], null],
+            'match' => [[1, 2, 3], fn($x) => $x > 2],
+            'no match' => [[1, 2, 3], fn($x) => $x > 5],
+            'two matches' => [[1, 2, 3], fn($x) => $x > 1],
+        ];
+        foreach ($cases as $case => [$items, $predicate]) {
+            $this->assertSame(
+                self::outcome(fn() => ALinqCollection::from($items)->single($predicate)),
+                self::outcome(fn() => ALinqLazyCollection::from($items)->single($predicate)),
+                $case
+            );
+        }
+    }
+
+    public function testSingleOrDefaultStaysTheTolerantVariant(): void
+    {
+        $this->assertSame('d', ALinqCollection::from([])->singleOrDefault('d'));
+        $this->expectException(\UnderflowException::class);
+        ALinqCollection::from([])->single();
+    }
+
+    private function assertThrowsWithMessage(string $class, string $message, \Closure $call): void
+    {
+        try {
+            $call();
+            $this->fail("expected $class");
+        } catch (\Throwable $e) {
+            $this->assertSame($class, $e::class);
+            $this->assertSame($message, $e->getMessage());
+        }
+    }
+
+    private static function outcome(\Closure $call): array
+    {
+        try {
+            return ['value', $call()];
+        } catch (\Throwable $e) {
+            return ['throw', $e::class, $e->getMessage()];
+        }
     }
 }

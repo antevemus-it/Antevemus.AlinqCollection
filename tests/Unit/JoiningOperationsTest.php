@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -692,5 +695,83 @@ class JoiningOperationsTest extends TestCase
             ['dept' => 'Engineering', 'staff' => ['Alex', 'Bea']],
             ['dept' => 'Design', 'staff' => []],
         ], $roster);
+    }
+
+    // ===== leftJoin() / rightJoin() / fullJoin() (1.4.0, forward 021, RN-05, D3 a) =====
+
+    /**
+     * The scenario of the forward: an order with a null key and one without a customer.
+     */
+    public function testOuterJoinsWithANullKeyOnBothSides(): void
+    {
+        $orders = [['id' => 1, 'c' => 10], ['id' => 2, 'c' => null], ['id' => 3, 'c' => 99]];
+        $customers = [['id' => 10]];
+        [$o1, $o2, $o3] = $orders;
+        $c10 = $customers[0];
+
+        foreach ([ALinqCollection::from($orders), ALinqLazyCollection::from($orders)] as $side) {
+            $this->assertSame([[$o1, $c10], [$o2, null], [$o3, null]], $side->leftJoin($customers, fn($o) => $o['c'], fn($c) => $c['id'])->toArray());
+            $this->assertSame([[$o1, $c10]], $side->rightJoin($customers, fn($o) => $o['c'], fn($c) => $c['id'])->toArray());
+            $this->assertSame([[$o1, $c10], [$o2, null], [$o3, null]], $side->fullJoin($customers, fn($o) => $o['c'], fn($c) => $c['id'])->toArray());
+        }
+    }
+
+    public function testTheResultSelectorReceivesNullOnTheSideWithoutAMatch(): void
+    {
+        $people = [['name' => 'Ann', 'dept' => 1], ['name' => 'Bob', 'dept' => 3]];
+        $depts = [['id' => 1, 'title' => 'IT'], ['id' => 2, 'title' => 'HR']];
+        $label = fn(?array $p, ?array $d) => ($p['name'] ?? '-') . '/' . ($d['title'] ?? '-');
+
+        $collection = ALinqCollection::from($people);
+        $this->assertSame(['Ann/IT', 'Bob/-'], $collection->leftJoin($depts, fn($p) => $p['dept'], fn($d) => $d['id'], $label)->toArray());
+        $this->assertSame(['Ann/IT', '-/HR'], $collection->rightJoin($depts, fn($p) => $p['dept'], fn($d) => $d['id'], $label)->toArray());
+        $this->assertSame(['Ann/IT', 'Bob/-', '-/HR'], $collection->fullJoin($depts, fn($p) => $p['dept'], fn($d) => $d['id'], $label)->toArray());
+    }
+
+    public function testOuterJoinsKeepTheOrderOfDotNet(): void
+    {
+        $outer = [['o' => 'a', 'k' => 2], ['o' => 'b', 'k' => 1], ['o' => 'c', 'k' => 2], ['o' => 'd', 'k' => 7]];
+        $inner = [['i' => 'x', 'k' => 1], ['i' => 'y', 'k' => 2], ['i' => 'z', 'k' => 5], ['i' => 'w', 'k' => 2], ['i' => 'n', 'k' => null]];
+        $pair = fn($o, $i) => ($o['o'] ?? '_') . ($i['i'] ?? '_');
+        $collection = ALinqCollection::from($outer);
+
+        // left: outer order, each outer item with its matches in inner order
+        $this->assertSame(['ay', 'aw', 'bx', 'cy', 'cw', 'd_'], $collection->leftJoin($inner, fn($o) => $o['k'], fn($i) => $i['k'], $pair)->toArray());
+        // right: inner order, each inner item with its matches in outer order
+        $this->assertSame(['bx', 'ay', 'cy', '_z', 'aw', 'cw', '_n'], $collection->rightJoin($inner, fn($o) => $o['k'], fn($i) => $i['k'], $pair)->toArray());
+        // full: pairs and unmatched outer in outer order, then unmatched inner in inner order
+        $this->assertSame(['ay', 'aw', 'bx', 'cy', 'cw', 'd_', '_z', '_n'], $collection->fullJoin($inner, fn($o) => $o['k'], fn($i) => $i['k'], $pair)->toArray());
+    }
+
+    public function testOuterJoinsMatchByStrictIdentity(): void
+    {
+        $outer = ALinqCollection::from([1, 2]);
+        $this->assertSame([[1, null], [2, 2]], $outer->leftJoin(['1', 2], fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame([[null, '1'], [2, 2]], $outer->rightJoin(['1', 2], fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame([[1, null], [2, 2], [null, '1']], $outer->fullJoin(['1', 2], fn($v) => $v, fn($v) => $v)->toArray());
+    }
+
+    public function testOuterJoinsAlwaysReturnAListAndPassTheKeyToTwoParameterSelectors(): void
+    {
+        $outer = ALinqCollection::from(['x' => 'apple', 'y' => 'berry']);
+        $inner = ['p' => 'x', 'q' => 'z'];
+
+        $joined = $outer->leftJoin($inner, fn($v, $k) => $k, fn($v) => $v, fn($o, $i) => "$o:" . ($i ?? 'none'));
+        $this->assertSame(['apple:x', 'berry:none'], $joined->toArray());
+
+        $joined = $outer->fullJoin($inner, fn($v, $k) => $k, fn($v) => $v, fn($o, $i) => ($o ?? 'none') . ":$i");
+        $this->assertSame(['apple:x', 'berry:', 'none:z'], $joined->toArray());
+    }
+
+    public function testOuterJoinsAcceptAnyIterableAsTheInnerSide(): void
+    {
+        $outer = ALinqCollection::from([1, 2, 3]);
+        $expected = [[1, null], [2, 2], [3, 3]];
+
+        $this->assertSame($expected, $outer->leftJoin(ALinqCollection::from([2, 3]), fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame($expected, $outer->leftJoin(ALinqLazyCollection::from([2, 3]), fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame($expected, $outer->leftJoin(new \ArrayIterator([2, 3]), fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame([], ALinqCollection::from([])->fullJoin([], fn($v) => $v, fn($v) => $v)->toArray());
+        $this->assertSame([[null, 5]], ALinqCollection::from([])->fullJoin([5], fn($v) => $v, fn($v) => $v)->toArray());
     }
 }

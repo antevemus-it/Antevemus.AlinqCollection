@@ -42,7 +42,13 @@ use InvalidArgumentException;
  * throws. `toPredicate()` (RN-21) is a snapshot: conditions added afterwards do not alter a
  * predicate already handed out.
  *
- * @version    1.3.1
+ * Shortcuts (1.4.0, forward 021): `whereIn($field, $values)`, `whereNotIn($field, $values)`
+ * and `whereBetween($field, $min, $max)` are `where($field, 'in'|'notIn'|'between', ...)`
+ * with the same semantics (`in`/`notIn` loose, strict for a `null` value; `between`
+ * inclusive, `null` never between). The collection methods of the same names compare `in`
+ * strictly: they are sugar over the collection's `where()`, not over the builder.
+ *
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -98,6 +104,41 @@ class ALinqQueryBuilder
 
         $this->conditions[] = fn(mixed $item): bool => $test($accessor($item));
         return $this;
+    }
+
+    /**
+     * Shortcut for `where($property, 'in', $values)`: the value is one of $values (loose
+     * comparison, strict when the value read is `null`)
+     *
+     * @param string $property Property name or dot-notation path
+     * @param array $values
+     */
+    public function whereIn(string $property, array $values): self
+    {
+        return $this->where($property, 'in', $values);
+    }
+
+    /**
+     * Shortcut for `where($property, 'notIn', $values)`: the value is none of $values (loose
+     * comparison, strict when the value read is `null`)
+     *
+     * @param string $property Property name or dot-notation path
+     * @param array $values
+     */
+    public function whereNotIn(string $property, array $values): self
+    {
+        return $this->where($property, 'notIn', $values);
+    }
+
+    /**
+     * Shortcut for `where($property, 'between', [$min, $max])`: bounds included, a `null`
+     * value is never between
+     *
+     * @param string $property Property name or dot-notation path
+     */
+    public function whereBetween(string $property, mixed $min, mixed $max): self
+    {
+        return $this->where($property, 'between', [$min, $max]);
     }
 
     /**

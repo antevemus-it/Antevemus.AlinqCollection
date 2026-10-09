@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -792,5 +795,71 @@ class FilteringOperationsTest extends TestCase
         // With a selector, same identity rule; native selector accepted
         $this->assertSame(['a', 'bb'], ALinqCollection::from(['a', 'bb', 'cc', 'd'])->distinct('strlen')->toArray());
         $this->assertSame([['k' => [1]], ['k' => [2]]], ALinqCollection::from([['k' => [1]], ['k' => [2]], ['k' => [1]]])->distinct(fn($v) => $v['k'])->toArray());
+    }
+
+    // ===== whereIn() / whereNotIn() / whereBetween() (1.4.0, forward 021, RN-04, D2 a) =====
+
+    public function testWhereBetweenIsInclusiveAndNullIsNeverBetweenOnBothSides(): void
+    {
+        $people = [['age' => 17], ['age' => 18], ['age' => 65], ['age' => 66], ['age' => null]];
+
+        $this->assertSame([['age' => 18], ['age' => 65]], ALinqCollection::from($people)->whereBetween('age', 18, 65)->toArray());
+        $this->assertSame([['age' => 18], ['age' => 65]], ALinqLazyCollection::from($people)->whereBetween('age', 18, 65)->toArray());
+        // a missing field reads null: never between
+        $this->assertSame([], ALinqCollection::from([['name' => 'x']])->whereBetween('age', 0, 200)->toArray());
+    }
+
+    public function testWhereInComparesWithStrictIdentity(): void
+    {
+        $rows = [['id' => 1], ['id' => '1'], ['id' => 2], ['id' => true], ['id' => null]];
+
+        $this->assertSame([['id' => 1]], ALinqCollection::from($rows)->whereIn('id', [1])->toArray());
+        $this->assertSame([['id' => '1']], ALinqCollection::from($rows)->whereIn('id', ['1'])->toArray());
+        $this->assertSame([['id' => null]], ALinqCollection::from($rows)->whereIn('id', [null])->toArray());
+        $this->assertSame([], ALinqCollection::from($rows)->whereIn('id', [])->toArray());
+    }
+
+    public function testWhereNotInComparesWithStrictIdentityAndKeepsNull(): void
+    {
+        $rows = [['id' => 1], ['id' => '1'], ['id' => 2], ['id' => null]];
+
+        $this->assertSame([['id' => '1'], ['id' => null]], ALinqCollection::from($rows)->whereNotIn('id', [1, 2])->toArray());
+        $this->assertSame([['id' => 1], ['id' => '1'], ['id' => 2]], ALinqCollection::from($rows)->whereNotIn('id', [null])->toArray());
+        $this->assertSame($rows, ALinqCollection::from($rows)->whereNotIn('id', [])->toArray());
+    }
+
+    public function testWhereInFamilyFollowsTheListDictionaryKeyRule(): void
+    {
+        $list = [['s' => 'A'], ['s' => 'C'], ['s' => 'B']];
+        $this->assertSame([['s' => 'A'], ['s' => 'B']], ALinqCollection::from($list)->whereIn('s', ['A', 'B'])->toArray());
+        $this->assertSame([['s' => 'C']], ALinqCollection::from($list)->whereNotIn('s', ['A', 'B'])->toArray());
+
+        $dictionary = ['x' => ['n' => 5], 'y' => ['n' => 50], 'z' => ['n' => 7]];
+        $this->assertSame(['x' => ['n' => 5], 'z' => ['n' => 7]], ALinqCollection::from($dictionary)->whereBetween('n', 1, 10)->toArray());
+        $this->assertSame(['y' => ['n' => 50]], ALinqCollection::from($dictionary)->whereNotIn('n', [5, 7])->toArray());
+        $this->assertSame(['x' => ['n' => 5], 'z' => ['n' => 7]], ALinqLazyCollection::from($dictionary)->whereIn('n', [5, 7])->toArray());
+    }
+
+    public function testWhereInFamilyReadsFieldsThroughThePropertyAccessor(): void
+    {
+        $rows = [
+            ['user' => ['address' => ['city' => 'Paris']]],
+            ['user' => ['address' => ['city' => 'Rome']]],
+            (object) ['user' => (object) ['address' => ['city' => 'Lima']]],
+        ];
+        $this->assertCount(2, ALinqCollection::from($rows)->whereIn('user.address.city', ['Paris', 'Lima']));
+
+        $dated = [['at' => new \DateTimeImmutable('2026-01-10')], ['at' => new \DateTimeImmutable('2026-03-01')]];
+        $this->assertCount(1, ALinqCollection::from($dated)->whereBetween('at', new \DateTimeImmutable('2026-01-01'), new \DateTimeImmutable('2026-01-31')));
+    }
+
+    public function testWhereInFamilyIsSugarOverWhere(): void
+    {
+        $rows = [['n' => 1], ['n' => 2], ['n' => 3], ['n' => '2']];
+        $collection = ALinqCollection::from($rows);
+
+        $this->assertSame($collection->where(fn($r) => in_array($r['n'], [2, 3], true))->toArray(), $collection->whereIn('n', [2, 3])->toArray());
+        $this->assertSame($collection->where(fn($r) => !in_array($r['n'], [2, 3], true))->toArray(), $collection->whereNotIn('n', [2, 3])->toArray());
+        $this->assertSame($collection->where(fn($r) => $r['n'] >= 2 && $r['n'] <= 3)->toArray(), $collection->whereBetween('n', 2, 3)->toArray());
     }
 }

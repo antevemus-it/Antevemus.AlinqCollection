@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.3.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-454%20passed%20%7C%201454%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-494%20passed%20%7C%201606%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -34,16 +34,16 @@ Modern PHP development frequently struggles with boilerplate array manipulations
 
 | Feature Domain | Capabilities |
 | :--- | :--- |
-| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, constant $O(1)$ RAM |
-| **🔍 Filtering & Slicing** | `where`, `take`, `skip`, `distinct`, `distinctBy`, `first`, `firstOrDefault`, `last`, `lastOrDefault`, `singleOrDefault`, `chunk`, `pad`, `shuffle`, `contains` |
-| **🔗 Joining & Set Theory** | `join` (inner), `groupJoin` (left outer), `concat`, `intersect`, `intersectWith`, `intersectBy`, `except`, `exceptWith`, `exceptBy`, `unionBy`, `combine`, `replace`, `replaceRecursive` |
+| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, constant $O(1)$ RAM for the streaming operators |
+| **🔍 Filtering & Slicing** | `where`, `take`, `skip`, `distinct`, `distinctBy`, `first`, `firstOrDefault`, `last`, `lastOrDefault`, `single`, `singleOrDefault`, `whereIn`, `whereNotIn`, `whereBetween`, `chunk`, `pad`, `shuffle`, `contains` |
+| **🔗 Joining & Set Theory** | `join` (inner), `leftJoin`, `rightJoin`, `fullJoin` (outer, as .NET 10/11), `groupJoin` (hierarchical), `concat`, `intersect`, `intersectWith`, `intersectBy`, `except`, `exceptWith`, `exceptBy`, `unionBy`, `combine`, `replace`, `replaceRecursive` |
 | **📊 Aggregation & Metrics** | `any`, `all`, `sum`, `average`, `min`, `minBy`, `max`, `maxBy`, `product`, `countValues`, `aggregate`, `aggregateBy`, `countBy` |
 | **🎯 Selection & Projection** | `select`, `selectMany` (flattening), `column`, `toDictionary`, `toObject`, `flip`, `toArray` |
 | **🗂️ Grouping & Bucketing** | `groupBy` (keyed sub-collections with full fluent chaining capabilities) |
-| **⚡ Ordering & Sorting** | `orderBy`, `orderByDescending`, `orderByNatural` (human alphanumeric sort), `orderByCustom`, `orderByKey`, `reverse` |
+| **⚡ Ordering & Sorting** | `orderBy`, `orderByDescending`, `thenBy`, `thenByDescending`, `orderByNatural` (human alphanumeric sort), `orderByCustom`, `orderByKey`, `reverse` |
 | **🧭 Iteration & Traversal** | `each`, `eachRecursive`, `current`, `key`, `next`, `prev`, `reset`, `end`, full `IteratorAggregate` and `Countable` parity |
-| **🛠️ Dynamic Query Builder** | `ALinqQueryBuilder` (`create('and'\|'or')`, `where('field', '>=', $val)`, `toPredicate()`) |
-| **🔎 Deep Property Access** | `ALinqPropertyAccess` with dot-notation (`getValue($item, 'company.address.zip')`) and reflection support |
+| **🛠️ Dynamic Query Builder** | `ALinqQueryBuilder` (`create('and'\|'or')`, `where('field', '>=', $val)`, `whereIn`, `whereNotIn`, `whereBetween`, `toPredicate()`) |
+| **🔎 Deep Property Access** | `ALinqPropertyAccess` with dot-notation (`getValue($item, 'company.address.zip')`), getters and, as the last resort, non-public properties |
 
 ---
 
@@ -68,7 +68,7 @@ If using directly from GitHub prior to or alongside Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.3"
+        "antevemus/alinq-collection": "^1.4"
     }
 }
 ```
@@ -245,6 +245,24 @@ $sums = $chunks->select(fn($chunk) => $chunk->sum());  // [6, 15, 24, 10]
 $padded = ALinqCollection::from([1, 2])->pad(5, 0); // [1, 2, 0, 0, 0]
 ```
 
+#### Field filters: `whereIn()`, `whereNotIn()`, `whereBetween()` (since 1.4.0)
+
+Shortcuts over `where()` that read a field through `ALinqPropertyAccess` (array key, getter, property, dot-notation path such as `'address.city'`). `whereIn`/`whereNotIn` compare by **strict** identity (`in_array(..., true)`: `'18'` is not `18`); `whereBetween` is **inclusive** and a `null` value is never between. Keys follow the contract: a list comes out reindexed, a dictionary keeps its keys.
+
+```php
+$staff = ALinqCollection::from([
+    ['name' => 'Ana',   'dept' => 'IT',    'age' => 17],
+    ['name' => 'Bruno', 'dept' => 'HR',    'age' => 18],
+    ['name' => 'Carla', 'dept' => 'Sales', 'age' => 65],
+    ['name' => 'Davi',  'dept' => 'IT',    'age' => null],
+]);
+
+$staff->whereIn('dept', ['IT', 'HR'])->column('name')->toArray(); // ['Ana', 'Bruno', 'Davi']
+$staff->whereNotIn('dept', ['IT'])->column('name')->toArray();    // ['Bruno', 'Carla']
+$staff->whereBetween('age', 18, 65)->column('name')->toArray();   // ['Bruno', 'Carla'] (bounds included, null never between)
+$staff->whereIn('age', ['18'])->count();                          // 0 (strict: '18' is not 18)
+```
+
 ---
 
 ### 3. Joining & Set Theory (`JoiningOperations`)
@@ -294,6 +312,42 @@ $difference = $datasetA->exceptBy($datasetB, fn($item) => $item['id']);   // [id
 $union = $datasetA->unionBy($datasetB, fn($item) => $item['id']);        // [id: 1, id: 2, id: 3, id: 4]
 ```
 
+#### Outer joins: `leftJoin()`, `rightJoin()`, `fullJoin()` (since 1.4.0)
+
+The outer joins of .NET 10/11 LINQ (`Enumerable.LeftJoin`, `RightJoin`, `FullJoin`), with the signature `leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null)` (same for `rightJoin`/`fullJoin`). They replace the `groupJoin()` + `selectMany()` written by hand. The result selector receives `($outer, $inner)` with `null` on the side without a match; without a selector each result is the pair `[$outer, $inner]`. The result is always a list. Keys match by the strict identity of `join()`/`groupJoin()`, and a `null` key never matches: that item comes out without a partner.
+
+- `leftJoin()`: every outer item, in outer order (once per match, or once with `null`).
+- `rightJoin()`: every inner item, in inner order (as in .NET), each with its matching outer items in outer order, or with `null`.
+- `fullJoin()`: the pairs and the unmatched outer items in outer order, then the unmatched inner items in inner order.
+
+```php
+$orders = ALinqCollection::from([
+    ['id' => 1, 'customer' => 10],
+    ['id' => 2, 'customer' => null], // a null key never matches
+    ['id' => 3, 'customer' => 99],   // no such customer
+    ['id' => 4, 'customer' => 10],
+]);
+$customers = [
+    ['id' => 10, 'name' => 'Acme'],
+    ['id' => 20, 'name' => 'Globex'], // no orders
+];
+
+$orderKey    = fn($o) => $o['customer'];
+$customerKey = fn($c) => $c['id'];
+$label       = fn(?array $o, ?array $c) => ($o['id'] ?? '-') . ':' . ($c['name'] ?? '-');
+
+$orders->leftJoin($customers, $orderKey, $customerKey, $label)->toArray();
+// ['1:Acme', '2:-', '3:-', '4:Acme']
+$orders->rightJoin($customers, $orderKey, $customerKey, $label)->toArray();
+// ['1:Acme', '4:Acme', '-:Globex']
+$orders->fullJoin($customers, $orderKey, $customerKey, $label)->toArray();
+// ['1:Acme', '2:-', '3:-', '4:Acme', '-:Globex']
+
+// Without a result selector: pairs [$outer, $inner]
+[$order, $customer] = $orders->leftJoin($customers, $orderKey, $customerKey)->toArray()[1];
+// $order = ['id' => 2, 'customer' => null], $customer = null
+```
+
 ---
 
 ### 4. Aggregations & Metrics (`AggregationOperations`)
@@ -324,7 +378,17 @@ $statusCounts = $orders->countBy(fn($o) => $o['status'])->toArray();
 
 // Custom Reductions
 $totalBalance = $orders->aggregate(seed: 1000.0, func: fn($acc, $o) => $acc + $o['amount']);
+
+// single(): exactly one element, or exactly one that matches (LINQ Single), else it throws (since 1.4.0)
+$refund = $orders->single(fn($o) => $o['status'] === 'REFUNDED')['code']; // 'ORD-4'
+$orders->single(fn($o) => $o['status'] === 'CANCELLED'); // UnderflowException: Sequence contains no matching element.
+$orders->single(fn($o) => $o['status'] === 'COMPLETED'); // OverflowException: Sequence contains more than one matching element.
+ALinqCollection::from([])->single();                     // UnderflowException: Sequence contains no elements.
+$orders->single();                                       // OverflowException: Sequence contains more than one element.
+$orders->singleOrDefault(null, fn($o) => $o['status'] === 'CANCELLED'); // null (the tolerant variant)
 ```
+
+`single()` throws the same exception classes and messages on the eager and the lazy collection; `singleOrDefault()` returns the default when nothing matches and still throws `OverflowException` on more than one match.
 
 ---
 
@@ -391,20 +455,44 @@ $files = ALinqCollection::from([
 // Natural Alphanumeric Sort (Human sorting: file1, file2, file10, FILE100)
 $naturalSorted = $files->orderByNatural(caseSensitive: false)->toArray();
 
-// Multi-attribute ordering: every orderBy() sorts the whole collection, so chaining
-// orderBy()->orderByDescending() keeps only the LAST key. For a composite key use
-// orderByCustom() (thenBy()/thenByDescending() are on the roadmap):
 $employees = ALinqCollection::from([
-    ['dept' => 'Sales', 'salary' => 5000],
-    ['dept' => 'IT',    'salary' => 7000],
-    ['dept' => 'IT',    'salary' => 9000],
+    ['name' => 'Ana',   'dept' => 'Sales', 'salary' => 5000],
+    ['name' => 'Bruno', 'dept' => 'IT',    'salary' => 7000],
+    ['name' => 'Carla', 'dept' => 'IT',    'salary' => 9000],
+    ['name' => 'Davi',  'dept' => 'IT',    'salary' => 7000],
 ]);
 
+// Composite ordering (since 1.4.0): orderBy() followed by any number of thenBy()/thenByDescending()
 $sorted = $employees
-    ->orderByCustom(fn($a, $b) => [$a['dept'], -$a['salary']] <=> [$b['dept'], -$b['salary']])
+    ->orderBy(fn($e) => $e['dept'])
+    ->thenByDescending(fn($e) => $e['salary'])
+    ->column('name')
     ->toArray();
-// IT 9000, IT 7000, Sales 5000
+// ['Carla', 'Bruno', 'Davi', 'Ana']: IT 9000, IT 7000, IT 7000, Sales 5000 (Bruno before Davi: stable)
+
+// A comparer receives the two keys: fn($keyA, $keyB): int
+$byNameLength = $employees
+    ->orderBy(fn($e) => $e['dept'])
+    ->thenBy(fn($e) => $e['name'], fn($a, $b) => strlen($a) <=> strlen($b))
+    ->column('name')
+    ->toArray();
+// ['Davi', 'Bruno', 'Carla', 'Ana']
+
+// thenBy() refines only a collection that comes straight from orderBy*()/thenBy*()
+$employees->thenBy(fn($e) => $e['name']);
+// LogicException: thenBy() requires a preceding orderBy().
+$employees->orderBy(fn($e) => $e['dept'])->where(fn($e) => true)->thenByDescending(fn($e) => $e['salary']);
+// LogicException: thenByDescending() requires a preceding orderBy().
+
+// orderByCustom() still sorts with one comparison over whole items
+$sameOrder = $employees
+    ->orderByCustom(fn($a, $b) => [$a['dept'], -$a['salary']] <=> [$b['dept'], -$b['salary']])
+    ->column('name')
+    ->toArray();
+// ['Carla', 'Bruno', 'Davi', 'Ana']
 ```
+
+`orderBy()`/`orderByDescending()` are stable and call each key selector once per item. `thenBy()`/`thenByDescending()` add a criterion that only decides between items tied on every previous criterion; a full tie keeps the source order. Their key selector receives `($item, $key)` with the key of the source, before ordering. A second `orderBy()` starts a new ordering (its key becomes the primary one), as in LINQ.
 
 ---
 
@@ -428,6 +516,26 @@ $approvedApplicants = $applicants->where($predicate);
 ```
 
 Operators (case- and separator-insensitive): `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`. `between` takes an inclusive `[min, max]` pair. The same evaluator is exposed as `ALinqQueryBuilder::operatorPredicate($operator, $value)` and backs `createPredicate()`.
+
+Shortcuts (since 1.4.0): `whereIn($field, $values)`, `whereNotIn($field, $values)` and `whereBetween($field, $min, $max)` are exactly `where($field, 'in' | 'notIn' | 'between', ...)`:
+
+```php
+$applicants = ALinqCollection::from([
+    ['name' => 'Ana',   'status' => 'APPROVED', 'country' => 'BR', 'age' => 30],
+    ['name' => 'Bruno', 'status' => 'REVIEW',   'country' => 'XX', 'age' => 40],
+    ['name' => 'Carla', 'status' => 'REJECTED', 'country' => 'BR', 'age' => 25],
+    ['name' => 'Davi',  'status' => 'APPROVED', 'country' => 'PT', 'age' => 70],
+]);
+
+$query = ALinqQueryBuilder::create('and')
+    ->whereIn('status', ['APPROVED', 'REVIEW'])
+    ->whereNotIn('country', ['XX'])
+    ->whereBetween('age', 21, 65);
+
+$applicants->where($query->toPredicate())->column('name')->toArray(); // ['Ana']
+```
+
+> **Note:** in the builder, `in`/`notIn` compare **loosely** (`'18'` is in `[18]`), strictly only when the value read is `null`. The collection methods of the same names (§2) compare **strictly**: they are sugar over the collection's `where()`, not over the builder.
 
 ---
 
@@ -453,7 +561,32 @@ $taxId = ALinqPropertyAccess::getValue($payload, 'user.profile.organization.taxI
 // Returns: '12.345.678/0001-90'
 ```
 
-Resolution order (the same as Antevemus.ASpecification's `PropertyAccessor`): array or `ArrayAccess` by key, then a public getter (`getX()`, `x()`, `isX()`, `hasX()`), then `__get` guarded by `__isset`, then a public initialized property; otherwise `null`, never an `Error`. A dot is always a path. `ALinqPropertyAccess::hasProperty($item, 'a.b')` tells whether the path resolves.
+Resolution order (the same as the `PropertyAccessor` of Antevemus.ASpecification 1.4.4):
+
+1. array or `ArrayAccess` by key;
+2. a public getter (`getX()`, `x()`, `isX()`, `hasX()`);
+3. `__get` guarded by `__isset`;
+4. a public initialized property;
+5. since 1.4.0, as the last resort, a **non-public property** (private or protected, static too) declared by the class or one of its ancestors, read by reflection without calling any method; an uninitialized one resolves to `null`.
+
+Otherwise `null`, never an `Error`. A dot is always a path. `ALinqPropertyAccess::hasProperty($item, 'a.b')` tells whether the path resolves and follows the same order.
+
+```php
+final class Invoice
+{
+    public function __construct(private string $number, private float $total) {}
+    public function getTotal(): float { return $this->total; }
+}
+
+$invoice = new Invoice('NF-001', 99.9);
+
+ALinqPropertyAccess::getValue($invoice, 'total');     // 99.9 (public getter)
+ALinqPropertyAccess::getValue($invoice, 'number');    // 'NF-001' (private property, last resort; null before 1.4.0)
+ALinqPropertyAccess::hasProperty($invoice, 'number'); // true (false before 1.4.0)
+ALinqPropertyAccess::getValue($invoice, 'missing');   // null
+```
+
+The last step reaches every entry point that reads a property: `ALinqQueryBuilder::where()`, `whereIn()`/`whereNotIn()`/`whereBetween()`, `createPropertySelector()` and `createPropertyComparer()`.
 
 ---
 
@@ -530,6 +663,21 @@ $totalCount = $cachedStream->count(); // Generator runs once
 $average    = $cachedStream->average(); // Reads from local memory cache, no generator rerun
 ```
 
+#### Ordering and outer joins accumulate data (since 1.4.0)
+
+The lazy collection has `orderBy()`/`orderByDescending()` with `thenBy()`/`thenByDescending()`, and the three outer joins, with the same answers as the eager side. They stay deferred (nothing runs until the first traversal), but they are **not** constant-memory:
+
+- `orderBy*()`/`thenBy*()` buffer the whole upstream when traversed, then sort once with every criterion;
+- `leftJoin()`/`fullJoin()` buffer and index the inner side and stream the lazy collection;
+- `rightJoin()` buffers and indexes the lazy collection itself and streams the inner side (the result follows the inner order).
+
+```php
+$sorted = ALinqLazyCollection::range(1, 6)
+    ->orderBy(fn($n) => $n % 3)          // deferred: nothing runs yet
+    ->thenByDescending(fn($n) => $n)
+    ->toArray();                          // [6, 3, 4, 1, 5, 2]
+```
+
 #### Irregular input (since 1.3.2)
 
 Irregular input fails loudly or is an explicit choice, never a silent reshape:
@@ -547,14 +695,15 @@ ALinqLazyCollection::fromCsv('clients.csv', strict: false)->toArray(); // 1.3.1 
 
 ### 11. The Contract: Keys, Equality, Empty Collections (since 1.3.0)
 
-Both collections obey one written contract, enforced by a parity test that runs every shared operation over the same inputs on the eager and the lazy side (`tests/Contract/ParityTest.php`, zero divergences allowed).
+Both collections obey one written contract, enforced by a parity test that runs every shared operation over the same inputs on the eager and the lazy side (`tests/Contract/ParityTest.php`, zero divergences allowed). When an operation throws, the exception class and, since 1.4.0, its message must be the same on both sides; a second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, the outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields.
 
 | Rule | Behaviour |
 |---|---|
-| **Keys** | A **list** (`array_is_list()`) comes out **reindexed** from every filtering, slicing, set or ordering operation; a **dictionary** (any other key shape, including `[10 => 'a', 20 => 'b']`) **keeps its keys**. `select()` always preserves keys. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `zip()`, `unionBy()` always produce a list. `chunk()` is a list of collections (each chunk follows the rule of its source). The lazy collection knows whether its source is a list (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `range()`, `repeat()`); a raw generator is "unknown" and keeps its keys while streaming, and `toArray()` reindexes it only when every key is an integer. Materialization never loses an item: a repeated key is appended. |
-| **Equality** | Elements and keys are compared by **strict, type-aware identity** everywhere: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `contains`. `1`, `'1'`, `1.0` and `true` are four different values; arrays compare by value; objects by identity. A `null` key never matches in `join`/`groupJoin` (LINQ and SQL semantics). A database column that arrives as a string does not match an integer key: cast on your side. A custom comparer (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) may return `bool` (`true` = equal) or a `<=>` style integer (`0` = equal). |
+| **Keys** | A **list** (`array_is_list()`) comes out **reindexed** from every filtering, slicing, set or ordering operation; a **dictionary** (any other key shape, including `[10 => 'a', 20 => 'b']`) **keeps its keys**. `select()` always preserves keys. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` always produce a list. `chunk()` is a list of collections (each chunk follows the rule of its source). The lazy collection knows whether its source is a list (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `range()`, `repeat()`); a raw generator is "unknown" and keeps its keys while streaming, and `toArray()` reindexes it only when every key is an integer. Materialization never loses an item: a repeated key is appended. |
+| **Equality** | Elements and keys are compared by **strict, type-aware identity** everywhere: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `contains`, and the collection `whereIn`/`whereNotIn`. `1`, `'1'`, `1.0` and `true` are four different values; arrays compare by value; objects by identity. A `null` key never matches in `join`/`groupJoin` or in the outer joins (LINQ and SQL semantics; in an outer join that item comes out without a partner). A database column that arrives as a string does not match an integer key: cast on your side. A custom comparer (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) may return `bool` (`true` = equal) or a `<=>` style integer (`0` = equal). |
 | **Group keys** | `groupBy`, `countBy`, `aggregateBy` and `toDictionary` accept `int`, `string` and `BackedEnum` (its value) keys; `null`, `bool`, `float`, arrays and objects throw `InvalidArgumentException` instead of being silently coerced. `toDictionary()` throws on a repeated key. |
-| **Empty collections** | As in LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` return the default; `singleOrDefault()` throws `OverflowException` on more than one match; `random()` throws `UnderflowException` like `first()` and `random(n > 1)` returns an empty collection like `take(n)`; `sum()` of nothing is `0`, `product()` of nothing is `1`; `any()` means "has at least one item"; `all($p)` of nothing is `true`; `all()` without predicate means "every item is truthy". |
+| **Empty collections** | As in LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` return the default; `singleOrDefault()` throws `OverflowException` on more than one match; `single()` (1.4.0) throws `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` and `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` throws `UnderflowException` like `first()` and `random(n > 1)` returns an empty collection like `take(n)`; `sum()` of nothing is `0`, `product()` of nothing is `1`; `any()` means "has at least one item"; `all($p)` of nothing is `true`; `all()` without predicate means "every item is truthy". |
+| **Ordering** (1.4.0) | `orderBy()`/`orderByDescending()` are stable; `thenBy()`/`thenByDescending()` refine a collection that comes straight from `orderBy*()`/`thenBy*()` and throw `LogicException('thenBy() requires a preceding orderBy().')` (or `thenByDescending() ...`) after any other operation; a full tie keeps the source order; key selectors receive `($item, $key)` with the source key; a comparer receives the two keys, `fn($keyA, $keyB): int`. |
 | **Arguments** | `take`/`skip`/`pad` with a negative count, `chunk(0)`, `random(0)`, `range()` with a non-positive step throw `InvalidArgumentException` (nothing slices from the tail or is silently ignored). |
 | **Numbers** | `sum`, `average`, `min`, `max`, `product` **ignore `null`** (`average([1, null, 2])` is `1.5`); when only `null` remains the collection counts as empty. A non-numeric value (string, array, object) throws `InvalidArgumentException` in `sum`/`average`/`product`; `min`/`max` compare any scalar or `DateTimeInterface`. |
 | **Callbacks** | A callback receives `($item, $key)` when it accepts two parameters and the item alone otherwise, so `where('is_int')`, `select('trim')` and `fn($v, $k) => ...` all work in every operator of both collections. |
@@ -577,25 +726,25 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 454 ( 13%)
-............................................................... 126 / 454 ( 27%)
-............................................................... 189 / 454 ( 41%)
-............................................................... 252 / 454 ( 55%)
-............................................................... 315 / 454 ( 69%)
-............................................................... 378 / 454 ( 83%)
-............................................................... 441 / 454 ( 97%)
-.............                                                   454 / 454 (100%)
+...............................................................  63 / 494 ( 12%)
+............................................................... 126 / 494 ( 25%)
+............................................................... 189 / 494 ( 38%)
+............................................................... 252 / 494 ( 51%)
+............................................................... 315 / 494 ( 63%)
+............................................................... 378 / 494 ( 76%)
+............................................................... 441 / 494 ( 89%)
+.....................................................           494 / 494 (100%)
 
-Time: 00:00.330, Memory: 8.00 MB
+Time: 00:00.136, Memory: 8.00 MB
 
-OK (454 tests, 1454 assertions)
+OK (494 tests, 1606 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **454 Tests & 1454 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
-- **Measured coverage** (pcov, 1.3.2): 168 of 170 methods and 989 of 992 lines of `src/`; the three uncovered lines are defensive `catch` blocks in the property accessor.
+- **494 Tests & 1606 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
+- **Measured coverage** (pcov, 1.4.0): 199 of 203 methods and 1159 of 1165 lines of `src/`; the six uncovered lines are defensive guards (four in the property accessor: `catch` blocks around reflection and the empty-name check of the non-public lookup; one in the shared outer join: the unknown-kind check).
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -610,11 +759,11 @@ OK (454 tests, 1454 assertions)
 - [x] **v1.1.2**: Lazy materializers never lose items (list reindexed, dictionary preserved), resumable `remember()`, `last()` with the real key.
 - [x] **v1.2.0**: README promises I: `groupBy()` groups are collections, `select()` receives the key, every operator accepts native callables, `distinct()` is strict and safe for arrays/objects, `selectMany()` flattens any iterable, `between`/`notIn`/`isNull` in the query builder, dot-notation and getter resolution in `ALinqPropertyAccess`.
 - [x] **v1.3.0**: The contract: one key rule, strict identity, LINQ semantics on empty collections, validated arguments and group keys, `null`-aware aggregations and query builder, `count($predicate)`, `JsonSerializable`; eager × lazy parity enforced by test (§11).
-- [ ] **Lazy sources hardening**: irregular CSV rows, BOM, directories in `fromFile()`, one statement per `fromCursor()` collection.
-- [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order; extracting a common package is a 2.0 topic).
-- [ ] **`thenBy()` / `thenByDescending()`**: composite, stable multi-key ordering (today: `orderByCustom()`).
-- [ ] **`whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`**: announced in the 0.1.0 release notes and never shipped; see the CHANGELOG erratum.
-- [ ] **`leftJoin()` / `rightJoin()` / `fullJoin()`**: outer joins returning `[$outer, $inner]` pairs with `null` on the side without a match, as `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` in .NET 10/11 (today: `groupJoin()` + `selectMany()` by hand).
+- [x] **v1.3.2**: Lazy sources hardening: irregular CSV rows, BOM, directories in `fromFile()`, one statement per `fromCursor()` collection.
+- [x] **v1.4.0**: `whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`, announced in the 0.1.0 release notes and shipped at last (see the CHANGELOG erratum).
+- [x] **v1.4.0**: `leftJoin()` / `rightJoin()` / `fullJoin()`: outer joins returning `[$outer, $inner]` pairs with `null` on the side without a match, as `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` in .NET 10/11 (they replace `groupJoin()` + `selectMany()` by hand).
+- [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: composite, stable multi-key ordering, on the lazy collection too.
+- [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order, including the non-public last resort since 1.4.0; extracting a common package is a 2.0 topic).
 - [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
 
 The milestone view of this list, with target releases, lives in [ROADMAP.md](ROADMAP.md).

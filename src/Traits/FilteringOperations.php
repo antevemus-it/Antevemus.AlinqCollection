@@ -23,8 +23,11 @@ use UnderflowException;
  * *OrDefault() variants return the default (RN-11); negative counts throw
  * InvalidArgumentException instead of slicing from the tail (RN-13); element identity is
  * ALinqCallable::hashKey() (RN-06); a comparer may answer bool or `<=>` (RN-09).
+ * whereIn()/whereNotIn()/whereBetween() (1.4.0) are sugar over where(): the field is read by
+ * ALinqPropertyAccess, `in`/`notIn` are strict (`in_array(..., true)`), `between` is
+ * inclusive and a null value is never between.
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -42,6 +45,45 @@ trait FilteringOperations
         $filtered = array_filter($this->items, ALinqCallable::withKey($predicate), ARRAY_FILTER_USE_BOTH);
 
         return new self(ALinqContract::shapeLike($this->items, $filtered));
+    }
+
+    /**
+     * Keep the items whose field is one of $values, by strict identity (`in_array(..., true)`)
+     *
+     * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param array $values The accepted values
+     */
+    public function whereIn(string $field, array $values): IALinqCollection
+    {
+        return $this->where(ALinqContract::fieldPredicate('in', $field, [$values]));
+    }
+
+    /**
+     * Keep the items whose field is none of $values, by strict identity (`in_array(..., true)`)
+     *
+     * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param array $values The rejected values
+     */
+    public function whereNotIn(string $field, array $values): IALinqCollection
+    {
+        return $this->where(ALinqContract::fieldPredicate('notIn', $field, [$values]));
+    }
+
+    /**
+     * Keep the items whose field lies in [$min, $max], bounds included; a null field is
+     * never between (the query builder's rule)
+     *
+     * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     */
+    public function whereBetween(string $field, mixed $min, mixed $max): IALinqCollection
+    {
+        return $this->where(ALinqContract::fieldPredicate('between', $field, [$min, $max]));
     }
 
     /**

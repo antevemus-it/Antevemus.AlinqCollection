@@ -15,6 +15,7 @@ use Iterator;
 use IteratorAggregate;
 use IteratorIterator;
 use JsonSerializable;
+use LogicException;
 use OverflowException;
 use PDOStatement;
 use RuntimeException;
@@ -51,7 +52,14 @@ use WeakMap;
  *   InvalidArgumentException instead of being ignored.
  * - A comparer given to contains() may answer bool or `<=>` style int.
  *
- * @version    1.3.2
+ * Since 1.4.0 (forward 021): single(), whereIn()/whereNotIn()/whereBetween(), the outer joins
+ * and the composite ordering share their implementation with the eager side
+ * (ALinqContract::single(), fieldPredicate(), outerJoin(), orderPositions()). orderBy*()
+ * returns a stage that keeps the ordering pending (its upstream and its criteria); thenBy*()
+ * builds a new stage over the same upstream with one more criterion, and the whole sort runs
+ * once, when the stage is traversed.
+ *
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -71,6 +79,15 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * operator through pipe().
      */
     private ?bool $sourceIsList = null;
+
+    /**
+     * The ordering pending on a stage returned by orderBy*()/thenBy*() (1.4.0): the upstream
+     * collection and the criteria [key selector, direction, comparer]. Null on every other
+     * stage, where thenBy*() throws LogicException.
+     *
+     * @var array{0: self, 1: list<array{0: Closure, 1: int, 2: callable|null}>}|null
+     */
+    private ?array $pendingOrdering = null;
 
     /**
      * PDOStatements already bound to a lazy collection (one statement, one collection).
@@ -495,6 +512,30 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
+    public function whereIn(string $field, array $values): self
+    {
+        return $this->where(ALinqContract::fieldPredicate('in', $field, [$values]));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function whereNotIn(string $field, array $values): self
+    {
+        return $this->where(ALinqContract::fieldPredicate('notIn', $field, [$values]));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function whereBetween(string $field, mixed $min, mixed $max): self
+    {
+        return $this->where(ALinqContract::fieldPredicate('between', $field, [$min, $max]));
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function select(callable $selector): self
     {
         $selector = ALinqCallable::withKey($selector);
@@ -792,6 +833,136 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    {
+        return self::pipe(
+            fn() => ALinqContract::outerJoin('left', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    {
+        return self::pipe(
+            fn() => ALinqContract::outerJoin('right', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    {
+        return self::pipe(
+            fn() => ALinqContract::outerJoin('full', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function orderBy(callable $keySelector): self
+    {
+        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), 1, null]]);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function orderByDescending(callable $keySelector): self
+    {
+        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), -1, null]]);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * @throws LogicException When this stage does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenBy(callable $keySelector, ?callable $comparer = null): self
+    {
+        return $this->appendOrdering('thenBy', $keySelector, $comparer, 1);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * @throws LogicException When this stage does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenByDescending(callable $keySelector, ?callable $comparer = null): self
+    {
+        return $this->appendOrdering('thenByDescending', $keySelector, $comparer, -1);
+    }
+
+    /**
+     * A new ordered stage over the upstream of the pending ordering, with one more criterion.
+     *
+     * @throws LogicException When no ordering is pending on this stage
+     */
+    private function appendOrdering(string $operation, callable $keySelector, ?callable $comparer, int $direction): self
+    {
+        if ($this->pendingOrdering === null) {
+            throw new LogicException(sprintf('%s() requires a preceding orderBy().', $operation));
+        }
+
+        [$upstream, $criteria] = $this->pendingOrdering;
+        $criteria[] = [ALinqCallable::withKey($keySelector), $direction, $comparer];
+
+        return self::orderedStage($upstream, $criteria);
+    }
+
+    /**
+     * The sorting stage: on traversal it buffers the upstream, computes every criterion's
+     * key once per item, sorts stably by all criteria (ALinqContract::orderPositions()) and
+     * yields by the key rule of the upstream (a list reindexed, a dictionary or an unknown
+     * source with its keys). The ordering stays pending on the stage for thenBy*().
+     *
+     * @param self $upstream
+     * @param list<array{0: Closure, 1: int, 2: callable|null}> $criteria
+     * @return self
+     */
+    private static function orderedStage(self $upstream, array $criteria): self
+    {
+        $isList = $upstream->sourceIsList;
+
+        $stage = self::pipe(function () use ($upstream, $criteria, $isList) {
+            $keys = [];
+            $items = [];
+            foreach ($upstream as $key => $item) {
+                $keys[] = $key;
+                $items[] = $item;
+            }
+
+            $columns = [];
+            foreach ($criteria as [$keySelector, $direction, $comparer]) {
+                $column = [];
+                foreach ($items as $position => $item) {
+                    $column[] = $keySelector($item, $keys[$position]);
+                }
+                $columns[] = [$column, $direction, $comparer];
+            }
+
+            foreach (ALinqContract::orderPositions(count($items), $columns) as $position) {
+                if ($isList) {
+                    yield $items[$position];
+                } else {
+                    yield $keys[$position] => $items[$position];
+                }
+            }
+        }, $isList);
+
+        $stage->pendingOrdering = [$upstream, $criteria];
+        return $stage;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function tap(callable $callback): self
     {
         $callback = ALinqCallable::withKey($callback);
@@ -935,6 +1106,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         }
 
         return $last;
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * @throws UnderflowException When the collection is empty or no element matches
+     * @throws OverflowException When more than one element (or matching element) exists
+     */
+    public function single(?callable $predicate = null): mixed
+    {
+        return ALinqContract::single($this, $predicate === null ? null : ALinqCallable::withKey($predicate));
     }
 
     /**

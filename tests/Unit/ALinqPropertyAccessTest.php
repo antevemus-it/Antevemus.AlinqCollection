@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqQueryBuilder;
 use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
 use PHPUnit\Framework\TestCase;
 
@@ -307,9 +311,53 @@ class ALinqPropertyAccessTest extends TestCase
         $this->assertSame('prot', ALinqPropertyAccess::getValue(new ProtectedWithGetter(), 'name'));
     }
 
-    public function testGetValueReturnsNullForPrivatePropertyWithoutGetter(): void
+    public function testGetValueReadsAPrivatePropertyWithoutGetterAsTheLastResort(): void
     {
-        $this->assertNull(ALinqPropertyAccess::getValue(new PrivateWithoutGetter(), 'name'));
+        // 1.4.0 (forward 021, RN-07): before, null
+        $this->assertSame('priv-no-getter', ALinqPropertyAccess::getValue(new PrivateWithoutGetter(), 'name'));
+    }
+
+    public function testTheNonPublicPropertyComesAfterEveryOtherStep(): void
+    {
+        // a public getter wins over the private property it shadows
+        $this->assertSame('from-getter', ALinqPropertyAccess::getValue(new PrivateShadowedByGetter(), 'name'));
+        // __get guarded by __isset wins over the private property
+        $this->assertSame('magic:name', ALinqPropertyAccess::getValue(new PrivateShadowedByMagicGet(), 'name'));
+        // a private getter is still ignored, the private property behind it is read
+        $this->assertSame('field', ALinqPropertyAccess::getValue(new PrivateGetterOverPrivateProperty(), 'name'));
+    }
+
+    public function testGetValueReadsNonPublicPropertiesUpTheHierarchy(): void
+    {
+        $child = new ChildOfPrivateParent();
+
+        $this->assertSame('parent-private', ALinqPropertyAccess::getValue($child, 'secret'));
+        $this->assertSame('parent-protected', ALinqPropertyAccess::getValue($child, 'level'));
+        $this->assertSame('child-private', ALinqPropertyAccess::getValue($child, 'own'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($child, 'secret'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($child, 'level'));
+        $this->assertFalse(ALinqPropertyAccess::hasProperty($child, 'missing'));
+        $this->assertNull(ALinqPropertyAccess::getValue($child, 'missing'));
+    }
+
+    public function testGetValueReadsPrivateStaticAndUninitializedPrivateProperties(): void
+    {
+        $this->assertSame('private-static', ALinqPropertyAccess::getValue(new PrivateStaticAndUninitialized(), 'shared'));
+        $this->assertNull(ALinqPropertyAccess::getValue(new PrivateStaticAndUninitialized(), 'pending'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new PrivateStaticAndUninitialized(), 'pending'), 'declared, even if uninitialized');
+    }
+
+    public function testDotPathsAndTheQueryBuilderReachPrivateProperties(): void
+    {
+        $order = ['customer' => new PrivateWithoutGetter()];
+
+        $this->assertSame('priv-no-getter', ALinqPropertyAccess::getValue($order, 'customer.name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($order, 'customer.name'));
+
+        $matches = ALinqCollection::from([$order, ['customer' => null]])
+            ->where(ALinqQueryBuilder::create()->where('customer.name', '=', 'priv-no-getter')->toPredicate())
+            ->count();
+        $this->assertSame(1, $matches);
     }
 
     public function testGetValueLetsMethodsWinOverPublicProperties(): void
@@ -445,7 +493,7 @@ class ALinqPropertyAccessTest extends TestCase
     public function testHasPropertyOnObjectsFollowsTheResolutionOrder(): void
     {
         $this->assertTrue(ALinqPropertyAccess::hasProperty(new PrivateWithGetter(), 'name'));
-        $this->assertFalse(ALinqPropertyAccess::hasProperty(new PrivateWithoutGetter(), 'name'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty(new PrivateWithoutGetter(), 'name'), 'non-public property, since 1.4.0');
         $this->assertFalse(ALinqPropertyAccess::hasProperty(new PrivateGetterOnly(), 'name'));
         $this->assertTrue(ALinqPropertyAccess::hasProperty(new MethodNamedLikeProperty(), 'name'));
         $this->assertTrue(ALinqPropertyAccess::hasProperty(new MagicGetWithIsset(), 'name'));
@@ -470,10 +518,11 @@ class ALinqPropertyAccessTest extends TestCase
     }
 
     /**
-     * L4: hasProperty() on a declared but non-public property without getter or __isset
-     * answers false (the reflection branch), and getValue() answers null, consistently.
+     * L4, revised by 1.4.0 (forward 021, RN-07): hasProperty() on a declared non-public
+     * property without getter or __isset answers true and getValue() reads it, consistently
+     * (before 1.4.0 both answered "missing": false and null).
      */
-    public function testHasPropertyIsFalseForANonPublicPropertyWithoutGetter(): void
+    public function testHasPropertyIsTrueForANonPublicPropertyWithoutGetter(): void
     {
         $entity = new class {
             private string $secret = 's';
@@ -481,10 +530,11 @@ class ALinqPropertyAccessTest extends TestCase
             public string $name = 'n';
         };
 
-        $this->assertFalse(ALinqPropertyAccess::hasProperty($entity, 'secret'));
-        $this->assertFalse(ALinqPropertyAccess::hasProperty($entity, 'level'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($entity, 'secret'));
+        $this->assertTrue(ALinqPropertyAccess::hasProperty($entity, 'level'));
         $this->assertTrue(ALinqPropertyAccess::hasProperty($entity, 'name'));
-        $this->assertNull(ALinqPropertyAccess::getValue($entity, 'secret'));
+        $this->assertSame('s', ALinqPropertyAccess::getValue($entity, 'secret'));
+        $this->assertSame(1, ALinqPropertyAccess::getValue($entity, 'level'));
         $this->assertSame('n', ALinqPropertyAccess::getValue($entity, 'name'));
     }
 }
@@ -581,4 +631,42 @@ final class ReadonlyFixture
 enum StatusFixture: string
 {
     case Active = 'A';
+}
+
+// ===== Fixtures for the non-public last resort (1.4.0, forward 021, RN-07) =====
+
+final class PrivateShadowedByGetter
+{
+    private string $name = 'from-field';
+    public function getName(): string { return 'from-getter'; }
+}
+
+final class PrivateShadowedByMagicGet
+{
+    private string $name = 'from-field';
+    public function __get(string $name): string { return "magic:$name"; }
+    public function __isset(string $name): bool { return true; }
+}
+
+final class PrivateGetterOverPrivateProperty
+{
+    private string $name = 'field';
+    private function getName(): string { return 'private-getter'; }
+}
+
+class PrivateParent
+{
+    private string $secret = 'parent-private';
+    protected string $level = 'parent-protected';
+}
+
+final class ChildOfPrivateParent extends PrivateParent
+{
+    private string $own = 'child-private';
+}
+
+final class PrivateStaticAndUninitialized
+{
+    private static string $shared = 'private-static';
+    private int $pending;
 }

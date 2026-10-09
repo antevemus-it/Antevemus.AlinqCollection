@@ -14,6 +14,10 @@ use PHPUnit\Framework\TestCase;
  * library. The five public entry points that read a property are driven through the same
  * fixture of 13 cases (REVISAO-2026-10-08 §3.15, bug P4CS) and must agree with
  * ALinqPropertyAccess::getValue() case by case.
+ *
+ * 1.4.0 (forward 021, RN-07): the resolution order gained a last step, a private or
+ * protected property declared by the class or an ancestor, so 'private without getter'
+ * resolves to its value; the other 12 cases are unchanged.
  */
 final class AccessorContractTest extends TestCase
 {
@@ -32,7 +36,9 @@ final class AccessorContractTest extends TestCase
 
         return [
             'private + getter'               => [new C\PrivateWithGetter(), 'name', 'priv'],
-            'private without getter'         => [new C\PrivateWithoutGetter(), 'name', null],
+            // 1.4.0 (forward 021, RN-07): the non-public property is the last resort, as in
+            // the PropertyAccessor of ASpecification 1.4.4 (before 1.4.0: null)
+            'private without getter'         => [new C\PrivateWithoutGetter(), 'name', 'priv-no-getter'],
             'public $active + isActive()'    => [new C\PublicActiveWithIsMethod(), 'active', false],
             'public $status + getStatus()'   => [new C\PublicStatusWithGetter(), 'status', 'getter'],
             '__get + __isset'                => [new C\MagicGetWithIsset(), 'name', 'magic:name'],

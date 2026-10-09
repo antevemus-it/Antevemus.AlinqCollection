@@ -8,6 +8,7 @@ use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use InvalidArgumentException;
+use OverflowException;
 use UnderflowException;
 
 /**
@@ -22,9 +23,12 @@ use UnderflowException;
  * collection (or one with only nulls); sum() of nothing is 0 and product() of nothing is 1
  * (RN-11, RN-15). all() without a predicate asks whether every item is truthy and is
  * vacuously true on an empty collection; any() without a predicate still means "has at
- * least one item" (RN-14).
+ * least one item" (RN-14). single() (1.4.0) is the LINQ `Single`: exactly one element, or
+ * exactly one that satisfies the predicate, else UnderflowException (none) or
+ * OverflowException (more than one), with the messages of the lazy side
+ * (ALinqContract::single()).
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -43,6 +47,20 @@ trait AggregationOperations
             return count($this->items) > 0;
         }
         return array_any($this->items, ALinqCallable::withKey($predicate));
+    }
+
+    /**
+     * The single element, or the single element that satisfies the predicate (Single in LINQ)
+     *
+     * singleOrDefault() is the tolerant variant (default instead of UnderflowException).
+     *
+     * @param callable|null $predicate `fn($item)` or `fn($item, $key)`
+     * @throws UnderflowException when the collection is empty or no element matches
+     * @throws OverflowException when more than one element (or matching element) exists
+     */
+    public function single(?callable $predicate = null): mixed
+    {
+        return ALinqContract::single($this->items, $predicate === null ? null : ALinqCallable::withKey($predicate));
     }
 
     /**

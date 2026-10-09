@@ -1,8 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Antevemus\ALinq\Tests\Unit;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLazyCollection;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -454,5 +457,125 @@ class OrderingOperationsTest extends TestCase
 
         $this->assertSame(['c' => 3, 'b' => 2, 'a' => 1], ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3])->orderByDescending(fn($v, $k) => $k)->toArray());
         $this->assertSame(['b', 'a'], ALinqCollection::from(['a', 'b'])->orderBy('strrev')->reverse()->toArray());
+    }
+
+    // ===== thenBy() / thenByDescending() (1.4.0, forward 021, RN-06, D4 a) =====
+
+    private static function staff(): array
+    {
+        return [
+            ['name' => 'Ana', 'dept' => 'IT', 'salary' => 5000],
+            ['name' => 'Bia', 'dept' => 'HR', 'salary' => 4000],
+            ['name' => 'Caio', 'dept' => 'IT', 'salary' => 7000],
+            ['name' => 'Dani', 'dept' => 'HR', 'salary' => 4000],
+            ['name' => 'Edu', 'dept' => 'IT', 'salary' => 5000],
+            ['name' => 'Fabi', 'dept' => 'HR', 'salary' => 6000],
+        ];
+    }
+
+    public function testOrderByThenByDescendingOrdersByDeptThenSalaryStableOnBothSides(): void
+    {
+        $expected = ['Fabi', 'Bia', 'Dani', 'Caio', 'Ana', 'Edu'];
+
+        foreach ([ALinqCollection::from(self::staff()), ALinqLazyCollection::from(self::staff())] as $side) {
+            $names = $side->orderBy(fn($e) => $e['dept'])
+                ->thenByDescending(fn($e) => $e['salary'])
+                ->select(fn($e) => $e['name'])
+                ->toArray();
+            $this->assertSame($expected, $names);
+        }
+    }
+
+    public function testThenByChainsAnyNumberOfCriteria(): void
+    {
+        $names = ALinqCollection::from(self::staff())
+            ->orderByDescending(fn($e) => $e['salary'])
+            ->thenBy(fn($e) => $e['dept'])
+            ->thenByDescending(fn($e) => $e['name'])
+            ->select(fn($e) => $e['name'])
+            ->toArray();
+
+        $this->assertSame(['Caio', 'Fabi', 'Edu', 'Ana', 'Dani', 'Bia'], $names);
+    }
+
+    public function testThenByAcceptsAKeyComparer(): void
+    {
+        $byLength = fn(string $a, string $b): int => strlen($a) <=> strlen($b);
+        $names = ALinqCollection::from(self::staff())
+            ->orderBy(fn($e) => $e['dept'])
+            ->thenBy(fn($e) => $e['name'], $byLength)
+            ->select(fn($e) => $e['name'])
+            ->toArray();
+
+        $this->assertSame(['Bia', 'Dani', 'Fabi', 'Ana', 'Edu', 'Caio'], $names);
+    }
+
+    public function testThenByWithoutAPrecedingOrderByThrowsLogicException(): void
+    {
+        $collection = ALinqCollection::from(self::staff());
+        $calls = [
+            'fresh collection' => fn() => $collection->thenBy(fn($e) => $e['name']),
+            'after where()' => fn() => $collection->orderBy(fn($e) => $e['dept'])->where(fn() => true)->thenBy(fn($e) => $e['name']),
+            'after orderByCustom()' => fn() => $collection->orderByCustom(fn($a, $b) => $a['dept'] <=> $b['dept'])->thenBy(fn($e) => $e['name']),
+            'after reverse()' => fn() => $collection->orderBy(fn($e) => $e['dept'])->reverse()->thenBy(fn($e) => $e['name']),
+        ];
+        foreach ($calls as $case => $call) {
+            try {
+                $call();
+                $this->fail("$case: expected LogicException");
+            } catch (\LogicException $e) {
+                $this->assertSame('thenBy() requires a preceding orderBy().', $e->getMessage(), $case);
+            }
+        }
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('thenByDescending() requires a preceding orderBy().');
+        $collection->thenByDescending(fn($e) => $e['name']);
+    }
+
+    public function testThenByLeavesThePrecedingOrderingUntouched(): void
+    {
+        $byDept = ALinqCollection::from(self::staff())->orderBy(fn($e) => $e['dept']);
+        $before = $byDept->toArray();
+
+        $up = $byDept->thenBy(fn($e) => $e['salary'])->select(fn($e) => $e['name'])->toArray();
+        $down = $byDept->thenByDescending(fn($e) => $e['salary'])->select(fn($e) => $e['name'])->toArray();
+
+        $this->assertSame($before, $byDept->toArray());
+        $this->assertSame(['Bia', 'Dani', 'Fabi', 'Ana', 'Edu', 'Caio'], $up);
+        $this->assertSame(['Fabi', 'Bia', 'Dani', 'Caio', 'Ana', 'Edu'], $down);
+    }
+
+    public function testThenByFollowsTheKeyRuleAndSeesTheSourceKeys(): void
+    {
+        $dictionary = ['k1' => 3, 'k2' => 1, 'k3' => 2, 'k4' => 4];
+        $this->assertSame(['k4' => 4, 'k3' => 2, 'k1' => 3, 'k2' => 1], ALinqCollection::from($dictionary)->orderBy(fn($v) => $v % 2)->thenByDescending(fn($v) => $v)->toArray());
+
+        // a list is reindexed, but the two-parameter selector of thenBy sees the source key
+        $seen = [];
+        $sorted = ALinqCollection::from(['c', 'a', 'b'])->orderBy(fn($v) => 0)->thenByDescending(function ($v, $k) use (&$seen) {
+            $seen[] = $k;
+            return $k;
+        });
+        $this->assertSame([0, 1, 2], $seen);
+        $this->assertSame(['b', 'a', 'c'], $sorted->toArray());
+    }
+
+    public function testEveryKeySelectorRunsOncePerItem(): void
+    {
+        $calls = ['first' => 0, 'second' => 0, 'third' => 0];
+        ALinqCollection::from(self::staff())
+            ->orderBy(function ($e) use (&$calls) { $calls['first']++; return $e['dept']; })
+            ->thenBy(function ($e) use (&$calls) { $calls['second']++; return $e['salary']; })
+            ->thenBy(function ($e) use (&$calls) { $calls['third']++; return $e['name']; });
+
+        $this->assertSame(['first' => 6, 'second' => 6, 'third' => 6], $calls);
+    }
+
+    public function testOrderByResultsAreUnchangedByThePendingOrdering(): void
+    {
+        $this->assertSame([1, 2, 3], ALinqCollection::from([3, 1, 2])->orderBy(fn($v) => $v)->toArray());
+        $this->assertSame(['b' => 2, 'a' => 1], ALinqCollection::from(['a' => 1, 'b' => 2])->orderByDescending(fn($v) => $v)->toArray());
+        $this->assertSame([], ALinqCollection::from([])->orderBy(fn($v) => $v)->thenBy(fn($v) => $v)->toArray());
     }
 }

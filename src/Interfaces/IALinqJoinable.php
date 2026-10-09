@@ -14,8 +14,12 @@ namespace Antevemus\ALinq\Interfaces;
  * cast on the caller side for PDO rows); `intersect`/`except` are set operations and
  * deduplicate; `concat` is a sequence operation and always yields a reindexed list;
  * a custom comparer may answer `bool` (`true` = equal) or an int in the `<=>` convention.
+ * The outer joins (1.4.0) follow `Enumerable.LeftJoin/RightJoin/FullJoin` of .NET 10/11:
+ * the result selector receives `($outer, $inner)` with `null` on the side without a match,
+ * the default result is the pair `[$outer, $inner]`, the output is always a list and a
+ * `null` key never matches (that side comes out without a partner).
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -36,6 +40,30 @@ interface IALinqJoinable extends IALinqBaseCollection
      * null key never matches (LINQ and SQL semantics)
      */
     public function groupJoin(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
+
+    /**
+     * Left outer join (LeftJoin in .NET 10/11 LINQ): every outer item, paired with each match
+     * or with `null`; outer order
+     *
+     * @param callable|null $resultSelector `fn($outer, $inner|null)`; the pair `[$outer, $inner]` when null
+     */
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
+
+    /**
+     * Right outer join (RightJoin in .NET 10/11 LINQ): every inner item, paired with each
+     * matching outer item (outer order) or with `null`; inner order
+     *
+     * @param callable|null $resultSelector `fn($outer|null, $inner)`; the pair `[$outer, $inner]` when null
+     */
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
+
+    /**
+     * Full outer join (FullJoin in .NET 10/11 LINQ): the outer items in outer order (paired
+     * with each match or with `null`), then the unmatched inner items in inner order
+     *
+     * @param callable|null $resultSelector `fn($outer|null, $inner|null)`; the pair `[$outer, $inner]` when null
+     */
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
 
     /**
      * Concatenate with another collection (Concat in LINQ): a sequence operation, the result is a reindexed list

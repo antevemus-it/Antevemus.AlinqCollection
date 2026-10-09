@@ -20,8 +20,10 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  * `intersect`/`except` are set operations (deduplicated) that keep the keys of a
  * dictionary and reindex a list (RN-02); `concat` is a sequence operation and always
  * returns a reindexed list (RN-17); a comparer may answer bool or `<=>` (RN-09).
+ * leftJoin()/rightJoin()/fullJoin() (1.4.0) are the outer joins of .NET 10/11 LINQ, shared
+ * with the lazy side (ALinqContract::outerJoin()).
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -75,6 +77,69 @@ trait JoiningOperations
         }
 
         return new self($result);
+    }
+
+    /**
+     * Left outer join (LeftJoin in .NET 10/11 LINQ)
+     *
+     * Every outer item appears: once per matching inner item, or once with `null` as the
+     * inner side when nothing matches (a null key never matches). The result selector
+     * receives `($outer, $inner|null)`; without it each result is the pair
+     * `[$outer, $inner|null]`. Always a list, in outer order.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable|null $resultSelector `fn($outer, $inner)`
+     */
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    {
+        return new self(iterator_to_array(
+            ALinqContract::outerJoin('left', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            false
+        ));
+    }
+
+    /**
+     * Right outer join (RightJoin in .NET 10/11 LINQ)
+     *
+     * Every inner item appears: once per matching outer item (in outer order), or once with
+     * `null` as the outer side when nothing matches (a null key never matches). The result
+     * selector receives `($outer|null, $inner)`; without it each result is the pair
+     * `[$outer|null, $inner]`. Always a list, in inner order.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable|null $resultSelector `fn($outer, $inner)`
+     */
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    {
+        return new self(iterator_to_array(
+            ALinqContract::outerJoin('right', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            false
+        ));
+    }
+
+    /**
+     * Full outer join (FullJoin in .NET 10/11 LINQ)
+     *
+     * First the outer items in outer order (paired with each match, or with `null`), then the
+     * inner items that matched nothing, in inner order (with `null` as the outer side). A
+     * null key never matches. The result selector receives `($outer|null, $inner|null)`;
+     * without it each result is the pair. Always a list.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable|null $resultSelector `fn($outer, $inner)`
+     */
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    {
+        return new self(iterator_to_array(
+            ALinqContract::outerJoin('full', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            false
+        ));
     }
 
     /**

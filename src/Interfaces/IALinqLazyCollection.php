@@ -26,7 +26,14 @@ use Traversable;
  * throws on first/last/min/max/minBy/maxBy/average; numeric aggregations skip `null`;
  * a comparer may answer `bool` or `<=>`.
  *
- * @version    1.3.2
+ * Since 1.4.0 (forward 021) the lazy side also offers single(), whereIn()/whereNotIn()/
+ * whereBetween(), the outer joins leftJoin()/rightJoin()/fullJoin() and the composite
+ * ordering orderBy()/orderByDescending() + thenBy()/thenByDescending(), with the results and
+ * exceptions of the eager side. Ordering and joins buffer: orderBy() consumes the stream when
+ * it is traversed; a join indexes one side (the inner side for leftJoin()/fullJoin(), this
+ * stream for rightJoin()) and streams the other.
+ *
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -142,6 +149,34 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function whereNot(callable $predicate): self;
 
     /**
+     * Keep the items whose field is one of $values, by strict identity (`in_array(..., true)`).
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param array $values
+     * @return self
+     */
+    public function whereIn(string $field, array $values): self;
+
+    /**
+     * Keep the items whose field is none of $values, by strict identity (`in_array(..., true)`).
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param array $values
+     * @return self
+     */
+    public function whereNotIn(string $field, array $values): self;
+
+    /**
+     * Keep the items whose field lies in [$min, $max], bounds included; null is never between.
+     *
+     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param mixed $min
+     * @param mixed $max
+     * @return self
+     */
+    public function whereBetween(string $field, mixed $min, mixed $max): self;
+
+    /**
      * Transform each item using a selector closure.
      *
      * @param callable $selector fn($item, $key): mixed
@@ -246,6 +281,83 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function zip(iterable|callable $second, ?callable $resultSelector = null): self;
 
     /**
+     * Left outer join (LeftJoin in .NET 10/11 LINQ): the inner side is indexed on traversal and
+     * this stream is streamed; every outer item appears, with `null` as the inner side when
+     * nothing matches (a null key never matches). The result is a list.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector fn($outer, $key): mixed
+     * @param callable $innerKeySelector fn($inner, $key): mixed
+     * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @return self
+     */
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+
+    /**
+     * Right outer join (RightJoin in .NET 10/11 LINQ): this stream is indexed on traversal and
+     * the inner side is streamed; every inner item appears, with `null` as the outer side when
+     * nothing matches (a null key never matches). The result is a list, in inner order.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector fn($outer, $key): mixed
+     * @param callable $innerKeySelector fn($inner, $key): mixed
+     * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @return self
+     */
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+
+    /**
+     * Full outer join (FullJoin in .NET 10/11 LINQ): the inner side is indexed on traversal and
+     * this stream is streamed (pairs and unmatched outer items, in outer order), then the
+     * unmatched inner items follow in inner order. A null key never matches. The result is a list.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector fn($outer, $key): mixed
+     * @param callable $innerKeySelector fn($inner, $key): mixed
+     * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @return self
+     */
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+
+    /**
+     * Stable ascending sort by the selected key (OrderBy in LINQ). The stream is consumed and
+     * sorted when the result is traversed; thenBy()/thenByDescending() may follow.
+     *
+     * @param callable $keySelector fn($item, $key): mixed
+     * @return self
+     */
+    public function orderBy(callable $keySelector): self;
+
+    /**
+     * Stable descending sort by the selected key (OrderByDescending in LINQ).
+     *
+     * @param callable $keySelector fn($item, $key): mixed
+     * @return self
+     */
+    public function orderByDescending(callable $keySelector): self;
+
+    /**
+     * Subsequent ascending ordering (ThenBy in LINQ), applied in the same sort as the
+     * preceding orderBy*()/thenBy*().
+     *
+     * @param callable $keySelector fn($item, $key): mixed
+     * @param callable|null $comparer fn($keyA, $keyB): int in the `<=>` convention
+     * @return self
+     * @throws \LogicException when the collection does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenBy(callable $keySelector, ?callable $comparer = null): self;
+
+    /**
+     * Subsequent descending ordering (ThenByDescending in LINQ).
+     *
+     * @param callable $keySelector fn($item, $key): mixed
+     * @param callable|null $comparer fn($keyA, $keyB): int in the `<=>` convention
+     * @return self
+     * @throws \LogicException when the collection does not come straight from orderBy*()/thenBy*()
+     */
+    public function thenByDescending(callable $keySelector, ?callable $comparer = null): self;
+
+    /**
      * Inspect elements as they stream through the pipeline without altering the stream.
      *
      * @param callable $callback fn($item, $key): void
@@ -295,6 +407,17 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      */
     public function lastOrDefault(mixed $default = null, ?callable $predicate = null): mixed;
+
+    /**
+     * Return the single element, or the single element matching the predicate (Single in LINQ);
+     * stops at the second match.
+     *
+     * @param callable|null $predicate
+     * @return mixed
+     * @throws \UnderflowException when the stream is empty or no element matches
+     * @throws \OverflowException when more than one element (or matching element) exists
+     */
+    public function single(?callable $predicate = null): mixed;
 
     /**
      * Ensure the sequence contains at most one element (or one matching predicate).

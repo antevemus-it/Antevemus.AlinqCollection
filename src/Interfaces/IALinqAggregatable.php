@@ -13,9 +13,9 @@ namespace Antevemus\ALinq\Interfaces;
  * (`min`, `max`, `minBy`, `maxBy`, `average`); `sum` of nothing is `0`, `product` of nothing
  * is `1`. The numeric aggregations skip `null` (nullable semantics), accept numeric strings
  * and count `bool` as 0/1; anything else throws `InvalidArgumentException`. Group keys must
- * be int, string or BackedEnum.
+ * be int, string or BackedEnum. `single()` (1.4.0) throws where LINQ `Single` throws.
  *
- * @version    1.3.1
+ * @version    1.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -28,6 +28,19 @@ interface IALinqAggregatable extends IALinqBaseCollection
      * Check if any element satisfies predicate (Any in LINQ); without a predicate, whether there is at least one element
      */
     public function any(?callable $predicate = null): bool;
+
+    /**
+     * Get the single element, or the single element that satisfies the predicate (Single in LINQ)
+     *
+     * Messages (the same on the lazy side): `Sequence contains no elements.`,
+     * `Sequence contains no matching element.`, `Sequence contains more than one element.`,
+     * `Sequence contains more than one matching element.`
+     *
+     * @param callable|null $predicate `fn($item)` or `fn($item, $key)`
+     * @throws \UnderflowException when the collection is empty or no element matches
+     * @throws \OverflowException when more than one element (or matching element) exists
+     */
+    public function single(?callable $predicate = null): mixed;
 
     /**
      * Check if all elements satisfy predicate (All in LINQ); vacuously true on an empty collection.
