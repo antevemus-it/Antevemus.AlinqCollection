@@ -34,10 +34,9 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 
 ## 🎯 Short-Term Milestones (v1.3.x)
 
-### 7. Lazy Sources Hardening 🛡️
-- **Description:** `fromCsv()` rows whose width differs from the header (today handed over as a plain list), UTF-8 BOM on the first header, directories passed to `fromFile()`/`fromCsv()` (today an empty stream with a notice; `is_file()` check), and one `PDOStatement` per `fromCursor()` collection so two collections never share a cursor. Specified before code (Reversa forward 016).
-- **Goal:** Irregular input fails loudly or is documented, never silently reshaped.
-- **Target Release:** v1.3.x (PATCH; no contract change)
+### 7. Lazy Sources Hardening 🛡️ (Shipped in v1.3.2)
+- **Description:** `fromCsv()` records whose width differs from the header throw (`strict: false` keeps the 1.3.1 list), blank lines are skipped, the UTF-8 BOM is consumed before parsing in `fromCsv()` and `fromFile()`, a directory passed to `fromFile()`/`fromCsv()` throws, and one `PDOStatement` is bound to one lazy collection so two collections never share a cursor. Specified before code (Reversa forward 016).
+- **Goal:** Irregular input fails loudly or is an explicit choice, never silently reshaped.
 
 ### 8. Announced-but-Unshipped Backlog (CHANGELOG erratum, 2026-10) 📋
 - **Description:** `whereIn()`, `whereNotIn()`, `whereBetween()` and `single()` were announced in the 0.1.0 release notes and never existed (see the erratum in the CHANGELOG). `single()` is the LINQ `Single` (exactly one element or throw); the `where*` trio are query-builder shortcuts over `in`/`notIn`/`between`.

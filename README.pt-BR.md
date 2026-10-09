@@ -3,7 +3,7 @@
 [![Latest Stable Version](https://img.shields.io/badge/release-v1.3.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-449%20aprovados%20%7C%201418%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-454%20aprovados%20%7C%201454%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -530,6 +530,21 @@ $totalCount = $streamComCache->count(); // O generator roda uma única vez
 $media      = $streamComCache->average(); // Lê do cache local em memória, sem reexecutar o generator
 ```
 
+#### Entrada irregular (desde a 1.3.2)
+
+Entrada irregular falha alto ou é uma escolha explícita, nunca uma remodelagem silenciosa:
+
+- `fromCsv()` com cabeçalho é **estrito por padrão**: um registro com número de campos diferente do cabeçalho lança `RuntimeException('CSV row N has K fields, header has H')` quando é lido (os registros anteriores já foram entregues; `N` conta registros de dados a partir de 1, sem linhas vazias). `fromCsv($path, strict: false)` entrega esse registro como lista posicional (comportamento da 1.3.1, para arquivos sujos). Sem cabeçalho não há largura de referência.
+- Linha vazia não é registro: é pulada em todos os modos.
+- O BOM UTF-8 no início do arquivo é removido antes do parse em `fromCsv()` (um primeiro campo entre aspas continua correto) e da primeira linha em `fromFile()`.
+- Diretório em `fromFile()`/`fromCsv()` lança `RuntimeException('Path is a directory, not a file: "<path>"')` na primeira travessia.
+- Um statement, uma coleção: um segundo `fromCursor()` (ou `from()`) sobre o mesmo `PDOStatement` lança `RuntimeException('PDOStatement already bound to another lazy collection')` na primeira travessia. Para reiterar, use `remember()`; para rodar a consulta de novo, use um statement novo, inclusive no caso de statement preparado.
+
+```php
+ALinqLazyCollection::fromCsv('clientes.csv')->toArray();                // largura diferente → RuntimeException("CSV row 2 has 1 fields, header has 2")
+ALinqLazyCollection::fromCsv('clientes.csv', strict: false)->toArray(); // comportamento 1.3.1: o registro irregular vem como lista
+```
+
 ### 11. O Contrato: Chaves, Igualdade, Coleções Vazias (desde a 1.3.0)
 
 As duas coleções obedecem a um único contrato escrito, garantido por um teste de paridade que executa toda operação compartilhada sobre as mesmas entradas no lado eager e no lado lazy (`tests/Contract/ParityTest.php`, zero divergências permitidas).
@@ -562,25 +577,25 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 449 ( 14%)
-............................................................... 126 / 449 ( 28%)
-............................................................... 189 / 449 ( 42%)
-............................................................... 252 / 449 ( 56%)
-............................................................... 315 / 449 ( 70%)
-............................................................... 378 / 449 ( 84%)
-............................................................... 441 / 449 ( 98%)
-........                                                        449 / 449 (100%)
+...............................................................  63 / 454 ( 13%)
+............................................................... 126 / 454 ( 27%)
+............................................................... 189 / 454 ( 41%)
+............................................................... 252 / 454 ( 55%)
+............................................................... 315 / 454 ( 69%)
+............................................................... 378 / 454 ( 83%)
+............................................................... 441 / 454 ( 97%)
+.............                                                   454 / 454 (100%)
 
 Time: 00:00.330, Memory: 8.00 MB
 
-OK (449 tests, 1418 assertions)
+OK (454 tests, 1454 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **449 Testes & 1418 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
-- **Cobertura medida** (pcov, 1.3.1): 164 de 166 métodos e 950 de 953 linhas de `src/`; as três linhas descobertas são blocos `catch` defensivos do accessor de propriedades.
+- **454 Testes & 1454 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
+- **Cobertura medida** (pcov, 1.3.2): 168 de 170 métodos e 989 de 992 linhas de `src/`; as três linhas descobertas são blocos `catch` defensivos do accessor de propriedades.
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 

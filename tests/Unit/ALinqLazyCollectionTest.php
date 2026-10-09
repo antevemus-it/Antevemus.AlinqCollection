@@ -20,7 +20,7 @@ use UnderflowException;
  * Validates O(1) memory guarantees, generator rewindability, file/CSV/cursor streams,
  * LINQ pipeline transformations, short-circuiting, and eager materialization.
  *
- * @version    1.1.0
+ * @version    1.3.2
  * @package    Antevemus\ALinq\Tests
  * @subpackage Unit
  * @author     Heliton Junior (CTO) - <contato@antevemus.com.br>
@@ -990,8 +990,8 @@ final class ALinqLazyCollectionTest extends TestCase
 
     /**
      * L4: fromFile()/fromCsv() argument validation is eager, the open failure is deferred to
-     * the first traversal, and a CSV row whose width differs from the header is handed over
-     * as a plain list (today's behaviour; the lazy-sources hardening lot revisits it).
+     * the first traversal. Forward 016 (1.3.2, D1 a): a CSV row whose width differs from the
+     * header throws by default; strict: false keeps the 1.3.1 behaviour (a plain list).
      */
     public function testFromFileAndFromCsvFailLoudlyAndKeepIrregularRows(): void
     {
@@ -1021,10 +1021,244 @@ final class ALinqLazyCollectionTest extends TestCase
         $csv = tempnam(sys_get_temp_dir(), 'alinq_irregular_csv_');
         file_put_contents($csv, "a,b\n1,2\n3\n");
         try {
-            $this->assertSame([['a' => '1', 'b' => '2'], ['3']], ALinqLazyCollection::fromCsv($csv)->toArray());
+            try {
+                ALinqLazyCollection::fromCsv($csv)->toArray();
+                $this->fail('fromCsv() must throw on a row whose width differs from the header');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('CSV row 2 has 1 fields, header has 2', $e->getMessage());
+            }
+
+            $this->assertSame([['a' => '1', 'b' => '2'], ['3']], ALinqLazyCollection::fromCsv($csv, strict: false)->toArray());
         } finally {
             unlink($csv);
         }
+    }
+
+    // =========================================================================
+    // 13. Lazy sources hardening (forward 016, 1.3.2): irregular input fails loudly
+    // =========================================================================
+
+    /**
+     * RN-02 (D1 a): the width check is lazy (rows before the irregular one were already
+     * yielded), a blank line is never a record in either mode, the eager facade forwards
+     * strict, and without a header there is no reference width.
+     */
+    public function testFromCsvStrictWidthIsLazyAndBlankLinesAreSkipped(): void
+    {
+        $csv = tempnam(sys_get_temp_dir(), 'alinq_strict_csv_');
+        try {
+            file_put_contents($csv, "a,b\n1,2\n\n3,4\n5\n6,7\n");
+
+            $delivered = [];
+            $thrown = null;
+            try {
+                foreach (ALinqLazyCollection::fromCsv($csv) as $key => $row) {
+                    $delivered[] = [$key, $row];
+                }
+            } catch (\RuntimeException $e) {
+                $thrown = $e;
+            }
+            $this->assertNotNull($thrown, 'strict mode must throw on the irregular record');
+            $this->assertSame('CSV row 3 has 1 fields, header has 2', $thrown->getMessage());
+            $this->assertSame([[0, ['a' => '1', 'b' => '2']], [1, ['a' => '3', 'b' => '4']]], $delivered);
+
+            // A pipeline that stops before the irregular record never sees it.
+            $this->assertSame([['a' => '1', 'b' => '2'], ['a' => '3', 'b' => '4']], ALinqLazyCollection::fromCsv($csv)->take(2)->toArray());
+
+            $permissive = [['a' => '1', 'b' => '2'], ['a' => '3', 'b' => '4'], ['5'], ['a' => '6', 'b' => '7']];
+            $this->assertSame($permissive, ALinqLazyCollection::fromCsv($csv, strict: false)->toArray());
+            $this->assertSame($permissive, ALinqCollection::fromCsv($csv, strict: false)->toArray());
+
+            try {
+                ALinqCollection::fromCsv($csv)->toArray();
+                $this->fail('the eager facade must forward the strict default');
+            } catch (\RuntimeException $e) {
+                $this->assertSame('CSV row 3 has 1 fields, header has 2', $e->getMessage());
+            }
+
+            // No header: no reference width, every record is a list; blank lines still skipped.
+            file_put_contents($csv, "1,2\n\n3\n");
+            $this->assertSame([['1', '2'], ['3']], ALinqLazyCollection::fromCsv($csv, hasHeader: false)->toArray());
+            $this->assertSame([['1', '2'], ['3']], ALinqLazyCollection::fromCsv($csv, hasHeader: false, strict: false)->toArray());
+        } finally {
+            unlink($csv);
+        }
+    }
+
+    /**
+     * RN-03 (D2 a): a UTF-8 BOM is removed from the first field of the first record (header
+     * or data) and from the first line of fromFile(); nothing else is altered.
+     */
+    public function testFromCsvAndFromFileStripTheUtf8Bom(): void
+    {
+        $bom = "\xEF\xBB\xBF";
+        $path = tempnam(sys_get_temp_dir(), 'alinq_bom_');
+        try {
+            file_put_contents($path, $bom . "id,name\n1,x\n");
+            $rows = ALinqLazyCollection::fromCsv($path)->toArray();
+            $this->assertSame([['id' => '1', 'name' => 'x']], $rows);
+            $this->assertSame('id', array_key_first($rows[0]));
+
+            // Without a header the BOM leaves the first field of the first data record only.
+            file_put_contents($path, $bom . "1,x\n{$bom}2,y\n");
+            $this->assertSame([['1', 'x'], [$bom . '2', 'y']], ALinqLazyCollection::fromCsv($path, hasHeader: false)->toArray());
+
+            // The BOM is consumed before parsing: a quoted first field stays a quoted field, even
+            // when it holds the separator (field-level stripping would leave '"id"' or split "a,b").
+            file_put_contents($path, $bom . "\"id\",name\n1,x\n");
+            $this->assertSame('id', array_key_first(ALinqLazyCollection::fromCsv($path)->first()));
+            file_put_contents($path, $bom . "\"a,b\",c\n1,2\n");
+            $this->assertSame([['a,b' => '1', 'c' => '2']], ALinqLazyCollection::fromCsv($path)->toArray());
+
+            // A file without BOM loses nothing (the bytes peeked at are given back).
+            file_put_contents($path, "id,name\n1,x\n");
+            $this->assertSame([['id' => '1', 'name' => 'x']], ALinqLazyCollection::fromCsv($path)->toArray());
+
+            // fromFile(): the first line, before the line parser sees it; later lines untouched.
+            file_put_contents($path, $bom . "first\n{$bom}second\n");
+            $this->assertSame(['first', $bom . 'second'], ALinqLazyCollection::fromFile($path)->toArray());
+            $this->assertSame([5, 9], ALinqLazyCollection::fromFile($path, 4096, fn(string $line) => strlen($line))->toArray());
+        } finally {
+            unlink($path);
+        }
+    }
+
+    /**
+     * RN-03 on a stream that cannot seek (a minimal stream wrapper, without url_stat() or
+     * stream_seek()): the BOM is stripped from the first field of the first record instead,
+     * the missing url_stat() does not warn, and a stream without BOM loses no byte.
+     */
+    public function testFromCsvStripsTheBomOnANonSeekableStream(): void
+    {
+        $wrapper = new class {
+            /** @var resource|null */
+            public $context;
+            public static string $data = '';
+            private int $position = 0;
+
+            public function stream_open(string $path, string $mode, int $options, ?string &$openedPath): bool
+            {
+                $this->position = 0;
+                return true;
+            }
+
+            public function stream_read(int $count): string
+            {
+                $chunk = substr(self::$data, $this->position, $count);
+                $this->position += strlen($chunk);
+                return $chunk;
+            }
+
+            public function stream_eof(): bool
+            {
+                return $this->position >= strlen(self::$data);
+            }
+        };
+        $class = get_class($wrapper);
+        $this->assertTrue(stream_wrapper_register('alinqnoseek', $class));
+
+        try {
+            $class::$data = "\xEF\xBB\xBFid,name\n1,x\n";
+            $this->assertSame([['id' => '1', 'name' => 'x']], ALinqLazyCollection::fromCsv('alinqnoseek://bom')->toArray());
+
+            $class::$data = "\xEF\xBB\xBF1,x\n2,y\n";
+            $this->assertSame([['1', 'x'], ['2', 'y']], ALinqLazyCollection::fromCsv('alinqnoseek://bom', hasHeader: false)->toArray());
+
+            $class::$data = "id,name\n1,x\n";
+            $this->assertSame([['id' => '1', 'name' => 'x']], ALinqLazyCollection::fromCsv('alinqnoseek://plain')->toArray());
+        } finally {
+            stream_wrapper_unregister('alinqnoseek');
+        }
+    }
+
+    /**
+     * RN-04 (D3 a): a directory is refused on the first traversal (creation stays lazy)
+     * instead of streaming nothing; a missing file keeps its own message.
+     */
+    public function testFromFileAndFromCsvRefuseADirectory(): void
+    {
+        $dir = sys_get_temp_dir();
+        $expected = sprintf('Path is a directory, not a file: "%s"', $dir);
+
+        foreach (
+            [
+                'fromFile' => ALinqLazyCollection::fromFile($dir),
+                'fromCsv' => ALinqLazyCollection::fromCsv($dir),
+                'ALinqCollection::fromFile' => ALinqCollection::fromFile($dir),
+                'ALinqCollection::fromCsv' => ALinqCollection::fromCsv($dir),
+            ] as $factory => $stream
+        ) {
+            try {
+                $result = $stream->toArray();
+                $this->fail($factory . '() over a directory returned ' . json_encode($result) . ' instead of throwing');
+            } catch (\RuntimeException $e) {
+                $this->assertSame($expected, $e->getMessage(), $factory);
+            }
+        }
+    }
+
+    /**
+     * RN-05 (D4 a): one statement, one collection. A second fromCursor() (or from()) over the
+     * same PDOStatement returns a collection whose first traversal throws, whatever the
+     * order of traversal; remember() on the first collection is the way to reiterate.
+     */
+    public function testFromCursorBindsTheStatementToOneCollection(): void
+    {
+        if (!in_array('sqlite', PDO::getAvailableDrivers(), true)) {
+            $this->markTestSkipped('pdo_sqlite is not available.');
+        }
+
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->exec('CREATE TABLE t (id INTEGER PRIMARY KEY)');
+        $pdo->exec('INSERT INTO t VALUES (1), (2), (3)');
+        $message = 'PDOStatement already bound to another lazy collection';
+
+        // Gherkin: $a->toArray() then $b->toArray().
+        $stmt = $pdo->query('SELECT id FROM t ORDER BY id');
+        $a = ALinqLazyCollection::fromCursor($stmt);
+        $b = ALinqLazyCollection::fromCursor($stmt);
+        $this->assertSame([['id' => 1], ['id' => 2], ['id' => 3]], $a->toArray());
+        try {
+            $b->toArray();
+            $this->fail('a second collection over the same PDOStatement must throw');
+        } catch (\RuntimeException $e) {
+            $this->assertSame($message, $e->getMessage());
+        }
+
+        // Reverse order: the second collection throws before reading, the first keeps every row.
+        $stmt = $pdo->query('SELECT id FROM t ORDER BY id');
+        $first = ALinqLazyCollection::fromCursor($stmt, fn(array $row) => $row['id']);
+        foreach (
+            [
+                'fromCursor' => ALinqLazyCollection::fromCursor($stmt),
+                'from' => ALinqLazyCollection::from($stmt),
+                'ALinqCollection::fromCursor' => ALinqCollection::fromCursor($stmt),
+            ] as $factory => $second
+        ) {
+            try {
+                $second->first();
+                $this->fail($factory . '() over a bound PDOStatement must throw');
+            } catch (\RuntimeException $e) {
+                $this->assertSame($message, $e->getMessage(), $factory);
+            }
+        }
+        $this->assertSame([1, 2, 3], $first->toArray());
+
+        // from(PDOStatement) binds too.
+        $stmt = $pdo->query('SELECT id FROM t ORDER BY id');
+        $viaFrom = ALinqLazyCollection::from($stmt);
+        try {
+            ALinqLazyCollection::fromCursor($stmt)->toArray();
+            $this->fail('fromCursor() over a statement bound by from() must throw');
+        } catch (\RuntimeException $e) {
+            $this->assertSame($message, $e->getMessage());
+        }
+        $this->assertSame(3, $viaFrom->count());
+
+        // remember() is the way to reiterate a cursor.
+        $remembered = ALinqLazyCollection::fromCursor($pdo->query('SELECT id FROM t ORDER BY id'))->remember();
+        $this->assertSame(3, $remembered->count());
+        $this->assertSame([['id' => 1], ['id' => 2], ['id' => 3]], $remembered->toArray());
     }
 
     /**

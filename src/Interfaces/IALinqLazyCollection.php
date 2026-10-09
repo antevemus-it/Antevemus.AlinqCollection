@@ -26,7 +26,7 @@ use Traversable;
  * throws on first/last/min/max/minBy/maxBy/average; numeric aggregations skip `null`;
  * a comparer may answer `bool` or `<=>`.
  *
- * @version    1.3.1
+ * @version    1.3.2
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -46,6 +46,9 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Create a lazy stream that reads a file line-by-line using constant O(1) memory.
      *
+     * A UTF-8 BOM at the start of the file is removed from the first line. A directory or a
+     * file that cannot be opened throws RuntimeException on the first traversal.
+     *
      * @param string $filePath
      * @param int $bufferSize
      * @param callable|null $lineParser
@@ -56,11 +59,20 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Create a lazy stream that reads a CSV file row-by-row.
      *
+     * Irregular input: a blank line is skipped; a UTF-8 BOM at the start of the file is
+     * removed before parsing (on a stream that cannot seek, from the first field of the first
+     * record); a directory or a file that cannot be opened throws RuntimeException on the
+     * first traversal.
+     *
      * @param string $filePath
      * @param string $separator
      * @param string $enclosure
      * @param string $escape
      * @param bool $hasHeader If true, yields associative arrays keyed by header columns.
+     * @param bool $strict With a header, a record whose field count differs from the header
+     *                     throws RuntimeException('CSV row N has K fields, header has H') when
+     *                     it is read (true, the default); false hands it over as a positional
+     *                     list (the 1.3.1 behaviour, for dirty files).
      * @return self
      */
     public static function fromCsv(
@@ -68,11 +80,16 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
         string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
-        bool $hasHeader = true
+        bool $hasHeader = true,
+        bool $strict = true
     ): self;
 
     /**
      * Create a lazy stream over a single-pass PDOStatement cursor (one statement, one collection).
+     *
+     * A second traversal throws (call remember() to re-traverse). A second fromCursor() over
+     * the same statement object returns a collection whose first traversal throws
+     * RuntimeException('PDOStatement already bound to another lazy collection').
      *
      * @param PDOStatement $statement
      * @param callable|null $rowMapper fn($row, $index): mixed

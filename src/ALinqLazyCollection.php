@@ -22,6 +22,7 @@ use stdClass;
 use Traversable;
 use UnderflowException;
 use UnexpectedValueException;
+use WeakMap;
 
 /**
  * ALinqLazyCollection
@@ -50,7 +51,7 @@ use UnexpectedValueException;
  *   InvalidArgumentException instead of being ignored.
  * - A comparer given to contains() may answer bool or `<=>` style int.
  *
- * @version    1.3.1
+ * @version    1.3.2
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -70,6 +71,13 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * operator through pipe().
      */
     private ?bool $sourceIsList = null;
+
+    /**
+     * PDOStatements already bound to a lazy collection (one statement, one collection).
+     *
+     * @var WeakMap<PDOStatement, true>|null
+     */
+    private static ?WeakMap $boundStatements = null;
 
     /**
      * Initialize lazy collection with an iterable or a generator factory closure.
@@ -134,8 +142,12 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      *
+     * Irregular input (1.3.2): a UTF-8 BOM at the start of the file is removed from the
+     * first line; a directory is refused instead of producing an empty stream.
+     *
      * @throws InvalidArgumentException When the buffer size is not positive
-     * @throws RuntimeException When the file cannot be opened (deferred to the first traversal)
+     * @throws RuntimeException When the path is a directory or the file cannot be opened
+     *                          (both deferred to the first traversal)
      */
     public static function fromFile(string $filePath, int $bufferSize = 4096, ?callable $lineParser = null): self
     {
@@ -144,10 +156,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         }
 
         return self::pipe(function () use ($filePath, $bufferSize, $lineParser) {
-            $handle = @fopen($filePath, 'r');
-            if ($handle === false) {
-                throw new RuntimeException(sprintf('Unable to open file for streaming: "%s"', $filePath));
-            }
+            $handle = self::openForStreaming($filePath, 'Unable to open file for streaming: "%s"');
 
             try {
                 // $bufferSize is the I/O chunk hint only. It must never bound the line length:
@@ -158,6 +167,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 $lineNumber = 0;
                 while (($line = fgets($handle)) !== false) {
                     $trimmed = rtrim($line, "\r\n");
+                    if ($lineNumber === 0) {
+                        $trimmed = self::stripUtf8Bom($trimmed);
+                    }
                     yield $lineNumber => ($lineParser !== null ? $lineParser($trimmed, $lineNumber) : $trimmed);
                     $lineNumber++;
                 }
@@ -172,35 +184,73 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      *
-     * @throws RuntimeException When the file cannot be opened (deferred to the first traversal)
+     * Irregular input (1.3.2):
+     * - With a header and `$strict = true` (the default), a record whose field count differs
+     *   from the header throws when it is read (the records before it were already yielded).
+     *   `$strict = false` hands such a record over as a positional list (the 1.3.1 behaviour).
+     *   Without a header there is no reference width and every record is a list.
+     * - A blank line is not a record: it is skipped in every mode.
+     * - A UTF-8 BOM is removed from the start of the file before parsing, so a quoted first
+     *   field is parsed as such; on a stream that cannot seek it is removed from the first
+     *   field of the first record (header or data) instead.
+     * - A directory is refused instead of producing an empty stream.
+     *
+     * @throws RuntimeException When the path is a directory or the file cannot be opened
+     *                          (both deferred to the first traversal), or, in strict mode,
+     *                          when a record's width differs from the header's
      */
     public static function fromCsv(
         string $filePath,
         string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
-        bool $hasHeader = true
+        bool $hasHeader = true,
+        bool $strict = true
     ): self {
-        return self::pipe(function () use ($filePath, $separator, $enclosure, $escape, $hasHeader) {
-            $handle = @fopen($filePath, 'r');
-            if ($handle === false) {
-                throw new RuntimeException(sprintf('Unable to open CSV file for streaming: "%s"', $filePath));
-            }
+        return self::pipe(function () use ($filePath, $separator, $enclosure, $escape, $hasHeader, $strict) {
+            $handle = self::openForStreaming($filePath, 'Unable to open CSV file for streaming: "%s"');
 
             try {
                 $headers = null;
+                $headerWidth = 0;
+                $recordNumber = 0;
                 $rowNumber = 0;
+                // True while the first record still has to lose a BOM at field level.
+                $stripFirstField = !self::skipLeadingUtf8Bom($handle);
 
                 if ($hasHeader) {
                     $headerRow = fgetcsv($handle, 0, $separator, $enclosure, $escape);
                     if ($headerRow !== false) {
-                        $headers = $headerRow;
+                        $headers = $stripFirstField ? self::stripCsvBom($headerRow) : $headerRow;
+                        $headerWidth = count($headers);
                     }
+                    $stripFirstField = false;
                 }
 
                 while (($row = fgetcsv($handle, 0, $separator, $enclosure, $escape)) !== false) {
-                    if ($headers !== null && count($headers) === count($row)) {
+                    // fgetcsv() answers [null] for a blank line: it is not a record.
+                    if ($row === [null]) {
+                        continue;
+                    }
+                    // Records after the header, 1-based, blank lines excluded.
+                    $recordNumber++;
+
+                    if ($stripFirstField) {
+                        $row = self::stripCsvBom($row);
+                        $stripFirstField = false;
+                    }
+
+                    if ($headers === null) {
+                        $data = $row;
+                    } elseif (count($row) === $headerWidth) {
                         $data = array_combine($headers, $row);
+                    } elseif ($strict) {
+                        throw new RuntimeException(sprintf(
+                            'CSV row %d has %d fields, header has %d',
+                            $recordNumber,
+                            count($row),
+                            $headerWidth
+                        ));
                     } else {
                         $data = $row;
                     }
@@ -217,12 +267,90 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     }
 
     /**
+     * Open a file for one streaming pass, refusing a directory explicitly: fopen() on a
+     * directory succeeds on some systems and the stream is then silently empty.
+     *
+     * @param string $filePath
+     * @param string $openFailureFormat sprintf() format receiving the path
+     * @return resource
+     * @throws RuntimeException When the path is a directory or cannot be opened
+     */
+    private static function openForStreaming(string $filePath, string $openFailureFormat)
+    {
+        // @: a stream wrapper without url_stat() warns here; it is simply not a directory.
+        if (@is_dir($filePath)) {
+            throw new RuntimeException(sprintf('Path is a directory, not a file: "%s"', $filePath));
+        }
+
+        // The @ only silences the native warning: the failure is reported by the exception.
+        $handle = @fopen($filePath, 'r');
+        if ($handle === false) {
+            throw new RuntimeException(sprintf($openFailureFormat, $filePath));
+        }
+
+        return $handle;
+    }
+
+    /**
+     * Consume a UTF-8 byte order mark at the current (initial) position of the stream, before
+     * any parser sees it: a BOM in front of a quoted field would otherwise make fgetcsv()
+     * read the quotes as data. Bytes that are not a BOM are given back by seeking.
+     *
+     * @param resource $handle
+     * @return bool True when the stream was checked (BOM consumed or absent); false when the
+     *              stream cannot seek and the caller must strip the BOM at field level
+     */
+    private static function skipLeadingUtf8Bom($handle): bool
+    {
+        $start = @ftell($handle);
+        if ($start === false || @fseek($handle, $start) !== 0) {
+            return false;
+        }
+
+        if (fread($handle, 3) !== "\xEF\xBB\xBF") {
+            fseek($handle, $start);
+        }
+
+        return true;
+    }
+
+    /**
+     * Remove a UTF-8 byte order mark from the start of a string (a BOM is never data).
+     */
+    private static function stripUtf8Bom(string $value): string
+    {
+        return str_starts_with($value, "\xEF\xBB\xBF") ? substr($value, 3) : $value;
+    }
+
+    /**
+     * Remove a UTF-8 byte order mark from the first field of a CSV record.
+     *
+     * @param array<int, string|null> $row
+     * @return array<int, string|null>
+     */
+    private static function stripCsvBom(array $row): array
+    {
+        if (isset($row[0]) && is_string($row[0])) {
+            $row[0] = self::stripUtf8Bom($row[0]);
+        }
+
+        return $row;
+    }
+
+    /**
      * Create a lazy collection from a PDOStatement cursor.
+     *
+     * One statement, one collection (1.3.2): a PDOStatement is a single cursor, so a second
+     * fromCursor() (or from()) over the same statement object returns a collection whose
+     * first traversal throws, instead of silently reading what the first one left behind.
+     * remember() on the first collection is the way to traverse the rows more than once.
      *
      * @param PDOStatement $statement
      * @param callable|null $rowMapper fn($row, $index): mixed
      * @return self
-     * @throws RuntimeException On a second traversal of the consumed cursor (use remember())
+     * @throws RuntimeException On a second traversal of the consumed cursor (use remember()),
+     *                          or on the first traversal when the statement is already bound
+     *                          to another lazy collection
      */
     public static function fromCursor(PDOStatement $statement, ?callable $rowMapper = null): self
     {
@@ -237,12 +365,25 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * traversal throws instead, pointing to remember() as the documented way to make
      * the stream re-traversable.
      *
+     * The statement is bound to the first collection built over it (a WeakMap, so the
+     * binding disappears with the statement); a later factory over the same object throws
+     * on its first traversal, because two collections would share one cursor.
+     *
      * @param PDOStatement $statement
      * @param callable|null $rowMapper fn($row, $index): mixed
      * @return Closure(): Generator
      */
     private static function singlePassCursorFactory(PDOStatement $statement, ?callable $rowMapper): Closure
     {
+        $bound = self::$boundStatements ??= new WeakMap();
+        if (isset($bound[$statement])) {
+            return static function (): Generator {
+                throw new RuntimeException('PDOStatement already bound to another lazy collection');
+                yield; // unreachable: makes the closure a generator, so the throw is deferred
+            };
+        }
+        $bound[$statement] = true;
+
         $consumed = false;
 
         return function () use ($statement, $rowMapper, &$consumed): Generator {
@@ -250,7 +391,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 throw new RuntimeException(
                     'A PDO cursor is single-pass and has already been traversed. ' .
                     'Call ->remember() before the first complete traversal to re-traverse the stream, ' .
-                    'or execute the statement again.'
+                    'or run the query again on a new statement.'
                 );
             }
             $consumed = true;

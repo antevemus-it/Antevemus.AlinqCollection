@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-10-09
+
+Lazy sources hardening (ROADMAP milestone 7). Irregular input now fails loudly or is an explicit choice, never a silent reshape. No signature breaks; inputs that used to pass silently now throw.
+
+### Fixed
+
+- **`fromCsv()` width mismatch.** A record with a number of fields different from the header was delivered as a positional list in the middle of a stream of dictionaries. It now throws `RuntimeException('CSV row N has K fields, header has H')` at the moment it is read (the previous records were already delivered; `N` counts data records from 1, blank lines excluded). The new optional named parameter `strict` (last in the signature, also on the `ALinqCollection::fromCsv()` facade) keeps the old behaviour: `fromCsv($path, strict: false)`. Without a header nothing changes.
+- **`fromCsv()` blank line.** A blank line was delivered as `[null]`; it is now skipped in every mode, with or without header.
+- **UTF-8 BOM.** The BOM stayed in the name of the first column (`"\xEF\xBB\xBFid"`; a quoted first field `BOM"id"` became the key `'"id"'`) and in the first line of `fromFile()`. It is now consumed from the stream before parsing (a non-seekable stream falls back to stripping it from the first field); later lines are untouched.
+- **Directory passed to `fromFile()`/`fromCsv()`.** It produced an empty stream with a read notice; it now throws `RuntimeException('Path is a directory, not a file: "<path>"')` on the first traversal. A missing or unreadable file still throws "Unable to open ...".
+- **Shared `PDOStatement`.** Two `fromCursor()` (or `from()`) over the same statement shared the cursor, so the second read the remainder of the first. The statement is now bound to one lazy collection (a `WeakMap`, nothing kept alive); the second collection throws `RuntimeException('PDOStatement already bound to another lazy collection')` on its first traversal. Iterate again with `remember()`; run the query again on a new statement, prepared statements included. The second-pass message of a single-use cursor now says "or run the query again on a new statement".
+
 ## [1.3.1] - 2026-10-09
 
 Process hygiene, no contract change: what the 2026-10-08 review listed under "process and distribution".
@@ -276,7 +288,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.2...HEAD
+[1.3.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.1.2...v1.2.0

@@ -27,7 +27,7 @@ use Traversable;
  * identity; an empty collection throws on first/last/min/max/minBy/maxBy/average;
  * json_encode() serializes the items (JsonSerializable).
  *
- * @version    1.3.1
+ * @version    1.3.2
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -173,6 +173,8 @@ final class ALinqCollection implements IALinqCollection
      * @param string $enclosure
      * @param string $escape
      * @param bool $hasHeader
+     * @param bool $strict With a header, a record whose width differs from the header throws
+     *                     when read (true); false hands it over as a list (1.3.1 behaviour)
      * @return ALinqLazyCollection
      */
     public static function fromCsv(
@@ -180,9 +182,10 @@ final class ALinqCollection implements IALinqCollection
         string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
-        bool $hasHeader = true
+        bool $hasHeader = true,
+        bool $strict = true
     ): ALinqLazyCollection {
-        return ALinqLazyCollection::fromCsv($filePath, $separator, $enclosure, $escape, $hasHeader);
+        return ALinqLazyCollection::fromCsv($filePath, $separator, $enclosure, $escape, $hasHeader, $strict);
     }
 
     /**
