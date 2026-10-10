@@ -6,8 +6,8 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
 - **Test Files:** 13 unit test files (`tests/Unit/`) and 2 contract test files (`tests/Contract/`)
-- **Total Tests:** 494 tests (1.4.0)
-- **Total Assertions:** 1606 assertions
+- **Total Tests:** 499 tests (1.4.1)
+- **Total Assertions:** 1656 assertions
 - **Lines of Test Code:** 8,500+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** Zero (pure PHP 8.4 native engine)
@@ -103,11 +103,12 @@ Validates dynamic query composition:
 - `toPredicate()` — Compilation into high-speed callable closures
 - Supported operators: `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`
 
-### 11. `ALinqPropertyAccessTest.php` (48 tests)
+### 11. `ALinqPropertyAccessTest.php` (53 tests)
 Validates universal property resolution:
 - Dot-notation traversal (`user.address.city`)
 - Arrays, stdClass objects, public properties, and getter methods
-- Non-public properties of the class and its ancestors as the last resort, static and uninitialized ones included (1.4.0)
+- Non-public properties of the class and its ancestors as the last resort, static and uninitialized ones included (1.4.0), only when marked `#[Specifiable]` on the property or on the declaring class (1.4.1)
+- Unmarked non-public properties resolve to `null`/`false`; a class-level mark covers only the properties declared by that class; ASpecification's `#[Specifiable]` is accepted by name, a look-alike attribute is not; `whereBetween`/`orderBy` over an unmarked private field reveal nothing, eager and lazy (1.4.1)
 
 ### 12. `ALinqLazyCollectionTest.php` (64 tests)
 Validates the streaming, generator-based pipeline engine:
@@ -130,12 +131,12 @@ Validates the shared callback helper:
 ### 14. `tests/Contract/ParityTest.php` (3 tests)
 Enforces the eager × lazy contract (README §11):
 - Every operation both collections share runs over the same seven inputs on both sides; results are compared strictly, keys included, and when an operation throws the exception class and message (1.4.0) must match
-- A second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields
+- A second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields (marked `#[Specifiable]` since 1.4.1)
 - A guard fails when a public method shared by both classes is missing from the matrix
 
 ### 15. `tests/Contract/AccessorContractTest.php` (3 tests)
 Keeps `ALinqPropertyAccess` the single property resolver:
-- The five public entry points that read a property (`getPropertyAccessor`, `getNestedPropertyAccessor`, `createPropertyComparer`, `createPropertySelector`, `ALinqQueryBuilder::where`) agree with `getValue()` on the same 13 cases, the same resolution order as the ASpecification 1.4.4 `PropertyAccessor`
+- The five public entry points that read a property (`getPropertyAccessor`, `getNestedPropertyAccessor`, `createPropertyComparer`, `createPropertySelector`, `ALinqQueryBuilder::where`) agree with `getValue()` on the same 14 cases (13 until 1.4.0; 1.4.1 sends 'private without getter' back to `null` and adds its `#[Specifiable]` twin), the same resolution order as the ASpecification `PropertyAccessor`
 
 ---
 

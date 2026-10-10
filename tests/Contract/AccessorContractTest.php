@@ -12,12 +12,17 @@ use PHPUnit\Framework\TestCase;
 /**
  * RN-19 (forward 015, 1.3.0): ALinqPropertyAccess is the only property resolution of the
  * library. The five public entry points that read a property are driven through the same
- * fixture of 13 cases (REVISAO-2026-10-08 §3.15, bug P4CS) and must agree with
- * ALinqPropertyAccess::getValue() case by case.
+ * fixture of cases (13 in REVISAO-2026-10-08 §3.15, bug P4CS; 14 since 1.4.1) and must agree
+ * with ALinqPropertyAccess::getValue() case by case.
  *
  * 1.4.0 (forward 021, RN-07): the resolution order gained a last step, a private or
  * protected property declared by the class or an ancestor, so 'private without getter'
- * resolves to its value; the other 12 cases are unchanged.
+ * resolved to its value.
+ *
+ * 1.4.1 (security): that last step is opt-in with #[Specifiable], so 'private without getter'
+ * is back to null (a name from a request must not read a private field) and the new case
+ * 'private without getter, #[Specifiable]' resolves to its value; the other 12 cases are
+ * unchanged.
  */
 final class AccessorContractTest extends TestCase
 {
@@ -36,9 +41,10 @@ final class AccessorContractTest extends TestCase
 
         return [
             'private + getter'               => [new C\PrivateWithGetter(), 'name', 'priv'],
-            // 1.4.0 (forward 021, RN-07): the non-public property is the last resort, as in
-            // the PropertyAccessor of ASpecification 1.4.4 (before 1.4.0: null)
-            'private without getter'         => [new C\PrivateWithoutGetter(), 'name', 'priv-no-getter'],
+            // 1.4.1: an unmarked non-public property is not readable by name (1.4.0 read it)
+            'private without getter'         => [new C\PrivateWithoutGetter(), 'name', null],
+            // 1.4.1: the author opted in, so the last resort reads it (as 1.4.0 did for any)
+            'private without getter, #[Specifiable]' => [new C\SpecifiablePrivateWithoutGetter(), 'name', 'priv-specifiable'],
             'public $active + isActive()'    => [new C\PublicActiveWithIsMethod(), 'active', false],
             'public $status + getStatus()'   => [new C\PublicStatusWithGetter(), 'status', 'getter'],
             '__get + __isset'                => [new C\MagicGetWithIsset(), 'name', 'magic:name'],
@@ -77,7 +83,7 @@ final class AccessorContractTest extends TestCase
         ];
     }
 
-    public function testEveryEntryPointResolvesTheThirteenCasesLikeGetValue(): void
+    public function testEveryEntryPointResolvesEveryCaseLikeGetValue(): void
     {
         $divergences = [];
         foreach (self::cases() as $case => [$target, $property, $expected]) {
@@ -132,6 +138,8 @@ final class AccessorContractTest extends TestCase
 
 namespace Antevemus\ALinq\Tests\Contract\C;
 
+use Antevemus\ALinq\Attributes\Specifiable;
+
 final class PrivateWithGetter
 {
     private string $name = 'priv';
@@ -141,6 +149,13 @@ final class PrivateWithGetter
 final class PrivateWithoutGetter
 {
     private string $name = 'priv-no-getter';
+    public function describe(): string { return $this->name; }
+}
+
+final class SpecifiablePrivateWithoutGetter
+{
+    #[Specifiable]
+    private string $name = 'priv-specifiable';
     public function describe(): string { return $this->name; }
 }
 

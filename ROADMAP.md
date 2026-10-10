@@ -51,7 +51,7 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 ## 🔮 Long-Term Vision (v2.0+)
 
 ### 11. Shared Property Accessor with ASpecification 🧩
-- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` ship the same resolution order (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, since ALinq 1.4.0 and ASpecification 1.4.4 a non-public property as the last resort, else `null`) as two copies. Extracting one package both depend on changes the dependency graph of both libraries.
+- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` ship the same resolution order (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, since ALinq 1.4.0 and ASpecification 1.4.4 a non-public property as the last resort, opt-in with `#[Specifiable]` since ALinq 1.4.1 and ASpecification 1.6.1, else `null`) as two copies. Extracting one package both depend on changes the dependency graph of both libraries.
 - **Goal:** One accessor, one set of tests (`tests/Contract/AccessorContractTest.php` is the seed).
 - **Target Release:** v2.0.0
 

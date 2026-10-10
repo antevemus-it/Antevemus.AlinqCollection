@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-494%20passed%20%7C%201606%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-499%20passed%20%7C%201656%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -43,7 +43,7 @@ Modern PHP development frequently struggles with boilerplate array manipulations
 | **⚡ Ordering & Sorting** | `orderBy`, `orderByDescending`, `thenBy`, `thenByDescending`, `orderByNatural` (human alphanumeric sort), `orderByCustom`, `orderByKey`, `reverse` |
 | **🧭 Iteration & Traversal** | `each`, `eachRecursive`, `current`, `key`, `next`, `prev`, `reset`, `end`, full `IteratorAggregate` and `Countable` parity |
 | **🛠️ Dynamic Query Builder** | `ALinqQueryBuilder` (`create('and'\|'or')`, `where('field', '>=', $val)`, `whereIn`, `whereNotIn`, `whereBetween`, `toPredicate()`) |
-| **🔎 Deep Property Access** | `ALinqPropertyAccess` with dot-notation (`getValue($item, 'company.address.zip')`), getters and, as the last resort, non-public properties |
+| **🔎 Deep Property Access** | `ALinqPropertyAccess` with dot-notation (`getValue($item, 'company.address.zip')`), getters and, as the last resort, non-public properties the class author marked `#[Specifiable]` |
 
 ---
 
@@ -561,32 +561,42 @@ $taxId = ALinqPropertyAccess::getValue($payload, 'user.profile.organization.taxI
 // Returns: '12.345.678/0001-90'
 ```
 
-Resolution order (the same as the `PropertyAccessor` of Antevemus.ASpecification 1.4.4):
+Resolution order (the same as the `PropertyAccessor` of Antevemus.ASpecification, whose 1.6.1 has the same opt-in):
 
 1. array or `ArrayAccess` by key;
 2. a public getter (`getX()`, `x()`, `isX()`, `hasX()`);
 3. `__get` guarded by `__isset`;
 4. a public initialized property;
-5. since 1.4.0, as the last resort, a **non-public property** (private or protected, static too) declared by the class or one of its ancestors, read by reflection without calling any method; an uninitialized one resolves to `null`.
+5. as the last resort, a **non-public property** (private or protected, static too) declared by the class or one of its ancestors, read by reflection without calling any method, **only when the author of the class marked it `#[Specifiable]`** (since 1.4.1): on the property itself, or on the class that declares it. A class-level mark covers the properties declared by that class only, not those of its parents or subclasses. An uninitialized marked property resolves to `null`; an unmarked one resolves to `null` and `hasProperty()` answers `false`.
 
 Otherwise `null`, never an `Error`. A dot is always a path. `ALinqPropertyAccess::hasProperty($item, 'a.b')` tells whether the path resolves and follows the same order.
 
 ```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Attributes\Specifiable;
+
 final class Invoice
 {
-    public function __construct(private string $number, private float $total) {}
+    public function __construct(
+        #[Specifiable] private string $number,
+        private float $total,
+        private string $approvalCode = 'X9-SECRET',
+    ) {}
     public function getTotal(): float { return $this->total; }
 }
 
 $invoice = new Invoice('NF-001', 99.9);
 
-ALinqPropertyAccess::getValue($invoice, 'total');     // 99.9 (public getter)
-ALinqPropertyAccess::getValue($invoice, 'number');    // 'NF-001' (private property, last resort; null before 1.4.0)
-ALinqPropertyAccess::hasProperty($invoice, 'number'); // true (false before 1.4.0)
-ALinqPropertyAccess::getValue($invoice, 'missing');   // null
+ALinqPropertyAccess::getValue($invoice, 'total');           // 99.9 (public getter)
+ALinqPropertyAccess::getValue($invoice, 'number');          // 'NF-001' (private, marked #[Specifiable]: last resort)
+ALinqPropertyAccess::hasProperty($invoice, 'number');       // true
+ALinqPropertyAccess::getValue($invoice, 'approvalCode');    // null (private, not marked)
+ALinqPropertyAccess::hasProperty($invoice, 'approvalCode'); // false
+ALinqPropertyAccess::getValue($invoice, 'missing');         // null
+ALinqCollection::from([$invoice])->whereBetween('approvalCode', 'A', 'Z')->count(); // 0
 ```
 
-The last step reaches every entry point that reads a property: `ALinqQueryBuilder::where()`, `whereIn()`/`whereNotIn()`/`whereBetween()`, `createPropertySelector()` and `createPropertyComparer()`.
+Why an opt-in: the library only receives a name as text (in `where*()`, the `orderBy()` selectors, `select()`, the query builder, `createPropertySelector()`, `createPropertyComparer()`) and cannot tell code written by the author of the entity from a name that came from a request. Without the mark, filtering or ordering over a private field would reveal it: `whereBetween('password_hash', 'a', 'b')` answers, range after range, what the value starts with. 1.4.0 read every non-public property; 1.4.1 reads only the marked ones. `#[Antevemus\ASpecification\Attributes\Specifiable]` counts as the same mark (recognized by name, no dependency on that package). Public getters, `__get` guarded by `__isset` and public properties need no mark.
 
 ---
 
@@ -726,25 +736,25 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 494 ( 12%)
-............................................................... 126 / 494 ( 25%)
-............................................................... 189 / 494 ( 38%)
-............................................................... 252 / 494 ( 51%)
-............................................................... 315 / 494 ( 63%)
-............................................................... 378 / 494 ( 76%)
-............................................................... 441 / 494 ( 89%)
-.....................................................           494 / 494 (100%)
+...............................................................  63 / 499 ( 12%)
+............................................................... 126 / 499 ( 25%)
+............................................................... 189 / 499 ( 37%)
+............................................................... 252 / 499 ( 50%)
+............................................................... 315 / 499 ( 63%)
+............................................................... 378 / 499 ( 75%)
+............................................................... 441 / 499 ( 88%)
+..........................................................      499 / 499 (100%)
 
 Time: 00:00.136, Memory: 8.00 MB
 
-OK (494 tests, 1606 assertions)
+OK (499 tests, 1656 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **494 Tests & 1606 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
-- **Measured coverage** (pcov, 1.4.0): 199 of 203 methods and 1159 of 1165 lines of `src/`; the six uncovered lines are defensive guards (four in the property accessor: `catch` blocks around reflection and the empty-name check of the non-public lookup; one in the shared outer join: the unknown-kind check).
+- **499 Tests & 1656 Assertions** certifying all 8 functional traits, the generator streaming engine and the eager × lazy contract (`tests/Contract`).
+- **Measured coverage** (pcov, 1.4.1): 201 of 205 methods and 1171 of 1177 lines of `src/`; the six uncovered lines are defensive guards (five in the property accessor: the three `catch` blocks around reflection and the empty-name check of the non-public lookup; one in the shared outer join: the unknown-kind check).
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero External Runtime Dependencies**: Pure PHP 8.4 library with zero third-party requirements.
 
@@ -763,7 +773,8 @@ OK (494 tests, 1606 assertions)
 - [x] **v1.4.0**: `whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`, announced in the 0.1.0 release notes and shipped at last (see the CHANGELOG erratum).
 - [x] **v1.4.0**: `leftJoin()` / `rightJoin()` / `fullJoin()`: outer joins returning `[$outer, $inner]` pairs with `null` on the side without a match, as `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` in .NET 10/11 (they replace `groupJoin()` + `selectMany()` by hand).
 - [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: composite, stable multi-key ordering, on the lazy collection too.
-- [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order, including the non-public last resort since 1.4.0; extracting a common package is a 2.0 topic).
+- [x] **v1.4.1**: security: the non-public last resort of the property accessor is opt-in with `#[Specifiable]`, so filters and orderings over an unmarked private field stop acting as a read oracle.
+- [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order, including the non-public last resort opt-in with `#[Specifiable]` since ALinq 1.4.1 and ASpecification 1.6.1; extracting a common package is a 2.0 topic).
 - [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
 
 The milestone view of this list, with target releases, lives in [ROADMAP.md](ROADMAP.md).

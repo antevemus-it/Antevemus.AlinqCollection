@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Helpers;
 
+use Antevemus\ALinq\Attributes\Specifiable;
 use ArrayAccess;
 use Closure;
+use ReflectionAttribute;
 use ReflectionClass;
 use ReflectionProperty;
 use Throwable;
@@ -25,11 +27,19 @@ use Throwable;
  *        `public $active` paired with `isActive()` reads the method);
  *     b. an accessible, non-null property (`isset`, which also honours `__get` + `__isset`);
  *     c. a declared PUBLIC property (static or instance) that is initialized (reflection);
- *     d. since 1.4.0, as the last resort: a private or protected property declared by the
- *        class or one of its ancestors (reflection, the PropertyAccessor of ASpecification
- *        1.4.4, Domian `ReflectionUtils.getFieldByName()`), read without calling any method;
- *        an uninitialized one resolves to `null`. Before 1.4.0 such a property resolved to
- *        `null`.
+ *     d. as the last resort, a private or protected property declared by the class or one
+ *        of its ancestors (reflection, the PropertyAccessor of ASpecification, Domian
+ *        `ReflectionUtils.getFieldByName()`), read without calling any method, ONLY when the
+ *        author of the class opted in with `#[Specifiable]` (1.4.1): on the property itself,
+ *        or on the class that declares it (a class-level mark covers the properties declared
+ *        by that class only, not those of its parents or subclasses).
+ *        `#[Antevemus\ASpecification\Attributes\Specifiable]` counts as the same mark,
+ *        recognized by name. An uninitialized marked property resolves to `null`; an unmarked
+ *        one resolves to `null` too, as in 1.3.x. 1.4.0 read every non-public property; 1.4.1
+ *        made the step opt-in because the library only receives a name as text and cannot
+ *        tell the entity author's code from a name that came from a request, so filtering or
+ *        ordering over a private field (`whereBetween('password_hash', 'a', 'b')`) would be a
+ *        read oracle for its value.
  *     Uninitialized typed properties and private getters resolve to `null` instead of
  *     raising an Error.
  *  3. Anything else (scalars, null, missing member) resolves to `null`.
@@ -39,7 +49,7 @@ use Throwable;
  * through this helper; it is read as `$target['a']['b']`. This follows the ASpecification
  * accessor on purpose (review 2026-10-08, decision 3a).
  *
- * @version    1.4.0
+ * @version    1.4.1
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -48,6 +58,15 @@ use Throwable;
  */
 class ALinqPropertyAccess
 {
+    /**
+     * Attributes that opt a non-public property into the last resolution step (1.4.1),
+     * compared by name so that ALinq does not depend on antevemus/aspecification.
+     */
+    private const SPECIFIABLE_ATTRIBUTES = [
+        Specifiable::class,
+        'Antevemus\\ASpecification\\Attributes\\Specifiable',
+    ];
+
     /**
      * Get a property value (or a nested dot-notation path) from an object or array
      *
@@ -73,9 +92,10 @@ class ALinqPropertyAccess
      *
      * Existence follows the same resolution order as getValue(): a public getter-style method,
      * an accessible (`isset`) property, a declared public property, a private or protected
-     * property declared by the class or an ancestor (1.4.0), or an array/ArrayAccess key.
-     * An array key whose value is null still exists; a missing key, a private getter without
-     * a property or a non-object/non-array target does not.
+     * property declared by the class or an ancestor and marked `#[Specifiable]` (1.4.1), or
+     * an array/ArrayAccess key. An array key whose value is null still exists; a missing key,
+     * an unmarked non-public property, a private getter without a property or a
+     * non-object/non-array target does not.
      *
      * @param mixed $item The item to inspect
      * @param string $property The property name or dot-notation path
@@ -188,9 +208,10 @@ class ALinqPropertyAccess
             }
         }
 
-        // Last resort (1.4.0): a non-public property of the class or an ancestor.
-        $field = self::declaredField($target, $property);
-        if ($field !== null && !$field->isPublic()) {
+        // Last resort: a non-public property of the class or an ancestor, only when marked
+        // #[Specifiable] (opt-in since 1.4.1).
+        $field = self::specifiableField($target, $property);
+        if ($field !== null) {
             try {
                 if ($field->isStatic()) {
                     return $field->getValue();
@@ -209,7 +230,7 @@ class ALinqPropertyAccess
      * The property declared under this name by the class of $target or by the nearest
      * ancestor that declares it, whatever its visibility (a private property of a parent
      * class is found too); null when no class in the hierarchy declares it. Mirrors
-     * ReflectionUtils::getFieldByName() of ASpecification 1.4.4.
+     * ReflectionUtils::getFieldByName() of ASpecification.
      */
     private static function declaredField(object $target, string $property): ?ReflectionProperty
     {
@@ -229,6 +250,45 @@ class ALinqPropertyAccess
         }
 
         return null;
+    }
+
+    /**
+     * The non-public property declared under this name by the class of $target or an
+     * ancestor, provided its author opted in with `#[Specifiable]` on the property or on the
+     * class that declares it (1.4.1); null otherwise.
+     */
+    private static function specifiableField(object $target, string $property): ?ReflectionProperty
+    {
+        $field = self::declaredField($target, $property);
+        if ($field === null || $field->isPublic()) {
+            return null;
+        }
+
+        if (self::hasSpecifiableMark($field->getAttributes())
+            || self::hasSpecifiableMark($field->getDeclaringClass()->getAttributes())) {
+            return $field;
+        }
+
+        return null;
+    }
+
+    /**
+     * Whether one of the attributes is `#[Specifiable]` (ALinq's or ASpecification's).
+     * Attributes are compared by name and never instantiated.
+     *
+     * @param ReflectionAttribute[] $attributes
+     */
+    private static function hasSpecifiableMark(array $attributes): bool
+    {
+        foreach ($attributes as $attribute) {
+            foreach (self::SPECIFIABLE_ATTRIBUTES as $name) {
+                if (strcasecmp(ltrim($attribute->getName(), '\\'), $name) === 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -268,8 +328,8 @@ class ALinqPropertyAccess
             }
         }
 
-        // Last resort (1.4.0): a non-public property of the class or an ancestor.
-        return self::declaredField($target, $property) !== null;
+        // Last resort: a non-public property marked #[Specifiable] (opt-in since 1.4.1).
+        return self::specifiableField($target, $property) !== null;
     }
 
     /**

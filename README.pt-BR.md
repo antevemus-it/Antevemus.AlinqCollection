@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-494%20aprovados%20%7C%201606%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-499%20aprovados%20%7C%201656%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -43,7 +43,7 @@ O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 | **⚡ Ordenação & Classificação** | `orderBy`, `orderByDescending`, `thenBy`, `thenByDescending`, `orderByNatural` (ordenação alfanumérica humana), `orderByCustom`, `orderByKey`, `reverse` |
 | **🧭 Iteração & Navegação** | `each`, `eachRecursive`, `current`, `key`, `next`, `prev`, `reset`, `end`, paridade total com `IteratorAggregate` e `Countable` |
 | **🛠️ Query Builder Dinâmico** | `ALinqQueryBuilder` (`create('and'\|'or')`, `where('campo', '>=', $val)`, `whereIn`, `whereNotIn`, `whereBetween`, `toPredicate()`) |
-| **🔎 Acesso a Propriedades** | `ALinqPropertyAccess` com dot-notation (`getValue($item, 'empresa.endereco.cep')`), getters e, como último recurso, propriedades não públicas |
+| **🔎 Acesso a Propriedades** | `ALinqPropertyAccess` com dot-notation (`getValue($item, 'empresa.endereco.cep')`), getters e, como último recurso, propriedades não públicas que o autor da classe marcou com `#[Specifiable]` |
 
 ---
 
@@ -561,32 +561,42 @@ $cnpj = ALinqPropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
 // Retorna: '12.345.678/0001-90'
 ```
 
-Ordem de resolução (a mesma do `PropertyAccessor` do Antevemus.ASpecification 1.4.4):
+Ordem de resolução (a mesma do `PropertyAccessor` do Antevemus.ASpecification, cuja 1.6.1 tem o mesmo opt-in):
 
 1. array ou `ArrayAccess` pela chave;
 2. getter público (`getX()`, `x()`, `isX()`, `hasX()`);
 3. `__get` guardado por `__isset`;
 4. propriedade pública inicializada;
-5. desde a 1.4.0, como último recurso, uma **propriedade não pública** (privada ou protegida, estática também) declarada pela classe ou por um ancestral, lida por reflexão sem chamar nenhum método; se não inicializada, resolve para `null`.
+5. como último recurso, uma **propriedade não pública** (privada ou protegida, estática também) declarada pela classe ou por um ancestral, lida por reflexão sem chamar nenhum método, **só quando o autor da classe a marcou com `#[Specifiable]`** (desde a 1.4.1): na própria propriedade ou na classe que a declara. A marca na classe vale só para as propriedades declaradas nela, não para as da classe-mãe nem das subclasses. Marcada e não inicializada, resolve para `null`; não marcada, resolve para `null` e `hasProperty()` responde `false`.
 
 Senão `null`, nunca `Error`. Ponto é sempre caminho. `ALinqPropertyAccess::hasProperty($item, 'a.b')` diz se o caminho resolve e segue a mesma ordem.
 
 ```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Attributes\Specifiable;
+
 final class NotaFiscal
 {
-    public function __construct(private string $numero, private float $total) {}
+    public function __construct(
+        #[Specifiable] private string $numero,
+        private float $total,
+        private string $codigoAprovacao = 'X9-SEGREDO',
+    ) {}
     public function getTotal(): float { return $this->total; }
 }
 
 $nota = new NotaFiscal('NF-001', 99.9);
 
-ALinqPropertyAccess::getValue($nota, 'total');      // 99.9 (getter público)
-ALinqPropertyAccess::getValue($nota, 'numero');     // 'NF-001' (propriedade privada, último recurso; null antes da 1.4.0)
-ALinqPropertyAccess::hasProperty($nota, 'numero');  // true (false antes da 1.4.0)
-ALinqPropertyAccess::getValue($nota, 'inexistente'); // null
+ALinqPropertyAccess::getValue($nota, 'total');              // 99.9 (getter público)
+ALinqPropertyAccess::getValue($nota, 'numero');             // 'NF-001' (privada, marcada com #[Specifiable]: último recurso)
+ALinqPropertyAccess::hasProperty($nota, 'numero');          // true
+ALinqPropertyAccess::getValue($nota, 'codigoAprovacao');    // null (privada, sem marca)
+ALinqPropertyAccess::hasProperty($nota, 'codigoAprovacao'); // false
+ALinqPropertyAccess::getValue($nota, 'inexistente');        // null
+ALinqCollection::from([$nota])->whereBetween('codigoAprovacao', 'A', 'Z')->count(); // 0
 ```
 
-A última etapa alcança todo ponto de entrada que lê propriedade: `ALinqQueryBuilder::where()`, `whereIn()`/`whereNotIn()`/`whereBetween()`, `createPropertySelector()` e `createPropertyComparer()`.
+Por que opt-in: a biblioteca só recebe um nome em texto (em `where*()`, nos seletores de `orderBy()`, em `select()`, no query builder, em `createPropertySelector()`, em `createPropertyComparer()`) e não distingue o código do autor da entidade de um nome vindo do request. Sem a marca, filtrar ou ordenar por um campo privado o revelaria: `whereBetween('password_hash', 'a', 'b')` responde, faixa após faixa, por onde o valor começa. A 1.4.0 lia toda propriedade não pública; a 1.4.1 lê só as marcadas. `#[Antevemus\ASpecification\Attributes\Specifiable]` vale como a mesma marca (reconhecida pelo nome, sem depender daquele pacote). Getters públicos, `__get` guardado por `__isset` e propriedades públicas não precisam de marca.
 
 ---
 
@@ -726,25 +736,25 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 494 ( 12%)
-............................................................... 126 / 494 ( 25%)
-............................................................... 189 / 494 ( 38%)
-............................................................... 252 / 494 ( 51%)
-............................................................... 315 / 494 ( 63%)
-............................................................... 378 / 494 ( 76%)
-............................................................... 441 / 494 ( 89%)
-.....................................................           494 / 494 (100%)
+...............................................................  63 / 499 ( 12%)
+............................................................... 126 / 499 ( 25%)
+............................................................... 189 / 499 ( 37%)
+............................................................... 252 / 499 ( 50%)
+............................................................... 315 / 499 ( 63%)
+............................................................... 378 / 499 ( 75%)
+............................................................... 441 / 499 ( 88%)
+..........................................................      499 / 499 (100%)
 
 Time: 00:00.136, Memory: 8.00 MB
 
-OK (494 tests, 1606 assertions)
+OK (499 tests, 1656 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **494 Testes & 1606 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
-- **Cobertura medida** (pcov, 1.4.0): 199 de 203 métodos e 1159 de 1165 linhas de `src/`; as seis linhas descobertas são guardas defensivas (quatro no accessor de propriedades: blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido).
+- **499 Testes & 1656 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
+- **Cobertura medida** (pcov, 1.4.1): 201 de 205 métodos e 1171 de 1177 linhas de `src/`; as seis linhas descobertas são guardas defensivas (cinco no accessor de propriedades: os três blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 
@@ -763,7 +773,8 @@ OK (494 tests, 1606 assertions)
 - [x] **v1.4.0**: `whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`, anunciados nas notas da 0.1.0 e enfim entregues (ver a errata no CHANGELOG).
 - [x] **v1.4.0**: `leftJoin()` / `rightJoin()` / `fullJoin()`: junções externas devolvendo pares `[$outer, $inner]` com `null` no lado sem correspondência, como `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` no .NET 10/11 (substituem o `groupJoin()` + `selectMany()` à mão).
 - [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: ordenação composta e estável por várias chaves, também na coleção lazy.
-- [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução, inclusive o último recurso não público desde a 1.4.0; extrair um pacote comum é assunto da 2.0).
+- [x] **v1.4.1**: segurança: o último recurso não público do accessor de propriedades passa a ser opt-in com `#[Specifiable]`, e filtros e ordenações sobre um campo privado sem marca deixam de servir de oráculo de leitura.
+- [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução, inclusive o último recurso não público opt-in com `#[Specifiable]` desde a ALinq 1.4.1 e o ASpecification 1.6.1; extrair um pacote comum é assunto da 2.0).
 - [ ] **Futuro**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.
 
 A visão por marcos desta lista, com releases-alvo, vive em [ROADMAP.md](ROADMAP.md).

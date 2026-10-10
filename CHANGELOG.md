@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-10
+
+Security patch: the non-public last resort that 1.4.0 added to `ALinqPropertyAccess` becomes opt-in by the author of the class. No signature changes; a non-public property without the mark reads as it did in 1.3.x.
+
+### Security
+- **Filtering and ordering over a private field no longer work as a read oracle.** The library receives a property only as a name in text (`where*()`, the `orderBy()` selectors built with `createPropertySelector()`, `select()`, `ALinqQueryBuilder`, `createPropertyComparer()`) and cannot tell code written by the author of the entity from a name that came from a request. Before (1.4.0): every private or protected property declared by the class or an ancestor was readable by name, so a request-supplied name could probe any field: `whereBetween('password_hash', 'a', 'b')` answers, range after range, what the value starts with, and an ordering by it leaks its relative order. After: the last step of the resolution order reads a non-public property only when the author marked it `#[Specifiable]`, on the property itself or on the class that declares it; a class-level mark covers the properties declared by that class only (neither its parents' nor its subclasses'). An unmarked non-public property resolves to `null` in `getValue()` and to `false` in `hasProperty()`, as in 1.3.x, on every entry point and on the eager and the lazy collection alike. Steps 1 to 4 (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property) are unchanged and need no mark. Migration: an entity that relied on 1.4.0 reading a private field by name adds `#[Specifiable]` to that property (or to its class), or exposes a public getter. `tests/Contract/AccessorContractTest.php`: the case "private without getter" expects `null` again and a new case, the same property marked `#[Specifiable]`, expects the value.
+
+### Added
+- **`Antevemus\ALinq\Attributes\Specifiable`**, `#[Attribute(Attribute::TARGET_PROPERTY | Attribute::TARGET_CLASS)]`: the opt-in marker above. `#[Antevemus\ASpecification\Attributes\Specifiable]` (Antevemus.ASpecification 1.6.1, same opt-in on its `PropertyAccessor`) is accepted as the same mark; attributes are compared by name and never instantiated, so ALinq does not depend on that package. Tests for the mark (property, class, hierarchy in both directions, the ASpecification name, a look-alike attribute that is not accepted) and for the oracle (`whereBetween()`, the query builder and `orderBy()`/`orderByDescending()` over an unmarked private field, eager and lazy). Suite **499 tests, 1656 assertions** (from 494/1606). Measured coverage (pcov): 201 of 205 methods, 1171 of 1177 lines of `src/`; the six uncovered lines are defensive guards.
+
 ## [1.4.0] - 2026-10-09
 
 The announced-but-unshipped backlog of the 0.1.0 notes, the outer joins of .NET 10/11 LINQ and composite ordering (ROADMAP milestones 8, 9 and 10), on both collections with the same answers, keys and exceptions; plus one step added to the property accessor for parity with Antevemus.ASpecification 1.4.4. Additive (MINOR): no existing signature changes; one result changes in the accessor, declared under *Changed*.
@@ -304,7 +314,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.0...v1.3.1

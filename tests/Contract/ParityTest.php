@@ -327,12 +327,14 @@ final class ParityTest extends TestCase
 
 namespace Antevemus\ALinq\Tests\Contract\C;
 
+use Antevemus\ALinq\Attributes\Specifiable;
 use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
 
 /**
  * A row as an entity: private fields without getters, read by ALinqPropertyAccess through
- * the non-public last resort (1.4.0).
+ * the non-public last resort (1.4.0), which since 1.4.1 requires the class-level opt-in.
  */
+#[Specifiable]
 final class Employee
 {
     public function __construct(
