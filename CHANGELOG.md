@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-10-11
+
+Patch: package metadata and roadmap only. No code changes.
+
+### Changed
+- **`suggest` for `antevemus/aspecification`: `^1.4` → `^1.9.0`.** `^1.4` admitted ASpecification 1.4.4 to 1.6.0, whose property accessor read any non-public property by name; this package reads one only when marked `#[Specifiable]` (since 1.4.1), the rule ASpecification follows since 1.6.1. The floor is the latest ASpecification release, the policy for cross-package constraints from now on.
+
+### Documentation
+- **ROADMAP milestone 12 corrected** ("Parallel Collection Processing with PHP Fibers" → "Concurrent I/O Sources and Parallel Workers"): a Fiber runs on a single thread and is not parallelism. The milestone now separates HTTP page prefetch with `curl_multi` (core, zero dependency), an async collection on Fibers for async SDKs and CPU parallelism with worker processes (companion packages). README roadmap lines updated accordingly.
+
 ## [1.4.2] - 2026-10-10
 
 Patch: `singleOrDefault()` speaks the same language as `single()`. No signature changes.
@@ -321,7 +331,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.2...v1.4.0

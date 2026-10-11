@@ -1,6 +1,6 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.2-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.3-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests Passing](https://img.shields.io/badge/tests-499%20passed%20%7C%201664%20assertions-success.svg)](tests/)
@@ -775,8 +775,9 @@ OK (499 tests, 1664 assertions)
 - [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: composite, stable multi-key ordering, on the lazy collection too.
 - [x] **v1.4.1**: security: the non-public last resort of the property accessor is opt-in with `#[Specifiable]`, so filters and orderings over an unmarked private field stop acting as a read oracle.
 - [x] **v1.4.2**: `singleOrDefault()` throws with the same messages as `single()`, on both collections.
+- [x] **v1.4.3**: `suggest` for ASpecification raised to `^1.9.0`; roadmap milestone 12 corrected (a Fiber is not parallelism).
 - [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order, including the non-public last resort opt-in with `#[Specifiable]` since ALinq 1.4.1 and ASpecification 1.6.1; extracting a common package is a 2.0 topic).
-- [ ] **Future**: Parallel collection processing leveraging PHP Fibers and concurrent workers.
+- [ ] **Future**: concurrent I/O sources (HTTP page prefetch with `curl_multi` in the core; an async collection on Fibers for async SDKs and CPU parallelism with worker processes in companion packages). A Fiber alone is not parallelism.
 
 The milestone view of this list, with target releases, lives in [ROADMAP.md](ROADMAP.md).
 

@@ -55,9 +55,12 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 - **Goal:** One accessor, one set of tests (`tests/Contract/AccessorContractTest.php` is the seed).
 - **Target Release:** v2.0.0
 
-### 12. Parallel Collection Processing with PHP Fibers ⚡
-- **Description:** Optional parallel evaluation of independent pipeline branches on PHP Fibers and concurrent workers, keeping the core synchronous and dependency-free.
-- **Target Release:** v2.0.0 (or a companion package)
+### 12. Concurrent I/O Sources and Parallel Workers ⚡
+- **Description:** Corrected in 1.4.3: a PHP Fiber is a cooperative coroutine on a single thread, so it never runs pipeline branches in parallel, and it only saves time when the code inside it waits on non-blocking I/O. The milestone is split by what each tool can actually deliver:
+  - **Prefetching HTTP sources (core, zero dependency):** a lazy source over a paginated HTTP API starts the request for the next page with `curl_multi` and keeps processing the current one, the `IAsyncEnumerable<T>` effect without an event loop.
+  - **Async collection for async SDKs (companion package):** `ALinqAsyncCollection` on Fibers and the Revolt event loop, for sources whose clients are already non-blocking (Amp, ReactPHP), with bounded concurrency for per-item I/O such as a `map()` that calls an API.
+  - **CPU parallelism (companion package):** independent CPU-bound work on several cores needs worker processes (or `ext-parallel`), not Fibers; the cost of moving items between processes makes it worthwhile only for heavy per-item work.
+- **Target Release:** v2.0.0 for the companion packages; the HTTP prefetch may ship earlier in a 1.x MINOR.
 
 ---
 
