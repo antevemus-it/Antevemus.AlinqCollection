@@ -1,7 +1,7 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.5.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.5.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests Passing](https://img.shields.io/badge/tests-558%20passed%20%7C%201835%20assertions-success.svg)](tests/)
@@ -815,6 +815,7 @@ OK (558 tests, 1835 assertions)
 - [x] **v1.4.2**: `singleOrDefault()` throws with the same messages as `single()`, on both collections.
 - [x] **v1.4.3**: `suggest` for ASpecification raised to `^1.9.0`; roadmap milestone 12 corrected (a Fiber is not parallelism).
 - [x] **v1.5.0**: `fromHttpPages()`: a lazy source over a paginated HTTP API that downloads the next page with `curl_multi` while the current one is consumed (zero dependency, ROADMAP milestone 12, core part).
+- [x] **v1.5.1**: the GitHub Actions workflow runs (a duplicated environment key made GitHub refuse it); `suggest` for ASpecification raised to `^1.10.0`.
 - [ ] **Shared property accessor** with `Antevemus.ASpecification` (today both ship the same resolution order, including the non-public last resort opt-in with `#[Specifiable]` since ALinq 1.4.1 and ASpecification 1.6.1; extracting a common package is a 2.0 topic).
 - [ ] **Future**: the rest of the concurrent I/O milestone, in companion packages: an async collection on Fibers for async SDKs and CPU parallelism with worker processes. A Fiber alone is not parallelism.
 

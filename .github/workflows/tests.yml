@@ -16,7 +16,6 @@ concurrency:
 env:
   # The HTTP tests (fromHttpPages) start a local php -S server; never route them through a proxy.
   NO_PROXY: 127.0.0.1,localhost
-  no_proxy: 127.0.0.1,localhost
 
 jobs:
   tests:
@@ -28,7 +27,7 @@ jobs:
       matrix:
         php: ['8.4']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:

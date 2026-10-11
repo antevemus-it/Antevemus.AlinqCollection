@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-11
+
+Patch: continuous integration and package metadata only. No code changes.
+
+### Fixed
+- **The GitHub Actions workflow of 1.5.0 never ran.** It declared the proxy exclusion twice (`NO_PROXY` and `no_proxy`); GitHub treats environment keys case-insensitively and refuses the whole workflow file. Declared once now, and the file passes `actionlint`. `actions/checkout` moves from v4 (Node 20, deprecated on the runners) to v7.
+
+### Changed
+- **`suggest` for `antevemus/aspecification`: `^1.9.0` → `^1.10.0`**, the latest ASpecification release.
+
 ## [1.5.0] - 2026-10-11
 
 Concurrent I/O, core part (ROADMAP milestone 12): a lazy source over a paginated HTTP API that downloads the next page while the current one is consumed, with `curl_multi` and no dependency. Additive (MINOR): nothing existing changes. Specified before code (Reversa forward 027, decisions D1 to D8, rules RN-01 to RN-06).
@@ -350,7 +360,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...v1.4.2

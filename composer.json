@@ -38,7 +38,7 @@
   },
   "suggest": {
     "ext-curl": "Required by ALinqLazyCollection::fromHttpPages() (since 1.5.0): lazy source over a paginated HTTP API that prefetches the next page with curl_multi",
-    "antevemus/aspecification": "^1.9.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy)"
+    "antevemus/aspecification": "^1.10.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy)"
   },
   "autoload": {
     "psr-4": {
