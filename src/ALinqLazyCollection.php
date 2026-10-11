@@ -59,7 +59,7 @@ use WeakMap;
  * builds a new stage over the same upstream with one more criterion, and the whole sort runs
  * once, when the stage is traversed.
  *
- * @version    1.4.0
+ * @version    1.4.2
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -1133,7 +1133,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         foreach ($this as $key => $item) {
             if ($predicate === null || $predicate($item, $key)) {
                 if ($found) {
-                    throw new OverflowException('Collection contains more than one matching element.');
+                    // Same messages as single() and the eager side (1.4.2).
+                    throw new OverflowException($predicate === null
+                        ? 'Sequence contains more than one element.'
+                        : 'Sequence contains more than one matching element.');
                 }
                 $match = $item;
                 $found = true;

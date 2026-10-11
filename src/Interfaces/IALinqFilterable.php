@@ -101,7 +101,8 @@ interface IALinqFilterable extends IALinqBaseCollection
     /**
      * Get the single element matching predicate, or $default when there is none (SingleOrDefault in LINQ)
      *
-     * @throws \OverflowException when more than one element matches
+     * @throws \OverflowException when more than one element matches ('Sequence contains more than one element.' or
+     *                            '... matching element.', the same messages as single())
      */
     public function singleOrDefault($default = null, ?callable $predicate = null);
 

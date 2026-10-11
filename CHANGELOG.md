@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-10-10
+
+Patch: `singleOrDefault()` speaks the same language as `single()`. No signature changes.
+
+### Changed
+- **`singleOrDefault()` throws with the messages of `single()`**, on both collections. **Before → after** for more than one element: without a predicate, `'Collection contains more than one matching element.'` → `'Sequence contains more than one element.'`; with a predicate, `'Collection contains more than one matching element.'` → `'Sequence contains more than one matching element.'`. The exception class (`OverflowException`) is unchanged. Code that compared the old text must switch; code that catches the class is not affected.
+
 ## [1.4.1] - 2026-10-10
 
 Security patch: the non-public last resort that 1.4.0 added to `ALinqPropertyAccess` becomes opt-in by the author of the class. No signature changes; a non-public property without the mark reads as it did in 1.3.x.
@@ -314,7 +321,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.2...v1.4.0
 [1.3.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.3.1...v1.3.2

@@ -27,7 +27,7 @@ use UnderflowException;
  * ALinqPropertyAccess, `in`/`notIn` are strict (`in_array(..., true)`), `between` is
  * inclusive and a null value is never between.
  *
- * @version    1.4.0
+ * @version    1.4.2
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -226,7 +226,10 @@ trait FilteringOperations
             : array_filter($this->items, ALinqCallable::withKey($predicate), ARRAY_FILTER_USE_BOTH);
 
         if (count($filtered) > 1) {
-            throw new OverflowException('Collection contains more than one matching element.');
+            // Same messages as single() and the lazy side (1.4.2).
+            throw new OverflowException($predicate === null
+                ? 'Sequence contains more than one element.'
+                : 'Sequence contains more than one matching element.');
         }
 
         return count($filtered) === 0 ? $default : $filtered[array_key_first($filtered)];

@@ -326,7 +326,7 @@ class FilteringOperationsTest extends TestCase
     public function testSingleOrDefaultThrowsExceptionWithMultiple(): void
     {
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage("Collection contains more than one matching element.");
+        $this->expectExceptionMessage("Sequence contains more than one element.");
 
         $collection = ALinqCollection::from([1, 2, 3]);
         $collection->singleOrDefault();

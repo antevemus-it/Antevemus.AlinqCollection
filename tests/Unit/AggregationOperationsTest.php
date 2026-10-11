@@ -724,6 +724,11 @@ class AggregationOperationsTest extends TestCase
     {
         $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one element.', fn() => ALinqCollection::from([1, 2])->single());
         $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one matching element.', fn() => ALinqCollection::from([1, 2, 3])->single(fn($x) => $x > 1));
+        // singleOrDefault() uses the same messages as single(), eager and lazy (1.4.2).
+        foreach ([ALinqCollection::from([1, 2, 3]), \Antevemus\ALinq\ALinqLazyCollection::from([1, 2, 3])] as $c) {
+            $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one element.', fn() => $c->singleOrDefault());
+            $this->assertThrowsWithMessage(\OverflowException::class, 'Sequence contains more than one matching element.', fn() => $c->singleOrDefault(null, fn($x) => $x > 1));
+        }
     }
 
     public function testSingleAnswersLikeTheLazySideWithTheSameMessages(): void

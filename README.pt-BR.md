@@ -1,9 +1,9 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.2-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-499%20aprovados%20%7C%201656%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-499%20aprovados%20%7C%201664%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -747,13 +747,13 @@ vendor/bin/phpunit
 
 Time: 00:00.136, Memory: 8.00 MB
 
-OK (499 tests, 1656 assertions)
+OK (499 tests, 1664 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **499 Testes & 1656 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
+- **499 Testes & 1664 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
 - **Cobertura medida** (pcov, 1.4.1): 201 de 205 métodos e 1171 de 1177 linhas de `src/`; as seis linhas descobertas são guardas defensivas (cinco no accessor de propriedades: os três blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
@@ -774,6 +774,7 @@ OK (499 tests, 1656 assertions)
 - [x] **v1.4.0**: `leftJoin()` / `rightJoin()` / `fullJoin()`: junções externas devolvendo pares `[$outer, $inner]` com `null` no lado sem correspondência, como `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` no .NET 10/11 (substituem o `groupJoin()` + `selectMany()` à mão).
 - [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: ordenação composta e estável por várias chaves, também na coleção lazy.
 - [x] **v1.4.1**: segurança: o último recurso não público do accessor de propriedades passa a ser opt-in com `#[Specifiable]`, e filtros e ordenações sobre um campo privado sem marca deixam de servir de oráculo de leitura.
+- [x] **v1.4.2**: `singleOrDefault()` lança com as mesmas mensagens de `single()`, nas duas coleções.
 - [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução, inclusive o último recurso não público opt-in com `#[Specifiable]` desde a ALinq 1.4.1 e o ASpecification 1.6.1; extrair um pacote comum é assunto da 2.0).
 - [ ] **Futuro**: Processamento paralelo de coleções utilizando PHP Fibers e workers concorrentes.
 
