@@ -5,10 +5,10 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 13 unit test files (`tests/Unit/`) and 2 contract test files (`tests/Contract/`)
-- **Total Tests:** 499 tests (1.4.1)
-- **Total Assertions:** 1656 assertions
-- **Lines of Test Code:** 8,500+ lines
+- **Test Files:** 15 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 2 contract test files (`tests/Contract/`)
+- **Total Tests:** 558 tests (1.5.0)
+- **Total Assertions:** 1835 assertions
+- **Lines of Test Code:** 9,500+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** Zero (pure PHP 8.4 native engine)
 
@@ -117,6 +117,7 @@ Validates the streaming, generator-based pipeline engine:
 - `fromFile()` with automatic file handle closure in `finally` blocks
 - `fromCsv()` with associative header mapping
 - `fromCursor()` with unbuffered PDO statement streams
+- `fromHttpPages()` against a local server, see §16 (1.5.0)
 - Lazy operators (`where`, `whereNot`, `whereIn`, `whereNotIn`, `whereBetween`, `select`, `selectMany`, `take`, `skip`, `takeWhile`, `skipWhile`, `distinct`, `chunk`, `pad`, `concat`, `zip`, `tap`, `remember`)
 - Accumulating operators (`orderBy`, `orderByDescending`, `thenBy`, `thenByDescending`, `leftJoin`, `rightJoin`, `fullJoin`; 1.4.0)
 - Short-circuiting terminal operations (`first`, `firstOrDefault`, `last`, `lastOrDefault`, `single`, `singleOrDefault`, `any`, `all`, `contains`)
@@ -138,6 +139,18 @@ Enforces the eager × lazy contract (README §11):
 Keeps `ALinqPropertyAccess` the single property resolver:
 - The five public entry points that read a property (`getPropertyAccessor`, `getNestedPropertyAccessor`, `createPropertyComparer`, `createPropertySelector`, `ALinqQueryBuilder::where`) agree with `getValue()` on the same 14 cases (13 until 1.4.0; 1.4.1 sends 'private without getter' back to `null` and adds its `#[Specifiable]` twin), the same resolution order as the ASpecification `PropertyAccessor`
 
+### 16. `tests/Unit/Http/FromHttpPagesTest.php` (21 tests) and `HttpPageValueObjectsTest.php` (38 tests)
+Validate `ALinqLazyCollection::fromHttpPages()` (1.5.0, forward 027). `FromHttpPagesTest` starts a `php -S` server on a free port of 127.0.0.1 (`router.php`, four workers, a per-run request log as the call counter) in `setUpBeforeClass()` and stops it in `tearDownAfterClass()`; no traffic leaves the loopback interface:
+- Prefetch overlap measured: 3 pages of 300 ms with a consumer spending 300 ms per page finish under 1.5 s (≈ 1.2 s; serially 1.8 s)
+- Cursor-in-body, page-number and `Link`-header pagination (absolute and relative targets); a `null` request or cursor ends the stream; the page limit throws after the last allowed page and never requests the next one
+- A 500 on page 2 throws after page 1 was delivered; neither the message, the URL, the string form nor the arguments recorded in the stack trace hold the body or the query string; transport errors, the timeout (only the time spent waiting counts, a TLS handshake that never ends included) and redirects (off by default)
+- TLS verification cannot be turned off: a self-signed server (`tls-server.php`) is refused and no constructor exposes a TLS switch
+- `take(3)`, `first()`, `any()` and an exception in the consumer make at most two requests and the server sees the prefetch aborted
+- Every traversal fetches again from the first page; `remember()` fetches once
+- `HttpPageValueObjectsTest` covers the request and option validation (schemes, header injection, timeouts), `header()`, `json()`, the RFC 8288 `link()` parser and URL redaction without a network
+
+Exclude them with `--exclude-group http` (they take about 2.5 s and need `ext-curl`).
+
 ---
 
 ## 🚀 Running the Tests
@@ -145,6 +158,9 @@ Keeps `ALinqPropertyAccess` the single property resolver:
 ### Execute Entire Test Suite
 ```bash
 vendor/bin/phpunit
+
+# With Xdebug installed, turn it off (a debugger session would make the suite wait)
+XDEBUG_MODE=off vendor/bin/phpunit --no-coverage
 ```
 
 ### Detailed Test Execution (Testdox)

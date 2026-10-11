@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Interfaces;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Http\HttpPageOptions;
 use Countable;
 use IteratorAggregate;
 use JsonSerializable;
@@ -33,7 +34,10 @@ use Traversable;
  * it is traversed; a join indexes one side (the inner side for leftJoin()/fullJoin(), this
  * stream for rightJoin()) and streams the other.
  *
- * @version    1.4.0
+ * Since 1.5.0 (forward 027) fromHttpPages() is a lazy source over a paginated HTTP API with
+ * prefetch of the next page (lazy side only, like fromFile()).
+ *
+ * @version    1.5.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -103,6 +107,32 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return self
      */
     public static function fromCursor(PDOStatement $statement, ?callable $rowMapper = null): self;
+
+    /**
+     * Create a lazy stream over the items of a paginated HTTP API, downloading the next page
+     * while the items of the current one are consumed (since 1.5.0).
+     *
+     * `$requestFor($cursor, $pageIndex)` builds the request of a page (the cursor of the first
+     * page is null, `$pageIndex` counts from 0; null ends the stream); `$parsePage($response)`
+     * answers `[iterable $items, mixed $nextCursor]` (a null cursor marks the last page).
+     * Cursor-in-body, page-number and `Link`-header pagination all fit this shape.
+     *
+     * As soon as page n is parsed, the request of page n+1 is started with curl_multi and
+     * only then are the items of page n yielded (prefetch depth 1, no event loop, no Fiber).
+     * A status outside 2xx, a transport error, the timeout or the page limit throw
+     * `HttpPageException` at the point where that page would be delivered (the items of the
+     * previous pages were already yielded); its message never carries the response body nor
+     * the query string. Stopping early (`take()`, `first()`, `any()`) cancels the request in
+     * flight: at most one page is downloaded for nothing. Every traversal fetches again from
+     * the first page; call `remember()` to traverse once and replay from memory. TLS
+     * verification is always on. Requires ext-curl.
+     *
+     * @param callable $requestFor fn(mixed $cursor, int $pageIndex): ?HttpPageRequest
+     * @param callable $parsePage fn(HttpPageResponse $response): array{0: iterable, 1: mixed}
+     * @param HttpPageOptions|null $options Timeout, page limit, common headers, redirects
+     * @return self
+     */
+    public static function fromHttpPages(callable $requestFor, callable $parsePage, ?HttpPageOptions $options = null): self;
 
     /**
      * Create an empty lazy collection.

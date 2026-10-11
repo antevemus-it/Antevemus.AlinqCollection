@@ -6,6 +6,8 @@ namespace Antevemus\ALinq;
 
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
+use Antevemus\ALinq\Http\HttpPageOptions;
+use Antevemus\ALinq\Http\HttpPageStream;
 use Antevemus\ALinq\Interfaces\IALinqLazyCollection;
 use ArrayIterator;
 use Closure;
@@ -59,7 +61,10 @@ use WeakMap;
  * builds a new stage over the same upstream with one more criterion, and the whole sort runs
  * once, when the stage is traversed.
  *
- * @version    1.4.2
+ * Since 1.5.0 (forward 027): fromHttpPages() streams the items of a paginated HTTP API,
+ * downloading page n+1 with curl_multi while the items of page n are consumed.
+ *
+ * @version    1.5.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -419,6 +424,31 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 $index++;
             }
         };
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Since 1.5.0 (forward 027). The loop lives in Http\HttpPageStream: one curl multi handle
+     * per traversal, prefetch depth 1, the request in flight cancelled by the generator's
+     * `finally` on early termination, every traversal starting again from the first page.
+     *
+     * @throws LogicException When ext-curl is not loaded
+     */
+    public static function fromHttpPages(callable $requestFor, callable $parsePage, ?HttpPageOptions $options = null): self
+    {
+        if (!function_exists('curl_multi_init')) {
+            throw new LogicException('fromHttpPages() requires the curl extension (ext-curl).');
+        }
+
+        $requestFor = ALinqCallable::withKey($requestFor);
+        $parsePage = $parsePage instanceof Closure ? $parsePage : Closure::fromCallable($parsePage);
+        $options ??= new HttpPageOptions();
+
+        return self::pipe(
+            static fn(): Generator => HttpPageStream::items($requestFor, $parsePage, $options),
+            true
+        );
     }
 
     /**

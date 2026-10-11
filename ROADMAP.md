@@ -46,6 +46,10 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 - **Description:** Stable multi-key ordering chained after `orderBy()`/`orderByDescending()` shipped on both collections (the lazy collection also gained `orderBy()`/`orderByDescending()`), with an optional comparer over the keys and a `LogicException` when no ordering precedes. The README §7 example now reads as it does in LINQ instead of relying on `orderByCustom()`.
 - **Goal:** `orderBy(dept)->thenByDescending(salary)` reads as it does in LINQ.
 
+### 12a. Prefetching HTTP Page Source: `fromHttpPages()` ⚡ (Shipped in v1.5.0)
+- **Description:** The core part of milestone 12. `ALinqLazyCollection::fromHttpPages($requestFor, $parsePage, ?HttpPageOptions)` walks a paginated HTTP API (cursor in the body, page number or `Link` header) as one lazy sequence of items; as soon as page *n* is parsed, the request of page *n+1* goes on the wire through `curl_multi` and only then are the items of page *n* handed over. No event loop, no Fiber, no package dependency (`ext-curl` in `suggest`). Errors throw `HttpPageException` at the point of delivery, with the status and the URL without its query string, never the body; stopping early cancels the request in flight; every traversal starts again from the first page; TLS verification cannot be turned off. Measured: 3 pages of 300 ms with a consumer spending 300 ms per page take 1.2 s instead of 1.8 s. Specified before code (Reversa forward 027).
+- **Goal:** The `IAsyncEnumerable<T>`-with-prefetch effect in plain PHP-FPM.
+
 ---
 
 ## 🔮 Long-Term Vision (v2.0+)
@@ -57,10 +61,10 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 
 ### 12. Concurrent I/O Sources and Parallel Workers ⚡
 - **Description:** Corrected in 1.4.3: a PHP Fiber is a cooperative coroutine on a single thread, so it never runs pipeline branches in parallel, and it only saves time when the code inside it waits on non-blocking I/O. The milestone is split by what each tool can actually deliver:
-  - **Prefetching HTTP sources (core, zero dependency):** a lazy source over a paginated HTTP API starts the request for the next page with `curl_multi` and keeps processing the current one, the `IAsyncEnumerable<T>` effect without an event loop.
-  - **Async collection for async SDKs (companion package):** `ALinqAsyncCollection` on Fibers and the Revolt event loop, for sources whose clients are already non-blocking (Amp, ReactPHP), with bounded concurrency for per-item I/O such as a `map()` that calls an API.
-  - **CPU parallelism (companion package):** independent CPU-bound work on several cores needs worker processes (or `ext-parallel`), not Fibers; the cost of moving items between processes makes it worthwhile only for heavy per-item work.
-- **Target Release:** v2.0.0 for the companion packages; the HTTP prefetch may ship earlier in a 1.x MINOR.
+  - **Prefetching HTTP sources (core, zero dependency): shipped in v1.5.0** as `fromHttpPages()` (milestone 12a above). Prefetch depth is 1, because the next request needs the cursor of the previous response; a deeper prefetch for APIs whose pages are addressable without the previous response (`fromHttpPagesByIndex()`) waits for a real use case.
+  - **Async collection for async SDKs (companion package, planned):** `ALinqAsyncCollection` on Fibers and the Revolt event loop, for sources whose clients are already non-blocking (Amp, ReactPHP), with bounded concurrency for per-item I/O such as a `map()` that calls an API.
+  - **CPU parallelism (companion package, planned):** independent CPU-bound work on several cores needs worker processes (or `ext-parallel`), not Fibers; the cost of moving items between processes makes it worthwhile only for heavy per-item work.
+- **Target Release:** v2.0.0 for the companion packages (the core HTTP prefetch shipped in v1.5.0).
 
 ---
 

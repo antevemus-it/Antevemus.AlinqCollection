@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-11
+
+Concurrent I/O, core part (ROADMAP milestone 12): a lazy source over a paginated HTTP API that downloads the next page while the current one is consumed, with `curl_multi` and no dependency. Additive (MINOR): nothing existing changes. Specified before code (Reversa forward 027, decisions D1 to D8, rules RN-01 to RN-06).
+
+### Added
+- **`ALinqLazyCollection::fromHttpPages(callable $requestFor, callable $parsePage, ?HttpPageOptions $options = null)`**, also on `IALinqLazyCollection` (where the other lazy sources are). `$requestFor($cursor, $pageIndex)` builds the request of a page (the cursor of the first page is `null`, `$pageIndex` counts from 0, `null` ends the stream; a callback that accepts one parameter receives the cursor alone); `$parsePage($response)` answers `[iterable $items, mixed $nextCursor]` (`null` cursor on the last page). Cursor in the body, page number and `Link` header pagination fit this shape. Items come out with consecutive keys across pages (a list). Before: paging an API lazily meant a hand-written generator that downloaded each page only after the previous one was consumed. After:
+  - **Prefetch depth 1**: as soon as page *n* is parsed, the request of page *n+1* is started on a `curl_multi` handle and put on the wire, and only then are the items of page *n* yielded; between items the transfer is nudged forward without blocking. No event loop, no Fiber, plain PHP-FPM. Measured on the local test server (3 pages of 300 ms, a consumer spending 300 ms per page): 1.2 s instead of 1.8 s serially.
+  - **Errors** (`HttpPageException`, a `RuntimeException`): a status outside 2xx, a transport error (TLS included), the timeout or the page limit throw at the point of the iteration where that page would be delivered, after the items of the previous pages. The message carries the status, the method and the URL reduced to scheme, host, port and path (no user information, query string or fragment), never the body; the URL and the transport detail are redacted before the exception is built, so not even the arguments in its stack trace hold them. `getStatusCode()`, `getUrl()`, `getMethod()`, `getPageIndex()`, `isTimeout()`, `isTransportError()`, `isPageLimit()`. No retry in the core.
+  - **Early termination** (`take()`, `first()`, `any()`, an exception in the consumer) cancels the request in flight (`curl_multi_remove_handle()` and release of the easy handle, in the generator's `finally`): at most one page is downloaded for nothing.
+  - **Re-iteration refetches** from the first page (a GET is idempotent; unlike the single-pass PDO cursor of 1.3.2). `remember()` traverses once and replays from memory.
+- **`Antevemus\ALinq\Http\HttpPageRequest`** (method, absolute http(s) URL, headers, body, timeout; `HttpPageRequest::get()`), **`HttpPageResponse`** (status, headers, body, effective URL, page index; `header()`, `json()`, `link($rel = 'next')` reading RFC 8288 `Link` headers with relative targets resolved) and **`HttpPageOptions`** (`timeout` 30 s, `maxPages` 10 000, common `headers`, `followRedirects` false): plain value objects, no PSR-7. A request refuses other schemes, header names that are not tokens and CR/LF/NUL in values (no header injection); the transfer is limited to HTTP(S), redirects included. The timeout bounds the time the iteration blocks waiting for one page: time the consumer spends on the previous page does not count, so a page that arrived meanwhile is never reported as timed out. TLS peer and host verification is always on; there is no option to turn it off.
+- `ext-curl` in `suggest` (required by `fromHttpPages()` only; the rest of the library still has zero runtime requirements).
+- Tests: `tests/Unit/Http/FromHttpPagesTest.php` runs against a `php -S` server started on a free port of 127.0.0.1 and stopped after the class (overlap timing, the three pagination styles, the page limit, a 500 on page 2, transport errors, timeouts, a self-signed TLS server refused, redirects, headers, early termination seen as an abort by the server, re-iteration, the README example); `HttpPageValueObjectsTest.php` covers the value objects without a network. Group `http` (`--exclude-group http` skips them). Suite **558 tests, 1835 assertions** (from 499/1664). Measured coverage (pcov): 234 of 243 methods, 1458 of 1477 lines of `src/`; the 19 uncovered lines are defensive guards (13 on the HTTP path).
+
+### Documentation
+
+- **Continuous integration on GitHub Actions** (`.github/workflows/tests.yml`): PHPUnit on PHP 8.4, the HTTP tests included; CI badge in the README.
+- README (EN and pt-BR) §10 "Paginated HTTP API with Prefetch": the example (identical code in both, transcribed into a test against the local server), the callbacks, errors, early termination, re-iteration and options. ROADMAP milestone 12: the HTTP prefetch part shipped in 1.5.0; the async collection on Fibers and worker-process parallelism stay planned for companion packages.
+
 ## [1.4.3] - 2026-10-11
 
 Patch: package metadata and roadmap only. No code changes.
@@ -331,7 +350,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.0...v1.4.1

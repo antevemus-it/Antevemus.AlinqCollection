@@ -1,9 +1,10 @@
 # Antevemus ALinq Collection
 
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.4.3-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
+[![Latest Stable Version](https://img.shields.io/badge/release-v1.5.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-499%20aprovados%20%7C%201664%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-558%20aprovados%20%7C%201835%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -34,7 +35,7 @@ O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 
 | Domínio de Operação | Capacidades |
 | :--- | :--- |
-| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, consumo constante de memória $O(1)$ nos operadores de streaming |
+| **🌊 Streaming & Big Data** | `ALinqLazyCollection`, `fromFile`, `fromCsv`, `fromCursor`, `fromHttpPages` (API HTTP paginada com prefetch), `where`, `select`, `takeWhile`, `skipWhile`, `zip`, `tap`, `remember`, consumo constante de memória $O(1)$ nos operadores de streaming |
 | **🔍 Filtragem & Fatiamento** | `where`, `take`, `skip`, `distinct`, `distinctBy`, `first`, `firstOrDefault`, `last`, `lastOrDefault`, `single`, `singleOrDefault`, `whereIn`, `whereNotIn`, `whereBetween`, `chunk`, `pad`, `shuffle`, `contains` |
 | **🔗 Junções & Conjuntos** | `join` (inner), `leftJoin`, `rightJoin`, `fullJoin` (externos, como no .NET 10/11), `groupJoin` (hierárquico), `concat`, `intersect`, `intersectWith`, `intersectBy`, `except`, `exceptWith`, `exceptBy`, `unionBy`, `combine`, `replace`, `replaceRecursive` |
 | **📊 Agregações & Métricas** | `any`, `all`, `sum`, `average`, `min`, `minBy`, `max`, `maxBy`, `product`, `countValues`, `aggregate`, `aggregateBy`, `countBy` |
@@ -68,7 +69,7 @@ Para consumir diretamente via GitHub antes ou em paralelo ao Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.4"
+        "antevemus/alinq-collection": "^1.5"
     }
 }
 ```
@@ -608,7 +609,7 @@ Processar conjuntos de dados de escala em gigabytes (como logs de acesso, CSVs d
 
 #### Garantias Arquiteturais:
 - **Navegação Multi-Pass Rebobinável (Rewindable)**: Ao contrário dos generators padrão do PHP que disparam `Cannot traverse an already closed generator` em uma segunda iteração, o `ALinqLazyCollection` encapsula fábricas de geradores (`Closure(): iterable`). Você pode iterar, filtrar e materializar o mesmo pipeline múltiplas vezes com total segurança.
-- **Descarte Determinístico de Recursos**: Fontes como `fromFile()` e `fromCsv()` garantem o fechamento do ponteiro do arquivo no bloco `finally`, mesmo se a iteração for interrompida precocemente (ex: curto-circuito com `first()`, `take(n)`).
+- **Descarte Determinístico de Recursos**: Fontes como `fromFile()` e `fromCsv()` garantem o fechamento do ponteiro do arquivo no bloco `finally`, mesmo se a iteração for interrompida precocemente (ex: curto-circuito com `first()`, `take(n)`); `fromHttpPages()` cancela do mesmo jeito a requisição em andamento.
 - **Integração Bidirecional com a Coleção em Memória**: Alterne com naturalidade entre coleções imediatas (`ALinqCollection`) e pipelines de streaming (`ALinqLazyCollection`) através de `$collection->lazy()` e `$lazy->toCollection()`.
 
 #### Exemplo Prático: Streaming de Arquivo de Log com Múltiplos Gigabytes
@@ -658,6 +659,42 @@ $maioresSalariosPorDept = ALinqLazyCollection::fromCursor($stmt)
     ->toCollection()
     ->groupBy(fn($linha) => $linha['departamento']);
 ```
+
+#### API HTTP Paginada com Prefetch (desde a 1.5.0)
+
+`fromHttpPages()` percorre uma API HTTP paginada como uma única sequência lazy de itens. Assim que uma página é interpretada, a requisição da próxima é iniciada com `curl_multi`, e só então os itens da página atual são entregues: enquanto o seu código processa a página *n*, a página *n+1* já está sendo baixada. Sem event loop e sem Fibers, em PHP-FPM comum: o efeito do `IAsyncEnumerable<T>` com prefetch. Requer `ext-curl` (listada em `suggest`).
+
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+use Antevemus\ALinq\Http\HttpPageOptions;
+use Antevemus\ALinq\Http\HttpPageRequest;
+use Antevemus\ALinq\Http\HttpPageResponse;
+
+$api = 'https://api.example.com/orders';
+$token = getenv('API_TOKEN');
+
+$paidTotal = ALinqLazyCollection::fromHttpPages(
+    // A requisição de cada página; a primeira não tem cursor
+    fn(?string $cursor) => HttpPageRequest::get(
+        $api . '?limit=100' . ($cursor === null ? '' : '&after=' . urlencode($cursor))
+    ),
+    // Os itens da página e o cursor da próxima (null na última página)
+    function (HttpPageResponse $response): array {
+        $page = $response->json();
+        return [$page['data'], $page['next']];
+    },
+    new HttpPageOptions(timeout: 10.0, headers: ['Authorization' => 'Bearer ' . $token]),
+)
+    ->where(fn(array $order) => $order['status'] === 'paid')
+    ->sum(fn(array $order) => $order['total']); // a página n+1 baixa enquanto a página n é somada
+```
+
+- **Os dois callbacks.** `$requestFor($cursor, $pageIndex)` monta a requisição de uma página: o cursor da primeira é `null`, `$pageIndex` conta a partir de 0, e devolver `null` encerra o stream. `$parsePage($response)` devolve `[itens, próximoCursor]`, e um cursor `null` marca a última página. Cursor no corpo, número de página (`$cursor ?? 1`, próxima `$page + 1` enquanto `page < total_pages`) e o cabeçalho `Link` (`[$response->json(), $response->link('next')]`, alvos relativos resolvidos) cabem todos nesse formato. `HttpPageRequest` e `HttpPageResponse` são value objects simples (sem PSR-7): método, URL http(s), cabeçalhos, corpo e tempo-limite; status, cabeçalhos (`header()`), corpo (`json()`), URL efetiva e índice da página.
+- **Erros.** Status fora de 2xx, erro de transporte (TLS inclusive), tempo-limite ou limite de páginas lançam `HttpPageException` no ponto em que aquela página seria entregue: os itens das páginas anteriores já foram entregues. A mensagem traz o status e a URL sem a query string (`HTTP 500 for page index 1: GET https://api.example.com/orders`), nunca o corpo. Não há retry no núcleo.
+- **Parar cedo** (`take()`, `first()`, `any()`, uma exceção no seu laço) cancela a requisição em andamento: no máximo uma página é baixada à toa.
+- **Cada percurso refaz as requisições desde a primeira página** (`count()` seguido de `toArray()` percorre a API duas vezes). Chame `remember()` para percorrer uma vez e reler da memória.
+- **`HttpPageOptions`**: `timeout` (30 s por padrão: o máximo que a iteração fica bloqueada esperando uma página; o tempo que o seu código gasta na página anterior não conta), `maxPages` (10 000 por padrão, proteção contra um cursor que nunca termina), `headers` (enviados em toda requisição; um cabeçalho de mesmo nome na requisição prevalece) e `followRedirects` (`false` por padrão). A verificação TLS está sempre ligada e não pode ser desligada.
+- **Prefetch de profundidade 1**: a próxima requisição depende do cursor da resposta anterior. No servidor local dos testes, 3 páginas de 300 ms com um consumidor que gasta 300 ms por página levam 1,2 s em vez de 1,8 s (`tests/Unit/Http/FromHttpPagesTest.php`).
 
 #### Cache de Streams Intermediários com `remember()`
 
@@ -709,7 +746,7 @@ As duas coleções obedecem a um único contrato escrito, garantido por um teste
 
 | Regra | Comportamento |
 |---|---|
-| **Chaves** | Uma **lista** (`array_is_list()`) sai **reindexada** de toda operação de filtragem, fatiamento, conjunto ou ordenação; um **dicionário** (qualquer outro formato de chaves, inclusive `[10 => 'a', 20 => 'b']`) **mantém as chaves**. `select()` sempre preserva as chaves. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` sempre produzem lista. `chunk()` é uma lista de coleções (cada pedaço segue a regra da sua origem). A coleção lazy sabe se a fonte é lista (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `range()`, `repeat()`); um generator cru é "desconhecido": mantém as chaves durante o streaming e `toArray()` só reindexa quando todas as chaves são inteiras. A materialização nunca perde item: chave repetida é anexada. |
+| **Chaves** | Uma **lista** (`array_is_list()`) sai **reindexada** de toda operação de filtragem, fatiamento, conjunto ou ordenação; um **dicionário** (qualquer outro formato de chaves, inclusive `[10 => 'a', 20 => 'b']`) **mantém as chaves**. `select()` sempre preserva as chaves. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` sempre produzem lista. `chunk()` é uma lista de coleções (cada pedaço segue a regra da sua origem). A coleção lazy sabe se a fonte é lista (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `fromHttpPages()`, `range()`, `repeat()`); um generator cru é "desconhecido": mantém as chaves durante o streaming e `toArray()` só reindexa quando todas as chaves são inteiras. A materialização nunca perde item: chave repetida é anexada. |
 | **Igualdade** | Elementos e chaves são comparados por **identidade estrita e tipada** em toda parte: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `contains`, e o `whereIn`/`whereNotIn` das coleções. `1`, `'1'`, `1.0` e `true` são quatro valores diferentes; arrays comparam por valor; objetos por identidade. Chave `null` nunca casa em `join`/`groupJoin` nem nas junções externas (semântica do LINQ e do SQL; numa junção externa esse item sai sem par). Uma coluna de banco que chega como string não casa com uma chave inteira: faça o cast do seu lado. Um comparador customizado (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) pode devolver `bool` (`true` = iguais) ou um inteiro no estilo `<=>` (`0` = iguais). |
 | **Chaves de grupo** | `groupBy`, `countBy`, `aggregateBy` e `toDictionary` aceitam chaves `int`, `string` e `BackedEnum` (o seu valor); `null`, `bool`, `float`, arrays e objetos lançam `InvalidArgumentException` em vez de serem coagidos em silêncio. `toDictionary()` lança em chave repetida. |
 | **Coleções vazias** | Como no LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` lançam `UnderflowException` em coleção vazia ou quando nenhum elemento casa; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` devolvem o default; `singleOrDefault()` lança `OverflowException` com mais de um resultado; `single()` (1.4.0) lança `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` e `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` lança `UnderflowException` como `first()` e `random(n > 1)` devolve coleção vazia como `take(n)`; `sum()` de nada é `0`, `product()` de nada é `1`; `any()` significa "tem ao menos um item"; `all($p)` de nada é `true`; `all()` sem predicado significa "todo item é truthy". |
@@ -736,25 +773,26 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 499 ( 12%)
-............................................................... 126 / 499 ( 25%)
-............................................................... 189 / 499 ( 37%)
-............................................................... 252 / 499 ( 50%)
-............................................................... 315 / 499 ( 63%)
-............................................................... 378 / 499 ( 75%)
-............................................................... 441 / 499 ( 88%)
-..........................................................      499 / 499 (100%)
+...............................................................  63 / 558 ( 11%)
+............................................................... 126 / 558 ( 22%)
+............................................................... 189 / 558 ( 33%)
+............................................................... 252 / 558 ( 45%)
+............................................................... 315 / 558 ( 56%)
+............................................................... 378 / 558 ( 67%)
+............................................................... 441 / 558 ( 79%)
+............................................................... 504 / 558 ( 90%)
+......................................................          558 / 558 (100%)
 
-Time: 00:00.136, Memory: 8.00 MB
+Time: 00:02.964, Memory: 8.00 MB
 
-OK (499 tests, 1664 assertions)
+OK (558 tests, 1835 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **499 Testes & 1664 Asserções** certificando todos os 8 traits funcionais, o motor de streaming e o contrato eager × lazy (`tests/Contract`).
-- **Cobertura medida** (pcov, 1.4.1): 201 de 205 métodos e 1171 de 1177 linhas de `src/`; as seis linhas descobertas são guardas defensivas (cinco no accessor de propriedades: os três blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido).
+- **558 Testes & 1835 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy (`tests/Contract`) e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
+- **Cobertura medida** (pcov, 1.5.0): 234 de 243 métodos e 1458 de 1477 linhas de `src/`; as 19 linhas descobertas são guardas defensivas (cinco no accessor de propriedades: os três blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
 
@@ -776,8 +814,9 @@ OK (499 tests, 1664 assertions)
 - [x] **v1.4.1**: segurança: o último recurso não público do accessor de propriedades passa a ser opt-in com `#[Specifiable]`, e filtros e ordenações sobre um campo privado sem marca deixam de servir de oráculo de leitura.
 - [x] **v1.4.2**: `singleOrDefault()` lança com as mesmas mensagens de `single()`, nas duas coleções.
 - [x] **v1.4.3**: `suggest` do ASpecification passa a `^1.9.0`; marco 12 do roadmap corrigido (Fiber não é paralelismo).
+- [x] **v1.5.0**: `fromHttpPages()`: fonte lazy sobre uma API HTTP paginada que baixa a próxima página com `curl_multi` enquanto a atual é consumida (zero dependência, marco 12 do ROADMAP, parte do núcleo).
 - [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução, inclusive o último recurso não público opt-in com `#[Specifiable]` desde a ALinq 1.4.1 e o ASpecification 1.6.1; extrair um pacote comum é assunto da 2.0).
-- [ ] **Futuro**: fontes de I/O concorrentes (prefetch de páginas HTTP com `curl_multi` no núcleo; coleção assíncrona sobre Fibers para SDKs assíncronos e paralelismo de CPU com processos em pacotes satélites). Fiber sozinha não é paralelismo.
+- [ ] **Futuro**: o restante do marco de I/O concorrente, em pacotes satélites: coleção assíncrona sobre Fibers para SDKs assíncronos e paralelismo de CPU com processos. Fiber sozinha não é paralelismo.
 
 A visão por marcos desta lista, com releases-alvo, vive em [ROADMAP.md](ROADMAP.md).
 

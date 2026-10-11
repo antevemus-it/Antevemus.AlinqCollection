@@ -280,7 +280,7 @@ final class ParityTest extends TestCase
         $lazy = array_map(fn($m) => $m->name, (new \ReflectionClass(ALinqLazyCollection::class))->getMethods(\ReflectionMethod::IS_PUBLIC));
         $shared = array_values(array_intersect($eager, $lazy));
 
-        $notQueryOperations = ['__construct', 'getIterator', 'from', 'empty', 'range', 'repeat', 'fromFile', 'fromCsv', 'fromCursor', 'toCollection', 'lazy'];
+        $notQueryOperations = ['__construct', 'getIterator', 'from', 'empty', 'range', 'repeat', 'fromFile', 'fromCsv', 'fromCursor', 'fromHttpPages', 'toCollection', 'lazy'];
         $missing = array_diff($shared, $covered, $notQueryOperations);
         sort($missing);
 
