@@ -14,11 +14,11 @@ namespace Antevemus\ALinq\Interfaces;
  * `ALinqCallable::hashKey()` (`1`, `'1'`, `1.0` and `true` are four values, arrays compare
  * by value, objects by identity); callbacks receive `($item, $key)` only when they accept
  * two parameters; an empty result throws where LINQ throws. `whereIn`/`whereNotIn`/
- * `whereBetween` (1.4.0) are sugar over `where()` reading a field through
- * `ALinqPropertyAccess`: `in`/`notIn` by strict identity, `between` inclusive with `null`
- * never between.
+ * `whereBetween` (1.4.0) are sugar over `where()` reading a field through the shared
+ * accessor (`Antevemus\ADeepPropertyAccess\PropertyAccess`, since 2.0.0): `in`/`notIn` by
+ * strict identity, `between` inclusive with `null` never between.
  *
- * @version    1.4.0
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior

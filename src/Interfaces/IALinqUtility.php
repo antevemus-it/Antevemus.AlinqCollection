@@ -12,9 +12,10 @@ use Closure;
  * Interface for utility operations on collections.
  *
  * Contract (1.3.0): `each`/`eachRecursive` iterate over a copy and never mutate the
- * collection (transformation is `select`); `extract()` is deprecated.
+ * collection (transformation is `select`). `extract()`, deprecated in 1.3.0, was removed in
+ * 2.0.0: a method cannot export variables into the scope of its caller.
  *
- * @version    1.3.1
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -43,15 +44,6 @@ interface IALinqUtility extends IALinqBaseCollection
     public function eachRecursive(callable $callback): IALinqCollection;
 
     /**
-     * Extract variables from collection into the current symbol table
-     *
-     * @deprecated since 1.3.0, removed in 2.0: a method cannot export variables into the
-     *             caller's scope, so this only ever populated its own symbol table and
-     *             returned the count. Emits E_USER_DEPRECATED.
-     */
-    public function extract(int $flags = EXTR_OVERWRITE): int;
-
-    /**
      * Create a closure that can be used for query composition
      *
      * Same operators and semantics as ALinqQueryBuilder::where(), including the `null` rule.
@@ -61,7 +53,8 @@ interface IALinqUtility extends IALinqBaseCollection
     public function createPredicate(string $operator, $value): Closure;
 
     /**
-     * Create a property selector closure (same resolution order as ALinqQueryBuilder)
+     * Create a property selector closure (the accessor shared with ALinqQueryBuilder and
+     * ASpecification: `Antevemus\ADeepPropertyAccess\PropertyAccess`, since 2.0.0)
      */
     public function createPropertySelector(string $property): Closure;
 }

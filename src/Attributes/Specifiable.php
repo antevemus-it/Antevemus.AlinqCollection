@@ -9,10 +9,12 @@ use Attribute;
 /**
  * Specifiable - Opt-in marker that lets ALinq read a non-public property by name
  *
- * ALinqPropertyAccess resolves a name in this order: array/ArrayAccess key, public getter
- * (`getX`/`x`/`isX`/`hasX`), `__get` guarded by `__isset`, public initialized property and,
- * as the last resort, a private or protected property read by reflection. Since 1.4.1 that
- * last step only applies to a property the author of the class marked with this attribute:
+ * Since 2.0.0 names are resolved by the accessor shared with ASpecification
+ * (`Antevemus\ADeepPropertyAccess\PropertyAccess`), in this order: array/ArrayAccess key,
+ * public getter (`getX`/`x`/`isX`/`hasX` without required parameters), `__get` guarded by
+ * `__isset`, public initialized property and, as the last resort, a private or protected
+ * property read by reflection. Since 1.4.1 that last step only applies to a property the
+ * author of the class marked with this attribute:
  *
  * - on a property, it makes that private or protected property readable by name;
  * - on a class, it makes readable every non-public property DECLARED by that class. It does
@@ -26,10 +28,12 @@ use Attribute;
  * without the opt-in, filtering and ordering over a private field (for example
  * `whereBetween('password_hash', 'a', 'b')`) work as a read oracle for its value.
  *
- * `#[Antevemus\ASpecification\Attributes\Specifiable]` (ASpecification 1.6.1) is accepted as
- * the same marker; it is recognized by name, so ALinq does not depend on that package.
+ * This attribute stays the one to use in ALinq code. The shared accessor recognizes it by
+ * name, together with `#[Antevemus\ASpecification\Attributes\Specifiable]` (ASpecification
+ * 1.6.1) and `#[Antevemus\ADeepPropertyAccess\Attributes\Specifiable]`: the three are the same
+ * marker, and none of the packages depends on another to recognize it.
  *
- * @version    1.4.1
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.attributes
  * @author     Heliton Junior

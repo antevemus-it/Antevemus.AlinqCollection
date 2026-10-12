@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Helpers;
 
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 use Antevemus\ALinq\ALinqQueryBuilder;
 use BackedEnum;
 use Closure;
@@ -35,7 +36,7 @@ use UnderflowException;
  * - outerJoin(): leftJoin()/rightJoin()/fullJoin(), as `Enumerable.LeftJoin/RightJoin/FullJoin`.
  * - orderPositions(): the stable, composite sort behind orderBy()/thenBy().
  *
- * @version    1.4.0
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -221,10 +222,10 @@ final class ALinqContract
 
     /**
      * The predicate behind the collections' whereIn()/whereNotIn()/whereBetween(): the field
-     * is read through ALinqPropertyAccess (dot notation allowed); `in`/`notIn` compare with
-     * strict identity (`in_array(..., true)`, so `'1'` is not in `[1]`); `between` is
-     * inclusive and follows the null rule of the query builder (a null value is never
-     * between, RN-20).
+     * is read through the shared accessor (`PropertyAccess` of antevemus/adeep-property-access,
+     * since 2.0.0; dot notation allowed); `in`/`notIn` compare with strict identity
+     * (`in_array(..., true)`, so `'1'` is not in `[1]`); `between` is inclusive and follows
+     * the null rule of the query builder (a null value is never between, RN-20).
      *
      * @param string $operation 'in', 'notIn' or 'between'
      * @param string $field Property name or dot-notation path
@@ -233,7 +234,7 @@ final class ALinqContract
      */
     public static function fieldPredicate(string $operation, string $field, array $arguments): Closure
     {
-        $accessor = ALinqPropertyAccess::getPropertyAccessor($field);
+        $accessor = PropertyAccess::accessor($field);
 
         if ($operation === 'between') {
             // the builder's evaluator: inclusive, and null is never between (one rule, RN-20)

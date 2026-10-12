@@ -263,54 +263,37 @@ class UtilityOperationsTest extends TestCase
         $this->assertInstanceOf(ALinqCollection::class, $result);
     }
 
-    // ===== EXTRACT TESTS =====
+    // ===== EXTRACT (REMOVED) =====
 
     /**
-     * RN-26 (forward 015): extract() cannot export into the caller's scope (review 2026-10-08,
-     * 3.10). It is deprecated since 1.3.0: emits E_USER_DEPRECATED, exports nothing to the
-     * caller and still returns the count. Before, this test only asserted the count.
+     * RN-26 (forward 015): extract() could not export into the caller's scope (review
+     * 2026-10-08, 3.10), so it was deprecated in 1.3.0 (E_USER_DEPRECATED, count only) and
+     * removed in 2.0.0 (forward 033, D13): neither collection nor any interface declares it.
      */
-    public function testExtractIsDeprecatedAndExportsNothingToTheCaller(): void
+    public function testExtractWasRemovedIn200(): void
     {
-        $collection = ALinqCollection::from([
-            'var1' => 'value1',
-            'var2' => 'value2'
-        ]);
-
-        $count = $this->capturingDeprecation(fn() => $collection->extract(EXTR_SKIP), $message);
-
-        $this->assertSame('ALinqCollection::extract() is deprecated since 1.3.0 and will be removed in 2.0: a method cannot export variables into the scope of its caller.', $message);
-        $this->assertSame(2, $count);
-        $this->assertFalse(isset($var1), 'extract() never reached this scope');
-    }
-
-    /**
-     * Runs $call with an E_USER_DEPRECATED handler that records the message, so the
-     * deprecation is asserted here instead of being reported by the runner.
-     */
-    private function capturingDeprecation(callable $call, ?string &$message): mixed
-    {
-        $message = null;
-        set_error_handler(static function (int $level, string $text) use (&$message): bool {
-            $message = $text;
-            return true;
-        }, E_USER_DEPRECATED);
-        try {
-            return $call();
-        } finally {
-            restore_error_handler();
+        foreach ([
+            \Antevemus\ALinq\ALinqCollection::class,
+            \Antevemus\ALinq\ALinqLazyCollection::class,
+            \Antevemus\ALinq\Traits\UtilityOperations::class,
+            \Antevemus\ALinq\Interfaces\IALinqUtility::class,
+            \Antevemus\ALinq\Interfaces\IALinqCollection::class,
+        ] as $type) {
+            $this->assertFalse((new \ReflectionClass($type))->hasMethod('extract'), "{$type} has no extract()");
         }
-    }
 
-    /**
-     * RN-26: the count is still returned for every flag.
-     */
-    public function testExtractReturnsCountOfExtractedVariables(): void
-    {
-        $collection = ALinqCollection::from(['a' => 1, 'b' => 2, 'c' => 3]);
+        $declarations = [];
+        $src = dirname(__DIR__, 2) . '/src';
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($src, \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if ($file->getExtension() === 'php' && preg_match('/function\s+extract\s*\(/i', (string) file_get_contents($file->getPathname()))) {
+                $declarations[] = substr($file->getPathname(), strlen($src) + 1);
+            }
+        }
+        $this->assertSame([], $declarations, 'no extract() declared anywhere in src/');
 
-        $this->assertSame(3, $this->capturingDeprecation(fn() => $collection->extract(), $message));
-        $this->assertStringContainsString('deprecated since 1.3.0', $message);
+        $this->expectException(\Error::class);
+        $this->expectExceptionMessage('Call to undefined method Antevemus\\ALinq\\ALinqCollection::extract()');
+        ALinqCollection::from(['var1' => 'value1'])->extract();
     }
 
     /**

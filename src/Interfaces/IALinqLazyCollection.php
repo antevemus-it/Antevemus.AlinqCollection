@@ -37,7 +37,7 @@ use Traversable;
  * Since 1.5.0 (forward 027) fromHttpPages() is a lazy source over a paginated HTTP API with
  * prefetch of the next page (lazy side only, like fromFile()).
  *
- * @version    1.5.0
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -181,7 +181,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Keep the items whose field is one of $values, by strict identity (`in_array(..., true)`).
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      * @param array $values
      * @return self
      */
@@ -190,7 +190,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Keep the items whose field is none of $values, by strict identity (`in_array(..., true)`).
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      * @param array $values
      * @return self
      */
@@ -199,7 +199,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Keep the items whose field lies in [$min, $max], bounds included; null is never between.
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      * @param mixed $min
      * @param mixed $max
      * @return self

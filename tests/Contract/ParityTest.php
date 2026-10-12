@@ -328,10 +328,10 @@ final class ParityTest extends TestCase
 namespace Antevemus\ALinq\Tests\Contract\C;
 
 use Antevemus\ALinq\Attributes\Specifiable;
-use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 
 /**
- * A row as an entity: private fields without getters, read by ALinqPropertyAccess through
+ * A row as an entity: private fields without getters, read by the shared accessor through
  * the non-public last resort (1.4.0), which since 1.4.1 requires the class-level opt-in.
  */
 #[Specifiable]
@@ -353,6 +353,6 @@ final class Employee
 
     public static function read(mixed $row, string $field): mixed
     {
-        return ALinqPropertyAccess::getValue($row, $field);
+        return PropertyAccess::getValue($row, $field);
     }
 }

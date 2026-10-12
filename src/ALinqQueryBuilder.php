@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq;
 
-use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 use Closure;
 use InvalidArgumentException;
 
@@ -48,7 +48,10 @@ use InvalidArgumentException;
  * inclusive, `null` never between). The collection methods of the same names compare `in`
  * strictly: they are sugar over the collection's `where()`, not over the builder.
  *
- * @version    1.4.0
+ * Property names and dot-notation paths are read by the accessor shared with ASpecification
+ * (`Antevemus\ADeepPropertyAccess\PropertyAccess`, since 2.0.0).
+ *
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -99,7 +102,7 @@ class ALinqQueryBuilder
      */
     public function where(string $property, string $operator, mixed $value = null): self
     {
-        $accessor = ALinqPropertyAccess::getPropertyAccessor($property);
+        $accessor = PropertyAccess::accessor($property);
         $test = self::operatorPredicate($operator, $value);
 
         $this->conditions[] = fn(mixed $item): bool => $test($accessor($item));

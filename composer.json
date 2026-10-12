@@ -31,14 +31,15 @@
     }
   ],
   "require": {
-    "php": ">=8.4"
+    "php": ">=8.4",
+    "antevemus/adeep-property-access": "^1.0.0"
   },
   "require-dev": {
     "phpunit/phpunit": "^11.0"
   },
   "suggest": {
     "ext-curl": "Required by ALinqLazyCollection::fromHttpPages() (since 1.5.0): lazy source over a paginated HTTP API that prefetches the next page with curl_multi",
-    "antevemus/aspecification": "^1.10.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy)"
+    "antevemus/aspecification": "^2.0.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy); since 2.0 both packages resolve property names through the same antevemus/adeep-property-access"
   },
   "autoload": {
     "psr-4": {

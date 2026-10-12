@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 use Antevemus\ALinq\ALinqQueryBuilder;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
-use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use Closure;
 use InvalidArgumentException;
@@ -18,11 +18,11 @@ use InvalidArgumentException;
  * Provides utility operations for collections.
  *
  * Contract since 1.3.0 (forward 015): each()/eachRecursive() never mutate the collection,
- * even with a by-reference callback (RN-25); extract() is deprecated because a method
- * cannot export into its caller's scope (RN-26); random() keeps the keys of a dictionary
- * and rejects a count below 1 (RN-02, RN-13).
+ * even with a by-reference callback (RN-25); random() keeps the keys of a dictionary and
+ * rejects a count below 1 (RN-02, RN-13). extract(), deprecated in 1.3.0 because a method
+ * cannot export into its caller's scope (RN-26), was removed in 2.0.0.
  *
- * @version    1.3.1
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -105,22 +105,6 @@ trait UtilityOperations
     }
 
     /**
-     * Extract variables from collection into the current symbol table
-     *
-     * @deprecated since 1.3.0, removed in 2.0: extract() acts on the symbol table of this
-     *             method, never on the caller's scope, so nothing is exported. The count of
-     *             variables that would have been extracted is still returned.
-     */
-    public function extract(int $flags = EXTR_OVERWRITE): int
-    {
-        trigger_error(
-            'ALinqCollection::extract() is deprecated since 1.3.0 and will be removed in 2.0: a method cannot export variables into the scope of its caller.',
-            E_USER_DEPRECATED
-        );
-        return extract($this->items, $flags);
-    }
-
-    /**
      * Create a closure that can be used for query composition
      *
      * Delegates to ALinqQueryBuilder::operatorPredicate(), so the operator set and the
@@ -137,10 +121,11 @@ trait UtilityOperations
     }
 
     /**
-     * Create a property selector closure
+     * Create a property selector closure (the shared accessor, `PropertyAccess::accessor()` of
+     * antevemus/adeep-property-access since 2.0.0; dot notation allowed)
      */
     public function createPropertySelector(string $property): Closure
     {
-        return ALinqPropertyAccess::getPropertyAccessor($property);
+        return PropertyAccess::accessor($property);
     }
 }

@@ -50,21 +50,20 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 - **Description:** The core part of milestone 12. `ALinqLazyCollection::fromHttpPages($requestFor, $parsePage, ?HttpPageOptions)` walks a paginated HTTP API (cursor in the body, page number or `Link` header) as one lazy sequence of items; as soon as page *n* is parsed, the request of page *n+1* goes on the wire through `curl_multi` and only then are the items of page *n* handed over. No event loop, no Fiber, no package dependency (`ext-curl` in `suggest`). Errors throw `HttpPageException` at the point of delivery, with the status and the URL without its query string, never the body; stopping early cancels the request in flight; every traversal starts again from the first page; TLS verification cannot be turned off. Measured: 3 pages of 300 ms with a consumer spending 300 ms per page take 1.2 s instead of 1.8 s. Specified before code (Reversa forward 027).
 - **Goal:** The `IAsyncEnumerable<T>`-with-prefetch effect in plain PHP-FPM.
 
+### 11. Shared Property Accessor with ASpecification 🧩 (Shipped in v2.0.0)
+- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` shipped the same resolution order as two copies (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, a non-public property as the last resort opt-in with `#[Specifiable]`, else `null`). Both were extracted into one package, [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (zero dependencies, PHP 8.2+), which ALinq 2.0 and ASpecification 2.0 require and call directly. The extraction fixed what both copies got wrong at the edges (a getter with a required parameter threw `ArgumentCountError`; `__call()` and magic names could be reached by name) and settled the cases where they disagreed. `ALinqPropertyAccess` stays until 3.0 as a deprecated facade; `createPropertyComparer()` and `#[Specifiable]` stay in ALinq. Released together with the removal of `extract()` (deprecated since 1.3.0), see [UPGRADE-2.0.md](UPGRADE-2.0.md).
+- **Goal:** One accessor, one set of tests: the contract battery lives in the package; `tests/Contract/AccessorContractTest.php` proves that ALinq delegates and keeps no copy.
+
 ---
 
 ## 🔮 Long-Term Vision (v2.0+)
-
-### 11. Shared Property Accessor with ASpecification 🧩
-- **Description:** `ALinqPropertyAccess` and the ASpecification `PropertyAccessor` ship the same resolution order (array/`ArrayAccess`, public getter, `__get` guarded by `__isset`, public initialized property, since ALinq 1.4.0 and ASpecification 1.4.4 a non-public property as the last resort, opt-in with `#[Specifiable]` since ALinq 1.4.1 and ASpecification 1.6.1, else `null`) as two copies. Extracting one package both depend on changes the dependency graph of both libraries.
-- **Goal:** One accessor, one set of tests (`tests/Contract/AccessorContractTest.php` is the seed).
-- **Target Release:** v2.0.0
 
 ### 12. Concurrent I/O Sources and Parallel Workers ⚡
 - **Description:** Corrected in 1.4.3: a PHP Fiber is a cooperative coroutine on a single thread, so it never runs pipeline branches in parallel, and it only saves time when the code inside it waits on non-blocking I/O. The milestone is split by what each tool can actually deliver:
   - **Prefetching HTTP sources (core, zero dependency): shipped in v1.5.0** as `fromHttpPages()` (milestone 12a above). Prefetch depth is 1, because the next request needs the cursor of the previous response; a deeper prefetch for APIs whose pages are addressable without the previous response (`fromHttpPagesByIndex()`) waits for a real use case.
   - **Async collection for async SDKs (companion package, planned):** `ALinqAsyncCollection` on Fibers and the Revolt event loop, for sources whose clients are already non-blocking (Amp, ReactPHP), with bounded concurrency for per-item I/O such as a `map()` that calls an API.
   - **CPU parallelism (companion package, planned):** independent CPU-bound work on several cores needs worker processes (or `ext-parallel`), not Fibers; the cost of moving items between processes makes it worthwhile only for heavy per-item work.
-- **Target Release:** v2.0.0 for the companion packages (the core HTTP prefetch shipped in v1.5.0).
+- **Target Release:** not scheduled for the companion packages, which are separate packages and do not wait for an ALinq major (2.0.0 shipped without them); the core HTTP prefetch shipped in v1.5.0.
 
 ---
 

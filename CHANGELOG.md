@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-12
+
+Major release that removes what 1.x announced as deprecated, and nothing else: `extract()` (deprecated since 1.3.0). The property resolution moves to a shared package, `antevemus/adeep-property-access` 1.0.0, which this library now requires (ROADMAP milestone 11): one dependency, from the same author, with no dependencies of its own; Antevemus.ASpecification 2.0 resolves names through the same package, so both libraries read the same value from the same candidate by construction. PHP 8.4 is still the minimum. **Read [UPGRADE-2.0.md](UPGRADE-2.0.md) ([pt-BR](UPGRADE-2.0.pt-BR.md)) before upgrading**; there is no data to convert.
+
+### Removed
+
+- **`extract()`** (deprecated 1.3.0), from `ALinqCollection` (`Traits\UtilityOperations`) and from `Interfaces\IALinqUtility` → PHP's own `extract($collection->toArray())` in the caller's scope, or `count()` when only the count was used. A method cannot export variables into the scope of its caller, so it never did what its name says: since 1.3.0 it raised `E_USER_DEPRECATED` and returned the count. Calling it now is `Error: Call to undefined method`. A class that implements `IALinqUtility` no longer needs to declare it.
+
+### Changed
+
+- **New dependency `antevemus/adeep-property-access` `^1.0.0`**, the property accessor shared with ASpecification (`Antevemus\ADeepPropertyAccess\PropertyAccess`). Every internal reader calls it directly: `ALinqQueryBuilder::where()` and its shortcuts, `createPropertySelector()`, `whereIn()`/`whereNotIn()`/`whereBetween()` on both collections (`ALinqContract::fieldPredicate()`) and `ALinqPropertyAccess::createPropertyComparer()`. ALinq keeps no copy of the resolution. The resolution order is the one of 1.x; the answers that changed, all at the edges (measured 1.5.1 × 2.0.0 on the 57 cases of the package's contract battery plus the package's own marker: 10 differ, on every reader of ALinq alike):
+  - **a public method with a required parameter is not a getter.** Before: `getName(string $x)` was called without arguments when reading `name`, so `getValue()`, the query builder, `whereIn()` and the selector threw `ArgumentCountError`, while `hasProperty()` answered `true`. After: it is skipped and the next step answers (a public property `$name` → its value; `isReady()` after a `getReady(int $timeout)` → `true`), else `null` and `hasProperty()` `false`. Optional and variadic parameters still make a getter;
+  - **`__call()` is never reached.** Before: a private or protected getter of a class with `__call()` passed the `method_exists()` + `is_callable()` check, so `__call('getName', [])` ran and its result was read (`'__call:getName'`), and `hasProperty()` answered `true`. After: only public methods are called: `null`, `false`;
+  - **a name starting with `__` is never called.** Before: the bare name was the `x()` candidate, so reading `'__construct'` ran the constructor again (and `hasProperty()` answered `true`). After: `null`, `false`;
+  - **an empty name names no method.** Before: the candidates were the bare prefixes, so `''` called a public `get()` (or `is()`, `has()`) and read its result, and `hasProperty()` answered `true`. After: `null`, `false`. (An empty name on an object without such a method already yielded `null`.);
+  - **a key of an `ArrayObject`/`ArrayIterator` holding `null` exists.** Before: `hasProperty()` answered `false` (`isset()`), also at the end of a path (`'box.name'`). After: `true` (`offsetExists()`), as a key of an array holding `null`; a missing key is still `false`, and `getValue()` is `null` in both;
+  - **`#[Antevemus\ADeepPropertyAccess\Attributes\Specifiable]` is accepted** as the opt-in marker, next to ALinq's and ASpecification's. Before: a private property marked with it read as `null`/`false`. After: its value/`true`.
+
+  Three edge answers where the two 1.x copies disagreed keep the ALinq answer (ASpecification changed in its 2.0): an empty name on an object yields `null`; an `ArrayAccess` object answers through its offsets only (its public properties are not seen); an unset public property with `__get()` and no `__isset()` yields `null`.
+- `suggest` of `antevemus/aspecification`: `^1.10.0` → **`^2.0.0`**, the latest ASpecification release (2.0 resolves names through the same package and accepts ALinq `^1.5.1 || ^2.0`).
+- `Attributes\Specifiable` stays, and is still the marker to use in ALinq code; only its docblock changed (it names the shared accessor and the two equivalent markers).
+
+### Deprecated
+
+- **`Helpers\ALinqPropertyAccess::getValue()`, `hasProperty()`, `getPropertyAccessor()`, `getNestedPropertyAccessor()`** → `Antevemus\ADeepPropertyAccess\PropertyAccess::getValue()`, `hasProperty()`, `accessor()` (both accessor factories map to `accessor()`). A thin facade with the same public API (the class is not made final), `@deprecated 2.0.0`, removed in 3.0.0; no runtime notice (it sits on the hot path of every query that names a field). `createPropertyComparer()` belongs to ALinq and is not deprecated.
+
+### Added
+
+- **`UPGRADE-2.0.md` and `UPGRADE-2.0.pt-BR.md`**: the replacement of `extract()`, the facade mapping and the answers that changed, case by case, with the 1.5.1 answer next to the 2.0.0 one.
+- Tests: `tests/Contract/AccessorContractTest.php` proves the delegation instead of carrying the battery (the battery, with the expected answers written down, lives in the package): the facade answers exactly as the package on the 53 cases (the 14 of the ALinq contract plus 39 edge cases of the package battery) without any notice; the five internal entry points (selector, comparer, query builder, eager and lazy `whereIn()`) agree with the package on every case; the 14 ALinq cases keep their written answers; the changed answers reach the internal readers (with the 1.5.1 answer in each message); the four facade methods are `@deprecated 2.0.0` and the comparer is not; no file of `src/` keeps a copy of the resolution (`method_exists()`, `property_exists()`, `ReflectionProperty`, `get_object_vars()`, a getter name built with `ucfirst()`) or calls the facade. `tests/Unit/ReadmePropertyAccessTest.php` runs the two code blocks of README §9 (EN and pt-BR) as written and checks every commented answer. `UtilityOperationsTest`: the two `extract()` tests became one that proves the removal. Suite **563 tests, 2148 assertions** (from 558/1835). Measured coverage (pcov): 229 of 235 methods, 1377 of 1391 lines of `src/`; the 14 uncovered lines are defensive guards (one in the shared outer join, thirteen on the HTTP path; the five of the old accessor left with it).
+
+### Documentation
+
+- README (EN and pt-BR): the dependency ("one, from the same author, with no dependencies of its own") in the installation and quality sections; §9 shows `PropertyAccess` of the package (a test reads both blocks from the README and runs them as written), the getter rule (no required parameter, never `__call()` nor a `__` name), `offsetExists()` and the three equivalent markers, and the facade; Origins, Core Features, directory tree (the facade) and a note under it, installation constraint `^2.0` with a pointer to `UPGRADE-2.0.md`, release badge v2.0.0, test counts and coverage, "One Runtime Dependency, Same Author" instead of "Zero External Runtime Dependencies"; roadmap list: v2.0.0 (shared property accessor, `extract()` removed).
+- ROADMAP: milestone 11 (shared property accessor with ASpecification) shipped in v2.0.0; the v2.0+ section keeps milestone 12, whose companion packages are no longer tied to the 2.0.0 release (they are separate packages; not scheduled).
+- `tests/README.md`: counts, the removal of `extract()`, the new contract tests and the README test.
+- `THIRD_PARTY_NOTICES.md`: the runtime dependency (first-party, MIT, with its own NOTICE). The resolution code that followed Domian `ReflectionUtils.getFieldByName()` left this repository with the accessor.
+
 ## [1.5.1] - 2026-10-11
 
 Patch: continuous integration and package metadata only. No code changes.
@@ -360,7 +398,8 @@ For complete documentation, see [README.md](README.md).
 
 ---
 
-[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.1...v2.0.0
 [1.5.1]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/antevemus-it/Antevemus.AlinqCollection/compare/v1.4.2...v1.4.3

@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v1.5.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.0.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-558%20aprovados%20%7C%201835%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-563%20aprovados%20%7C%202148%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -26,7 +26,7 @@ O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 2. **Arquitetura Modular Decomposta em Traits**: Elimina monolitos. As operações são distribuídas em 8 traits funcionais especializados (Filtragem, Junções, Agregações, Projeções, Agrupamento, Ordenação, Iteradores e Utilitários).
 3. **Pipelines de Streaming Baseados em Generators (O(1) de RAM)**: `ALinqLazyCollection` processa arquivos de log de múltiplos gigabytes, CSVs massivos e cursores PDO não bufferizados linha a linha, sem inflação de memória.
 4. **Teoria dos Conjuntos Enterprise**: Operações completas de diagramas de Venn (`intersectBy`, `exceptBy`, `unionBy`) com seletores de chave e comparadores customizados.
-5. **Resolução Profunda por Notação de Ponto**: Consulta estruturas de dados heterogêneas (arrays, objetos, DTOs e entidades de domínio) navegando caminhos aninhados como `user.profile.address.city`.
+5. **Resolução Profunda por Notação de Ponto**: Consulta estruturas de dados heterogêneas (arrays, objetos, DTOs e entidades de domínio) navegando caminhos aninhados como `user.profile.address.city`, resolvidos pelo acessor compartilhado com o ASpecification ([`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess), desde a 2.0.0).
 6. **Sinergia Arquitetural**: Parceiro nativo do **[`Antevemus.ASpecification`](https://github.com/antevemus-it/Antevemus.ASpecification)**, permitindo que árvores de especificação de Eric Evans e Martin Fowler compilem diretamente para pipelines LINQ em memória via `ALinqBridge` e `ALinqSpecificationVisitor`.
 
 ---
@@ -44,7 +44,7 @@ O **Antevemus ALinq Collection** foi projetado do zero para o **PHP 8.4+**:
 | **⚡ Ordenação & Classificação** | `orderBy`, `orderByDescending`, `thenBy`, `thenByDescending`, `orderByNatural` (ordenação alfanumérica humana), `orderByCustom`, `orderByKey`, `reverse` |
 | **🧭 Iteração & Navegação** | `each`, `eachRecursive`, `current`, `key`, `next`, `prev`, `reset`, `end`, paridade total com `IteratorAggregate` e `Countable` |
 | **🛠️ Query Builder Dinâmico** | `ALinqQueryBuilder` (`create('and'\|'or')`, `where('campo', '>=', $val)`, `whereIn`, `whereNotIn`, `whereBetween`, `toPredicate()`) |
-| **🔎 Acesso a Propriedades** | `ALinqPropertyAccess` com dot-notation (`getValue($item, 'empresa.endereco.cep')`), getters e, como último recurso, propriedades não públicas que o autor da classe marcou com `#[Specifiable]` |
+| **🔎 Acesso a Propriedades** | `PropertyAccess` do pacote compartilhado [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) com dot-notation (`getValue($item, 'empresa.endereco.cep')`), getters e, como último recurso, propriedades não públicas que o autor da classe marcou com `#[Specifiable]` |
 
 ---
 
@@ -55,6 +55,8 @@ Instale via Composer:
 ```bash
 composer require antevemus/alinq-collection
 ```
+
+Requisitos: PHP 8.4 ou superior, e uma dependência, instalada junto: [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (do mesmo autor, sem dependências próprias), o acessor de propriedades compartilhado com o Antevemus.ASpecification. Atualizando da 1.x: veja o [UPGRADE-2.0.pt-BR.md](UPGRADE-2.0.pt-BR.md) (`extract()` removido, `ALinqPropertyAccess` depreciado).
 
 ### Repositório Git VCS (Ambientes de Desenvolvimento ou Privados)
 
@@ -69,7 +71,7 @@ Para consumir diretamente via GitHub antes ou em paralelo ao Packagist:
         }
     ],
     "require": {
-        "antevemus/alinq-collection": "^1.5"
+        "antevemus/alinq-collection": "^2.0"
     }
 }
 ```
@@ -132,7 +134,7 @@ Antevemus\ALinq\
 ├── ALinqLazyCollection.php      # Pipeline de Streaming Baseado em Generators (Motor O(1) de RAM)
 ├── ALinqQueryBuilder.php        # Construtor fluente de condições (AND / OR) para consultas dinâmicas
 ├── Helpers\
-│   └── ALinqPropertyAccess.php  # Getter universal com suporte a notação de ponto, arrays e objetos
+│   └── ALinqPropertyAccess.php  # Fachada depreciada sobre o antevemus/adeep-property-access (até a 3.0) + createPropertyComparer()
 ├── Interfaces\                  # 11 Contratos Segregados
 │   ├── IALinqBaseCollection.php
 │   ├── IALinqCollection.php
@@ -155,6 +157,8 @@ Antevemus\ALinq\
     ├── IteratorOperations.php
     └── UtilityOperations.php
 ```
+
+Nomes de propriedade e caminhos com ponto são resolvidos pelo `Antevemus\ADeepPropertyAccess\PropertyAccess` ([`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess)), o acessor compartilhado com o ASpecification (veja a §9).
 
 ---
 
@@ -248,7 +252,7 @@ $preenchido = ALinqCollection::from([1, 2])->pad(5, 0); // [1, 2, 0, 0, 0]
 
 #### Filtros por campo: `whereIn()`, `whereNotIn()`, `whereBetween()` (desde a 1.4.0)
 
-Atalhos sobre o `where()` que leem um campo pelo `ALinqPropertyAccess` (chave de array, getter, propriedade, caminho com ponto como `'endereco.cidade'`). `whereIn`/`whereNotIn` comparam por identidade **estrita** (`in_array(..., true)`: `'18'` não é `18`); `whereBetween` é **inclusivo** e um valor `null` nunca está entre. As chaves seguem o contrato: lista sai reindexada, dicionário mantém as chaves.
+Atalhos sobre o `where()` que leem um campo pelo `PropertyAccess` compartilhado (§9: chave de array, getter, propriedade, caminho com ponto como `'endereco.cidade'`). `whereIn`/`whereNotIn` comparam por identidade **estrita** (`in_array(..., true)`: `'18'` não é `18`); `whereBetween` é **inclusivo** e um valor `null` nunca está entre. As chaves seguem o contrato: lista sai reindexada, dicionário mantém as chaves.
 
 ```php
 $equipe = ALinqCollection::from([
@@ -540,12 +544,12 @@ $candidatos->where($query->toPredicate())->column('nome')->toArray(); // ['Ana']
 
 ---
 
-### 9. Resolução Profunda de Propriedades (`ALinqPropertyAccess`)
+### 9. Resolução Profunda de Propriedades (`PropertyAccess`)
 
-Consulte com segurança estruturas aninhadas sem se preocupar se as chaves são arrays associativos, propriedades públicas, métodos getters ou híbridos:
+Todo nome que o ALinq lê (em `where*()`, no query builder, em `createPropertySelector()`, em `createPropertyComparer()`) é resolvido pelo **[`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess)**, o acessor compartilhado com o Antevemus.ASpecification desde a 2.0.0: as duas bibliotecas leem o mesmo valor do mesmo candidato por construção. Ele vem instalado com o ALinq, e você pode chamá-lo direto. Consulte com segurança estruturas aninhadas sem se preocupar se as chaves são arrays associativos, propriedades públicas, métodos getters ou híbridos:
 
 ```php
-use Antevemus\ALinq\Helpers\ALinqPropertyAccess;
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 
 $payload = [
     'usuario' => (object)[
@@ -558,21 +562,22 @@ $payload = [
 ];
 
 // Resolve o caminho aninhado automaticamente:
-$cnpj = ALinqPropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
+$cnpj = PropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
 // Retorna: '12.345.678/0001-90'
 ```
 
-Ordem de resolução (a mesma do `PropertyAccessor` do Antevemus.ASpecification, cuja 1.6.1 tem o mesmo opt-in):
+Ordem de resolução de cada segmento, vence o primeiro que casar:
 
-1. array ou `ArrayAccess` pela chave;
-2. getter público (`getX()`, `x()`, `isX()`, `hasX()`);
+1. chave de array, ou offset de `ArrayAccess` (`hasProperty()` segue o `offsetExists()`: uma chave com `null` existe, como num array);
+2. getter público (`getX()`, `x()`, `isX()`, `hasX()`) **sem parâmetro obrigatório** (método com parâmetro obrigatório não é getter e é pulado; `__call()` nunca é usado, e nome começado por `__` nunca é chamado);
 3. `__get` guardado por `__isset`;
-4. propriedade pública inicializada;
+4. propriedade pública (tipada e não inicializada resolve para `null`);
 5. como último recurso, uma **propriedade não pública** (privada ou protegida, estática também) declarada pela classe ou por um ancestral, lida por reflexão sem chamar nenhum método, **só quando o autor da classe a marcou com `#[Specifiable]`** (desde a 1.4.1): na própria propriedade ou na classe que a declara. A marca na classe vale só para as propriedades declaradas nela, não para as da classe-mãe nem das subclasses. Marcada e não inicializada, resolve para `null`; não marcada, resolve para `null` e `hasProperty()` responde `false`.
 
-Senão `null`, nunca `Error`. Ponto é sempre caminho. `ALinqPropertyAccess::hasProperty($item, 'a.b')` diz se o caminho resolve e segue a mesma ordem.
+Senão `null`, nunca `Error`. Ponto é sempre caminho. `PropertyAccess::hasProperty($item, 'a.b')` diz se o caminho resolve e segue a mesma ordem; `PropertyAccess::accessor('a.b')` é a mesma leitura como `Closure`.
 
 ```php
+use Antevemus\ADeepPropertyAccess\PropertyAccess;
 use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ALinq\Attributes\Specifiable;
 
@@ -588,16 +593,18 @@ final class NotaFiscal
 
 $nota = new NotaFiscal('NF-001', 99.9);
 
-ALinqPropertyAccess::getValue($nota, 'total');              // 99.9 (getter público)
-ALinqPropertyAccess::getValue($nota, 'numero');             // 'NF-001' (privada, marcada com #[Specifiable]: último recurso)
-ALinqPropertyAccess::hasProperty($nota, 'numero');          // true
-ALinqPropertyAccess::getValue($nota, 'codigoAprovacao');    // null (privada, sem marca)
-ALinqPropertyAccess::hasProperty($nota, 'codigoAprovacao'); // false
-ALinqPropertyAccess::getValue($nota, 'inexistente');        // null
+PropertyAccess::getValue($nota, 'total');              // 99.9 (getter público)
+PropertyAccess::getValue($nota, 'numero');             // 'NF-001' (privada, marcada com #[Specifiable]: último recurso)
+PropertyAccess::hasProperty($nota, 'numero');          // true
+PropertyAccess::getValue($nota, 'codigoAprovacao');    // null (privada, sem marca)
+PropertyAccess::hasProperty($nota, 'codigoAprovacao'); // false
+PropertyAccess::getValue($nota, 'inexistente');        // null
 ALinqCollection::from([$nota])->whereBetween('codigoAprovacao', 'A', 'Z')->count(); // 0
 ```
 
-Por que opt-in: a biblioteca só recebe um nome em texto (em `where*()`, nos seletores de `orderBy()`, em `select()`, no query builder, em `createPropertySelector()`, em `createPropertyComparer()`) e não distingue o código do autor da entidade de um nome vindo do request. Sem a marca, filtrar ou ordenar por um campo privado o revelaria: `whereBetween('password_hash', 'a', 'b')` responde, faixa após faixa, por onde o valor começa. A 1.4.0 lia toda propriedade não pública; a 1.4.1 lê só as marcadas. `#[Antevemus\ASpecification\Attributes\Specifiable]` vale como a mesma marca (reconhecida pelo nome, sem depender daquele pacote). Getters públicos, `__get` guardado por `__isset` e propriedades públicas não precisam de marca.
+Por que opt-in: a biblioteca só recebe um nome em texto (em `where*()`, nos seletores de `orderBy()`, em `select()`, no query builder, em `createPropertySelector()`, em `createPropertyComparer()`) e não distingue o código do autor da entidade de um nome vindo do request. Sem a marca, filtrar ou ordenar por um campo privado o revelaria: `whereBetween('password_hash', 'a', 'b')` responde, faixa após faixa, por onde o valor começa. A 1.4.0 lia toda propriedade não pública; a 1.4.1 lê só as marcadas. `#[Antevemus\ALinq\Attributes\Specifiable]` é a marca a usar no código ALinq; `#[Antevemus\ASpecification\Attributes\Specifiable]` e `#[Antevemus\ADeepPropertyAccess\Attributes\Specifiable]` valem como a mesma marca (reconhecidas pelo nome, sem dependência entre os pacotes). Getters públicos, `__get` guardado por `__isset` e propriedades públicas não precisam de marca.
+
+**`ALinqPropertyAccess` (1.x) é fachada depreciada desde a 2.0.0**, removida na 3.0.0: `getValue()` e `hasProperty()` delegam aos métodos de mesmo nome do `PropertyAccess`, `getPropertyAccessor()` e `getNestedPropertyAccessor()` ao `PropertyAccess::accessor()`. Não emite aviso em tempo de execução. `ALinqPropertyAccess::createPropertyComparer($a, $b)` é do ALinq e fica. Veja o [UPGRADE-2.0.pt-BR.md](UPGRADE-2.0.pt-BR.md) para as respostas que mudaram nas bordas.
 
 ---
 
@@ -773,28 +780,28 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 558 ( 11%)
-............................................................... 126 / 558 ( 22%)
-............................................................... 189 / 558 ( 33%)
-............................................................... 252 / 558 ( 45%)
-............................................................... 315 / 558 ( 56%)
-............................................................... 378 / 558 ( 67%)
-............................................................... 441 / 558 ( 79%)
-............................................................... 504 / 558 ( 90%)
-......................................................          558 / 558 (100%)
+...............................................................  63 / 563 ( 11%)
+............................................................... 126 / 563 ( 22%)
+............................................................... 189 / 563 ( 33%)
+............................................................... 252 / 563 ( 44%)
+............................................................... 315 / 563 ( 55%)
+............................................................... 378 / 563 ( 67%)
+............................................................... 441 / 563 ( 78%)
+............................................................... 504 / 563 ( 89%)
+...........................................................     563 / 563 (100%)
 
 Time: 00:02.964, Memory: 8.00 MB
 
-OK (558 tests, 1835 assertions)
+OK (563 tests, 2148 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **558 Testes & 1835 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy (`tests/Contract`) e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
-- **Cobertura medida** (pcov, 1.5.0): 234 de 243 métodos e 1458 de 1477 linhas de `src/`; as 19 linhas descobertas são guardas defensivas (cinco no accessor de propriedades: os três blocos `catch` em torno da reflexão e a checagem de nome vazio da busca não pública; uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
+- **563 Testes & 2148 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy e a delegação ao acessor de propriedades compartilhado (`tests/Contract`), os blocos da §9 do README como estão escritos, e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
+- **Cobertura medida** (pcov, 2.0.0): 229 de 235 métodos e 1377 de 1391 linhas de `src/`; as 14 linhas descobertas são guardas defensivas (uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
-- **Zero Dependências Externas**: Biblioteca pura em PHP 8.4 sem nenhuma exigência de terceiros.
+- **Uma Dependência de Runtime, do Mesmo Autor**: Biblioteca pura em PHP 8.4; a única exigência é o [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (desde a 2.0.0), o acessor de propriedades compartilhado com o ASpecification, que não tem dependências próprias. Nenhum pacote de terceiros.
 
 ---
 
@@ -816,7 +823,7 @@ OK (558 tests, 1835 assertions)
 - [x] **v1.4.3**: `suggest` do ASpecification passa a `^1.9.0`; marco 12 do roadmap corrigido (Fiber não é paralelismo).
 - [x] **v1.5.0**: `fromHttpPages()`: fonte lazy sobre uma API HTTP paginada que baixa a próxima página com `curl_multi` enquanto a atual é consumida (zero dependência, marco 12 do ROADMAP, parte do núcleo).
 - [x] **v1.5.1**: o workflow do GitHub Actions passa a rodar (uma chave de ambiente duplicada fazia o GitHub recusá-lo); `suggest` do ASpecification passa a `^1.10.0`.
-- [ ] **Accessor de propriedades compartilhado** com o `Antevemus.ASpecification` (hoje os dois trazem a mesma ordem de resolução, inclusive o último recurso não público opt-in com `#[Specifiable]` desde a ALinq 1.4.1 e o ASpecification 1.6.1; extrair um pacote comum é assunto da 2.0).
+- [x] **v2.0.0**: acessor de propriedades compartilhado com o `Antevemus.ASpecification`: as duas bibliotecas resolvem nomes pelo [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (marco 11 do ROADMAP), `ALinqPropertyAccess` vira fachada depreciada até a 3.0; `extract()` (depreciado desde a 1.3.0) removido; `suggest` do ASpecification passa a `^2.0.0`. Veja o [UPGRADE-2.0.pt-BR.md](UPGRADE-2.0.pt-BR.md).
 - [ ] **Futuro**: o restante do marco de I/O concorrente, em pacotes satélites: coleção assíncrona sobre Fibers para SDKs assíncronos e paralelismo de CPU com processos. Fiber sozinha não é paralelismo.
 
 A visão por marcos desta lista, com releases-alvo, vive em [ROADMAP.md](ROADMAP.md).

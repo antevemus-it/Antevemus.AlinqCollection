@@ -24,10 +24,11 @@ use UnderflowException;
  * InvalidArgumentException instead of slicing from the tail (RN-13); element identity is
  * ALinqCallable::hashKey() (RN-06); a comparer may answer bool or `<=>` (RN-09).
  * whereIn()/whereNotIn()/whereBetween() (1.4.0) are sugar over where(): the field is read by
- * ALinqPropertyAccess, `in`/`notIn` are strict (`in_array(..., true)`), `between` is
- * inclusive and a null value is never between.
+ * the shared accessor (`PropertyAccess` of antevemus/adeep-property-access, since 2.0.0),
+ * `in`/`notIn` are strict (`in_array(..., true)`), `between` is inclusive and a null value
+ * is never between.
  *
- * @version    1.4.2
+ * @version    2.0.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -52,7 +53,7 @@ trait FilteringOperations
      *
      * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      * @param array $values The accepted values
      */
     public function whereIn(string $field, array $values): IALinqCollection
@@ -65,7 +66,7 @@ trait FilteringOperations
      *
      * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      * @param array $values The rejected values
      */
     public function whereNotIn(string $field, array $values): IALinqCollection
@@ -79,7 +80,7 @@ trait FilteringOperations
      *
      * Sugar over where(): a list comes out reindexed, a dictionary keeps its keys.
      *
-     * @param string $field Property name or dot-notation path, read by ALinqPropertyAccess
+     * @param string $field Property name or dot-notation path, read by the shared accessor (PropertyAccess)
      */
     public function whereBetween(string $field, mixed $min, mixed $max): IALinqCollection
     {

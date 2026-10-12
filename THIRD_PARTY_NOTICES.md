@@ -78,3 +78,19 @@ BSD 3-Clause License:
     CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
+
+-------------------------------------------------------------------------------
+4. RUNTIME DEPENDENCY — ANTEVEMUS DEEP PROPERTY ACCESS (since 2.0.0)
+-------------------------------------------------------------------------------
+
+Since version 2.0.0 this library requires antevemus/adeep-property-access, the
+property accessor shared with Antevemus ASpecification. It is first-party
+software from the same author, licensed under the MIT License, with no runtime
+dependencies of its own. It is installed by Composer as a separate package and
+carries its own LICENSE, NOTICE.md and THIRD_PARTY_NOTICES.md (including the
+attribution of the last resolution step to the Domian framework under the
+Apache License 2.0).
+
+    Package: antevemus/adeep-property-access
+    Copyright (c) 2026 Antevemus Soluções Inovadoras em TI Ltda.
+    Website: https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess

@@ -5,12 +5,12 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 15 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 2 contract test files (`tests/Contract/`)
-- **Total Tests:** 558 tests (1.5.0)
-- **Total Assertions:** 1835 assertions
+- **Test Files:** 16 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 2 contract test files (`tests/Contract/`)
+- **Total Tests:** 563 tests (2.0.0)
+- **Total Assertions:** 2148 assertions
 - **Lines of Test Code:** 9,500+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
-- **Runtime Dependencies:** Zero (pure PHP 8.4 native engine)
+- **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
 
 ---
 
@@ -87,12 +87,12 @@ Validates the sorting and ordering operations:
 Validates low-level array pointer traversal:
 - `current()`, `key()`, `next()`, `prev()`, `reset()`, `end()`
 
-### 9. `UtilityOperationsTest.php` (48 tests)
+### 9. `UtilityOperationsTest.php` (47 tests)
 Validates utility and helper operations:
 - `isList()` — Verifies sequential numeric 0-indexed list structure
 - `each()`, `eachRecursive()` — Side-effect iteration
 - `random()` — Random element sampling
-- `extract()` — Variable extraction
+- `extract()` — removed in 2.0.0 (deprecated since 1.3.0): one test proves that no class or interface declares it
 - `createPredicate()`, `createPropertySelector()` — Dynamic predicate helpers
 
 ### 10. `ALinqQueryBuilderTest.php` (55 tests)
@@ -104,7 +104,7 @@ Validates dynamic query composition:
 - Supported operators: `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`
 
 ### 11. `ALinqPropertyAccessTest.php` (53 tests)
-Validates universal property resolution:
+Validates universal property resolution through the 1.x API, `ALinqPropertyAccess`, which since 2.0.0 is a deprecated facade over `antevemus/adeep-property-access` (kept as the regression of that API until 3.0):
 - Dot-notation traversal (`user.address.city`)
 - Arrays, stdClass objects, public properties, and getter methods
 - Non-public properties of the class and its ancestors as the last resort, static and uninitialized ones included (1.4.0), only when marked `#[Specifiable]` on the property or on the declaring class (1.4.1)
@@ -135,9 +135,13 @@ Enforces the eager × lazy contract (README §11):
 - A second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields (marked `#[Specifiable]` since 1.4.1)
 - A guard fails when a public method shared by both classes is missing from the matrix
 
-### 15. `tests/Contract/AccessorContractTest.php` (3 tests)
-Keeps `ALinqPropertyAccess` the single property resolver:
-- The five public entry points that read a property (`getPropertyAccessor`, `getNestedPropertyAccessor`, `createPropertyComparer`, `createPropertySelector`, `ALinqQueryBuilder::where`) agree with `getValue()` on the same 14 cases (13 until 1.4.0; 1.4.1 sends 'private without getter' back to `null` and adds its `#[Specifiable]` twin), the same resolution order as the ASpecification `PropertyAccessor`
+### 15. `tests/Contract/AccessorContractTest.php` (7 tests)
+Proves that ALinq delegates the property resolution to `antevemus/adeep-property-access` (2.0.0; the contract battery with the written answers lives in that package):
+- The deprecated facade (`getValue`, `hasProperty`, `getPropertyAccessor`, `getNestedPropertyAccessor`) answers exactly as `PropertyAccess` on 53 cases (the 14 of the ALinq contract plus 39 edge cases of the package battery), without raising any notice
+- The five internal entry points (`createPropertySelector`, `createPropertyComparer`, `ALinqQueryBuilder::where`, eager and lazy `whereIn`) agree with the package on every case; the 14 ALinq cases keep their written answers
+- The answers that changed from 1.5.1 (getter with a required parameter, `__call()`, `__construct`, empty name, `ArrayObject` key holding `null`, the package's `#[Specifiable]`) reach the internal readers
+- The four facade methods are `@deprecated 2.0.0`, `createPropertyComparer()` is not, and the public API is the one of 1.x
+- No file of `src/` keeps a copy of the resolution (`method_exists`, `property_exists`, `ReflectionProperty`, `get_object_vars`, a getter name built with `ucfirst`) or calls the facade
 
 ### 16. `tests/Unit/Http/FromHttpPagesTest.php` (21 tests) and `HttpPageValueObjectsTest.php` (38 tests)
 Validate `ALinqLazyCollection::fromHttpPages()` (1.5.0, forward 027). `FromHttpPagesTest` starts a `php -S` server on a free port of 127.0.0.1 (`router.php`, four workers, a per-run request log as the call counter) in `setUpBeforeClass()` and stops it in `tearDownAfterClass()`; no traffic leaves the loopback interface:
@@ -150,6 +154,9 @@ Validate `ALinqLazyCollection::fromHttpPages()` (1.5.0, forward 027). `FromHttpP
 - `HttpPageValueObjectsTest` covers the request and option validation (schemes, header injection, timeouts), `header()`, `json()`, the RFC 8288 `link()` parser and URL redaction without a network
 
 Exclude them with `--exclude-group http` (they take about 2.5 s and need `ext-curl`).
+
+### 17. `tests/Unit/ReadmePropertyAccessTest.php` (2 tests)
+Runs the two code blocks of README §9 (EN and pt-BR) as written, read from the README files, and checks every commented answer (`// 99.9 (public getter)`, `// Returns: ...`) against what the code returns.
 
 ---
 

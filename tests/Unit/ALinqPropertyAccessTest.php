@@ -13,6 +13,11 @@ use PHPUnit\Framework\TestCase;
 
 /**
  * Tests for ALinqPropertyAccess Helper
+ *
+ * Since 2.0.0 ALinqPropertyAccess is a deprecated facade over antevemus/adeep-property-access
+ * (removed in 3.0.0; createPropertyComparer() stays). These tests keep running through the facade
+ * on purpose: they are the regression of the 1.x API that code calling it still relies on.
+ * tests/Contract/AccessorContractTest.php proves that the facade only delegates.
  */
 class ALinqPropertyAccessTest extends TestCase
 {
