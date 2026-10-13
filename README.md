@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.0.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-563%20passed%20%7C%202148%20assertions-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/tests-598%20passed%20%7C%202321%20assertions-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -391,9 +391,16 @@ $orders->single(fn($o) => $o['status'] === 'COMPLETED'); // OverflowException: S
 ALinqCollection::from([])->single();                     // UnderflowException: Sequence contains no elements.
 $orders->single();                                       // OverflowException: Sequence contains more than one element.
 $orders->singleOrDefault(null, fn($o) => $o['status'] === 'CANCELLED'); // null (the tolerant variant)
+
+// minOrDefault() & co.: the sibling's answer, or a fallback when there is nothing to aggregate (since 2.1.0)
+$smallest = $orders->minOrDefault(null, fn($o) => $o['amount']);                                    // 45.0
+$cancelled = $orders->where(fn($o) => $o['status'] === 'CANCELLED')->maxOrDefault(0.0, fn($o) => $o['amount']); // 0.0 (max() would throw)
+ALinqCollection::from([])->averageOrDefault();                                                       // null
 ```
 
 `single()` throws the same exception classes and messages on the eager and the lazy collection; `singleOrDefault()` returns the default when nothing matches and still throws `OverflowException` on more than one match.
+
+`minOrDefault($default = null, $selector)`, `maxOrDefault(...)`, `averageOrDefault(...)`, `minByOrDefault($default, $keySelector)` and `maxByOrDefault(...)` (since 2.1.0, both collections) give the same answer as `min()`/`max()`/`average()`/`minBy()`/`maxBy()`, but when there is nothing to aggregate (empty, or only nulls where the sibling skips them) they return `$default` instead of throwing `UnderflowException`; every other error throws as before, with the same class and message. They read the source once, so they are safe on single-pass sources such as `fromCursor()`, where the guard `any() ? min() : null` reads it twice (and fails on a cursor). `$default` comes first, as in `firstOrDefault()`.
 
 ---
 
@@ -756,7 +763,7 @@ Both collections obey one written contract, enforced by a parity test that runs 
 | **Keys** | A **list** (`array_is_list()`) comes out **reindexed** from every filtering, slicing, set or ordering operation; a **dictionary** (any other key shape, including `[10 => 'a', 20 => 'b']`) **keeps its keys**. `select()` always preserves keys. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` always produce a list. `chunk()` is a list of collections (each chunk follows the rule of its source). The lazy collection knows whether its source is a list (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `fromHttpPages()`, `range()`, `repeat()`); a raw generator is "unknown" and keeps its keys while streaming, and `toArray()` reindexes it only when every key is an integer. Materialization never loses an item: a repeated key is appended. |
 | **Equality** | Elements and keys are compared by **strict, type-aware identity** everywhere: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `contains`, and the collection `whereIn`/`whereNotIn`. `1`, `'1'`, `1.0` and `true` are four different values; arrays compare by value; objects by identity. A `null` key never matches in `join`/`groupJoin` or in the outer joins (LINQ and SQL semantics; in an outer join that item comes out without a partner). A database column that arrives as a string does not match an integer key: cast on your side. A custom comparer (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) may return `bool` (`true` = equal) or a `<=>` style integer (`0` = equal). |
 | **Group keys** | `groupBy`, `countBy`, `aggregateBy` and `toDictionary` accept `int`, `string` and `BackedEnum` (its value) keys; `null`, `bool`, `float`, arrays and objects throw `InvalidArgumentException` instead of being silently coerced. `toDictionary()` throws on a repeated key. |
-| **Empty collections** | As in LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` return the default; `singleOrDefault()` throws `OverflowException` on more than one match; `single()` (1.4.0) throws `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` and `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` throws `UnderflowException` like `first()` and `random(n > 1)` returns an empty collection like `take(n)`; `sum()` of nothing is `0`, `product()` of nothing is `1`; `any()` means "has at least one item"; `all($p)` of nothing is `true`; `all()` without predicate means "every item is truthy". |
+| **Empty collections** | As in LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` throw `UnderflowException` on an empty collection or when no element matches; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` return the default, and so do `minOrDefault()`, `maxOrDefault()`, `averageOrDefault()`, `minByOrDefault()`, `maxByOrDefault()` (2.1.0) where their sibling throws for want of something to aggregate; `singleOrDefault()` throws `OverflowException` on more than one match; `single()` (1.4.0) throws `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` and `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` throws `UnderflowException` like `first()` and `random(n > 1)` returns an empty collection like `take(n)`; `sum()` of nothing is `0`, `product()` of nothing is `1`; `any()` means "has at least one item"; `all($p)` of nothing is `true`; `all()` without predicate means "every item is truthy". |
 | **Ordering** (1.4.0) | `orderBy()`/`orderByDescending()` are stable; `thenBy()`/`thenByDescending()` refine a collection that comes straight from `orderBy*()`/`thenBy*()` and throw `LogicException('thenBy() requires a preceding orderBy().')` (or `thenByDescending() ...`) after any other operation; a full tie keeps the source order; key selectors receive `($item, $key)` with the source key; a comparer receives the two keys, `fn($keyA, $keyB): int`. |
 | **Arguments** | `take`/`skip`/`pad` with a negative count, `chunk(0)`, `random(0)`, `range()` with a non-positive step throw `InvalidArgumentException` (nothing slices from the tail or is silently ignored). |
 | **Numbers** | `sum`, `average`, `min`, `max`, `product` **ignore `null`** (`average([1, null, 2])` is `1.5`); when only `null` remains the collection counts as empty. A non-numeric value (string, array, object) throws `InvalidArgumentException` in `sum`/`average`/`product`; `min`/`max` compare any scalar or `DateTimeInterface`. |
@@ -780,26 +787,27 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 563 ( 11%)
-............................................................... 126 / 563 ( 22%)
-............................................................... 189 / 563 ( 33%)
-............................................................... 252 / 563 ( 44%)
-............................................................... 315 / 563 ( 55%)
-............................................................... 378 / 563 ( 67%)
-............................................................... 441 / 563 ( 78%)
-............................................................... 504 / 563 ( 89%)
-...........................................................     563 / 563 (100%)
+...............................................................  63 / 598 ( 10%)
+............................................................... 126 / 598 ( 21%)
+............................................................... 189 / 598 ( 31%)
+............................................................... 252 / 598 ( 42%)
+............................................................... 315 / 598 ( 52%)
+............................................................... 378 / 598 ( 63%)
+............................................................... 441 / 598 ( 73%)
+............................................................... 504 / 598 ( 84%)
+............................................................... 567 / 598 ( 94%)
+...............................                                 598 / 598 (100%)
 
 Time: 00:02.964, Memory: 8.00 MB
 
-OK (563 tests, 2148 assertions)
+OK (598 tests, 2321 assertions)
 ====================================================================
  RESULT: 100% SUITE PASS | 0 REGRESSIONS | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **563 Tests & 2148 Assertions** certifying all 8 functional traits, the generator streaming engine, the eager × lazy contract and the delegation to the shared property accessor (`tests/Contract`), the README §9 blocks as written, and the paginated HTTP source against a local `php -S` server on 127.0.0.1 (`tests/Unit/Http`, group `http`).
-- **Measured coverage** (pcov, 2.0.0): 229 of 235 methods and 1377 of 1391 lines of `src/`; the 14 uncovered lines are defensive guards (one in the shared outer join: the unknown-kind check; thirteen on the HTTP path: ext-curl missing, curl handle setup failures, an empty transport message or effective URL, a failed socket wait and an unparseable base URL in `link()`).
+- **598 Tests & 2321 Assertions** certifying all 8 functional traits, the generator streaming engine, the eager × lazy contract and the delegation to the shared property accessor (`tests/Contract`), the README §9 blocks as written, and the paginated HTTP source against a local `php -S` server on 127.0.0.1 (`tests/Unit/Http`, group `http`).
+- **Measured coverage** (pcov, 2.1.0): 243 of 249 methods and 1380 of 1394 lines of `src/`; the 14 uncovered lines are defensive guards (one in the shared outer join: the unknown-kind check; thirteen on the HTTP path: ext-curl missing, curl handle setup failures, an empty transport message or effective URL, a failed socket wait and an unparseable base URL in `link()`).
 - **PHP 8.4 Native Compatibility**: Verified with native `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **One Runtime Dependency, Same Author**: Pure PHP 8.4 library; its only requirement is [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (since 2.0.0), the property accessor shared with ASpecification, which has no dependencies of its own. No third-party package.
 
@@ -824,6 +832,7 @@ OK (563 tests, 2148 assertions)
 - [x] **v1.5.0**: `fromHttpPages()`: a lazy source over a paginated HTTP API that downloads the next page with `curl_multi` while the current one is consumed (zero dependency, ROADMAP milestone 12, core part).
 - [x] **v1.5.1**: the GitHub Actions workflow runs (a duplicated environment key made GitHub refuse it); `suggest` for ASpecification raised to `^1.10.0`.
 - [x] **v2.0.0**: shared property accessor with `Antevemus.ASpecification`: both libraries resolve names through [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (ROADMAP milestone 11), `ALinqPropertyAccess` becomes a deprecated facade until 3.0; `extract()` (deprecated since 1.3.0) removed; `suggest` for ASpecification raised to `^2.0.0`. See [UPGRADE-2.0.md](UPGRADE-2.0.md).
+- [x] **v2.1.0**: `minOrDefault()` / `maxOrDefault()` / `averageOrDefault()` / `minByOrDefault()` / `maxByOrDefault()`: the aggregate, or a fallback when there is nothing to aggregate, in one traversal (safe on single-pass sources).
 - [ ] **Future**: the rest of the concurrent I/O milestone, in companion packages: an async collection on Fibers for async SDKs and CPU parallelism with worker processes. A Fiber alone is not parallelism.
 
 The milestone view of this list, with target releases, lives in [ROADMAP.md](ROADMAP.md).

@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.0.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-563%20aprovados%20%7C%202148%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-598%20aprovados%20%7C%202321%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -391,9 +391,16 @@ $pedidos->single(fn($p) => $p['status'] === 'CONCLUIDO'); // OverflowException: 
 ALinqCollection::from([])->single();                      // UnderflowException: Sequence contains no elements.
 $pedidos->single();                                       // OverflowException: Sequence contains more than one element.
 $pedidos->singleOrDefault(null, fn($p) => $p['status'] === 'CANCELADO'); // null (a variante tolerante)
+
+// minOrDefault() e família: a resposta do irmão, ou um fallback quando não há o que agregar (desde a 2.1.0)
+$menor = $pedidos->minOrDefault(null, fn($p) => $p['valor']);                                        // 45.0
+$cancelados = $pedidos->where(fn($p) => $p['status'] === 'CANCELADO')->maxOrDefault(0.0, fn($p) => $p['valor']); // 0.0 (max() lançaria)
+ALinqCollection::from([])->averageOrDefault();                                                       // null
 ```
 
 `single()` lança as mesmas classes de exceção, com as mesmas mensagens, na coleção eager e na lazy; `singleOrDefault()` devolve o default quando nada casa e continua lançando `OverflowException` com mais de um resultado.
+
+`minOrDefault($default = null, $seletor)`, `maxOrDefault(...)`, `averageOrDefault(...)`, `minByOrDefault($default, $seletorDeChave)` e `maxByOrDefault(...)` (desde a 2.1.0, nas duas coleções) dão a mesma resposta de `min()`/`max()`/`average()`/`minBy()`/`maxBy()`, mas, quando não há o que agregar (vazio, ou só nulos onde o irmão pula nulos), devolvem `$default` em vez de lançar `UnderflowException`; todo outro erro lança como antes, com a mesma classe e mensagem. Leem a fonte uma vez só, então são seguros em fontes de passada única como `fromCursor()`, onde a guarda `any() ? min() : null` lê a fonte duas vezes (e falha num cursor). `$default` vem primeiro, como no `firstOrDefault()`.
 
 ---
 
@@ -756,7 +763,7 @@ As duas coleções obedecem a um único contrato escrito, garantido por um teste
 | **Chaves** | Uma **lista** (`array_is_list()`) sai **reindexada** de toda operação de filtragem, fatiamento, conjunto ou ordenação; um **dicionário** (qualquer outro formato de chaves, inclusive `[10 => 'a', 20 => 'b']`) **mantém as chaves**. `select()` sempre preserva as chaves. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` sempre produzem lista. `chunk()` é uma lista de coleções (cada pedaço segue a regra da sua origem). A coleção lazy sabe se a fonte é lista (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `fromHttpPages()`, `range()`, `repeat()`); um generator cru é "desconhecido": mantém as chaves durante o streaming e `toArray()` só reindexa quando todas as chaves são inteiras. A materialização nunca perde item: chave repetida é anexada. |
 | **Igualdade** | Elementos e chaves são comparados por **identidade estrita e tipada** em toda parte: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `contains`, e o `whereIn`/`whereNotIn` das coleções. `1`, `'1'`, `1.0` e `true` são quatro valores diferentes; arrays comparam por valor; objetos por identidade. Chave `null` nunca casa em `join`/`groupJoin` nem nas junções externas (semântica do LINQ e do SQL; numa junção externa esse item sai sem par). Uma coluna de banco que chega como string não casa com uma chave inteira: faça o cast do seu lado. Um comparador customizado (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) pode devolver `bool` (`true` = iguais) ou um inteiro no estilo `<=>` (`0` = iguais). |
 | **Chaves de grupo** | `groupBy`, `countBy`, `aggregateBy` e `toDictionary` aceitam chaves `int`, `string` e `BackedEnum` (o seu valor); `null`, `bool`, `float`, arrays e objetos lançam `InvalidArgumentException` em vez de serem coagidos em silêncio. `toDictionary()` lança em chave repetida. |
-| **Coleções vazias** | Como no LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` lançam `UnderflowException` em coleção vazia ou quando nenhum elemento casa; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` devolvem o default; `singleOrDefault()` lança `OverflowException` com mais de um resultado; `single()` (1.4.0) lança `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` e `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` lança `UnderflowException` como `first()` e `random(n > 1)` devolve coleção vazia como `take(n)`; `sum()` de nada é `0`, `product()` de nada é `1`; `any()` significa "tem ao menos um item"; `all($p)` de nada é `true`; `all()` sem predicado significa "todo item é truthy". |
+| **Coleções vazias** | Como no LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` lançam `UnderflowException` em coleção vazia ou quando nenhum elemento casa; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` devolvem o default, assim como `minOrDefault()`, `maxOrDefault()`, `averageOrDefault()`, `minByOrDefault()`, `maxByOrDefault()` (2.1.0) onde o irmão lança por não haver o que agregar; `singleOrDefault()` lança `OverflowException` com mais de um resultado; `single()` (1.4.0) lança `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` e `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` lança `UnderflowException` como `first()` e `random(n > 1)` devolve coleção vazia como `take(n)`; `sum()` de nada é `0`, `product()` de nada é `1`; `any()` significa "tem ao menos um item"; `all($p)` de nada é `true`; `all()` sem predicado significa "todo item é truthy". |
 | **Ordenação** (1.4.0) | `orderBy()`/`orderByDescending()` são estáveis; `thenBy()`/`thenByDescending()` refinam uma coleção que vem direto de `orderBy*()`/`thenBy*()` e lançam `LogicException('thenBy() requires a preceding orderBy().')` (ou `thenByDescending() ...`) depois de qualquer outra operação; empate total mantém a ordem da origem; seletores de chave recebem `($item, $key)` com a chave da origem; um comparador recebe as duas chaves, `fn($chaveA, $chaveB): int`. |
 | **Argumentos** | `take`/`skip`/`pad` com contagem negativa, `chunk(0)`, `random(0)`, `range()` com passo não positivo lançam `InvalidArgumentException` (nada fatia pela cauda nem é ignorado em silêncio). |
 | **Números** | `sum`, `average`, `min`, `max`, `product` **ignoram `null`** (`average([1, null, 2])` é `1.5`); quando só resta `null`, a coleção conta como vazia. Valor não numérico (string, array, objeto) lança `InvalidArgumentException` em `sum`/`average`/`product`; `min`/`max` comparam qualquer escalar ou `DateTimeInterface`. |
@@ -780,26 +787,27 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 563 ( 11%)
-............................................................... 126 / 563 ( 22%)
-............................................................... 189 / 563 ( 33%)
-............................................................... 252 / 563 ( 44%)
-............................................................... 315 / 563 ( 55%)
-............................................................... 378 / 563 ( 67%)
-............................................................... 441 / 563 ( 78%)
-............................................................... 504 / 563 ( 89%)
-...........................................................     563 / 563 (100%)
+...............................................................  63 / 598 ( 10%)
+............................................................... 126 / 598 ( 21%)
+............................................................... 189 / 598 ( 31%)
+............................................................... 252 / 598 ( 42%)
+............................................................... 315 / 598 ( 52%)
+............................................................... 378 / 598 ( 63%)
+............................................................... 441 / 598 ( 73%)
+............................................................... 504 / 598 ( 84%)
+............................................................... 567 / 598 ( 94%)
+...............................                                 598 / 598 (100%)
 
 Time: 00:02.964, Memory: 8.00 MB
 
-OK (563 tests, 2148 assertions)
+OK (598 tests, 2321 assertions)
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **563 Testes & 2148 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy e a delegação ao acessor de propriedades compartilhado (`tests/Contract`), os blocos da §9 do README como estão escritos, e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
-- **Cobertura medida** (pcov, 2.0.0): 229 de 235 métodos e 1377 de 1391 linhas de `src/`; as 14 linhas descobertas são guardas defensivas (uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
+- **598 Testes & 2321 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy e a delegação ao acessor de propriedades compartilhado (`tests/Contract`), os blocos da §9 do README como estão escritos, e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
+- **Cobertura medida** (pcov, 2.1.0): 243 de 249 métodos e 1380 de 1394 linhas de `src/`; as 14 linhas descobertas são guardas defensivas (uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Uma Dependência de Runtime, do Mesmo Autor**: Biblioteca pura em PHP 8.4; a única exigência é o [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (desde a 2.0.0), o acessor de propriedades compartilhado com o ASpecification, que não tem dependências próprias. Nenhum pacote de terceiros.
 
@@ -824,6 +832,7 @@ OK (563 tests, 2148 assertions)
 - [x] **v1.5.0**: `fromHttpPages()`: fonte lazy sobre uma API HTTP paginada que baixa a próxima página com `curl_multi` enquanto a atual é consumida (zero dependência, marco 12 do ROADMAP, parte do núcleo).
 - [x] **v1.5.1**: o workflow do GitHub Actions passa a rodar (uma chave de ambiente duplicada fazia o GitHub recusá-lo); `suggest` do ASpecification passa a `^1.10.0`.
 - [x] **v2.0.0**: acessor de propriedades compartilhado com o `Antevemus.ASpecification`: as duas bibliotecas resolvem nomes pelo [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (marco 11 do ROADMAP), `ALinqPropertyAccess` vira fachada depreciada até a 3.0; `extract()` (depreciado desde a 1.3.0) removido; `suggest` do ASpecification passa a `^2.0.0`. Veja o [UPGRADE-2.0.pt-BR.md](UPGRADE-2.0.pt-BR.md).
+- [x] **v2.1.0**: `minOrDefault()` / `maxOrDefault()` / `averageOrDefault()` / `minByOrDefault()` / `maxByOrDefault()`: o agregado, ou um fallback quando não há o que agregar, numa passada só (seguros em fontes de passada única).
 - [ ] **Futuro**: o restante do marco de I/O concorrente, em pacotes satélites: coleção assíncrona sobre Fibers para SDKs assíncronos e paralelismo de CPU com processos. Fiber sozinha não é paralelismo.
 
 A visão por marcos desta lista, com releases-alvo, vive em [ROADMAP.md](ROADMAP.md).

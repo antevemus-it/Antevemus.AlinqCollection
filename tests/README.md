@@ -5,9 +5,9 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 16 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 2 contract test files (`tests/Contract/`)
-- **Total Tests:** 563 tests (2.0.0)
-- **Total Assertions:** 2148 assertions
+- **Test Files:** 17 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 3 contract test files (`tests/Contract/`)
+- **Total Tests:** 598 tests (2.1.0)
+- **Total Assertions:** 2321 assertions
 - **Lines of Test Code:** 9,500+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
@@ -157,6 +157,15 @@ Exclude them with `--exclude-group http` (they take about 2.5 s and need `ext-cu
 
 ### 17. `tests/Unit/ReadmePropertyAccessTest.php` (2 tests)
 Runs the two code blocks of README §9 (EN and pt-BR) as written, read from the README files, and checks every commented answer (`// 99.9 (public getter)`, `// Returns: ...`) against what the code returns.
+
+### 18. `tests/Unit/AggregationOrDefaultTest.php` (33 tests)
+The aggregates with a fallback (2.1.0, `minOrDefault`, `maxOrDefault`, `averageOrDefault`, `minByOrDefault`, `maxByOrDefault`):
+- Single pass: on a source that throws when opened a second time, each method reads it once (with values, empty, only nulls; directly and after `where()`), while the guard `any() ? min() : null` fails on the same source
+- The consumer's code that motivated the methods, rewritten, on both collections and over `fromCursor()` (SQLite), including why the selector needs `strtotime(...) ?: null`
+- Both interfaces declare the five methods with `$default` first
+
+### 19. `tests/Contract/AggregateOrDefaultContractTest.php` (2 tests)
+Uses the sibling as the oracle: 17 pairs (sibling, `OrDefault` variant) × 13 inputs × 2 sides. Where the sibling throws `UnderflowException` the variant returns the default; everywhere else (values, ties, non-comparable or non-numeric values, a throwing selector) the answer, or the exception class and message, is the same; eager and lazy agree. A tie returns the first item, by identity.
 
 ---
 

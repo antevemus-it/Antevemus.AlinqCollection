@@ -27,6 +27,10 @@ use Throwable;
  * keys 0, 1, 0, 1): the eager side cannot hold repeated keys, so it receives the list
  * [1, 2, 3, 4]. Operations that read the key are therefore excluded for "D" only
  * (KEY_DEPENDENT): the source keys are the data, not a divergence.
+ *
+ * 2.1.0 (forward 036, RN-02): the five aggregates with a default joined the matrix; their
+ * own matrix (only nulls, ties, values that are not comparable, a throwing selector, each
+ * answer checked against the sibling without default) is AggregateOrDefaultContractTest.
  */
 final class ParityTest extends TestCase
 {
@@ -43,6 +47,9 @@ final class ParityTest extends TestCase
         'single(fn(v,k) k===1)',
         'orderBy(fn(v,k) -k)',
         'thenByDescending(fn(v,k) k)',
+        'minOrDefault("d", fn(v,k))',
+        'averageOrDefault("d", fn(v,k))',
+        'maxByOrDefault("d", fn(v,k) k)',
     ];
 
     /**
@@ -116,6 +123,15 @@ final class ParityTest extends TestCase
             'max()' => fn($c) => $c->max(),
             'minBy(fn)' => fn($c) => $c->minBy(fn($v) => is_int($v) ? -$v : 0),
             'maxBy(fn)' => fn($c) => $c->maxBy(fn($v) => is_int($v) ? -$v : 0),
+            // 2.1.0 (forward 036, RN-02): the aggregates with a default, on the same seven inputs
+            'minOrDefault()' => fn($c) => $c->minOrDefault(),
+            'minOrDefault("d", fn(v,k))' => fn($c) => $c->minOrDefault('d', fn($v, $k) => is_int($v) ? $v * 10 + (is_int($k) ? $k : 0) : $v),
+            'maxOrDefault("d")' => fn($c) => $c->maxOrDefault('d'),
+            'averageOrDefault("d")' => fn($c) => $c->averageOrDefault('d'),
+            'averageOrDefault("d", fn(v,k))' => fn($c) => $c->averageOrDefault('d', fn($v, $k) => is_int($k) ? $k : null),
+            'minByOrDefault("d", fn)' => fn($c) => $c->minByOrDefault('d', fn($v) => is_int($v) ? -$v : 0),
+            'maxByOrDefault("d", fn)' => fn($c) => $c->maxByOrDefault('d', fn($v) => is_int($v) ? -$v : 0),
+            'maxByOrDefault("d", fn(v,k) k)' => fn($c) => $c->maxByOrDefault('d', fn($v, $k) => $k),
             'aggregate("", concat k)' => fn($c) => $c->aggregate('', fn($acc, $v, $k) => $acc . "[$k=" . json_encode($v) . ']'),
             'each(collect k)' => function ($c) {
                 $seen = [];

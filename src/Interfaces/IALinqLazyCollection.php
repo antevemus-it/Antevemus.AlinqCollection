@@ -37,7 +37,12 @@ use Traversable;
  * Since 1.5.0 (forward 027) fromHttpPages() is a lazy source over a paginated HTTP API with
  * prefetch of the next page (lazy side only, like fromFile()).
  *
- * @version    2.0.0
+ * Since 2.1.0 (forward 036): minOrDefault(), maxOrDefault(), averageOrDefault(),
+ * minByOrDefault() and maxByOrDefault(), with the answers of the eager side, in one
+ * traversal (safe on a single-pass source such as fromCursor()). Classes that implement this
+ * interface on their own must add them.
+ *
+ * @version    2.1.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -507,6 +512,17 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function average(?callable $selector = null): int|float;
 
     /**
+     * Compute the arithmetic mean like average(), in one traversal, or return `$default` when
+     * there is no non-null value to average.
+     *
+     * @param mixed $default
+     * @param callable|null $selector
+     * @return mixed
+     * @throws \InvalidArgumentException when a value is not numeric
+     */
+    public function averageOrDefault(mixed $default = null, ?callable $selector = null): mixed;
+
+    /**
      * Find the minimum value in the stream; `null` values are skipped.
      *
      * @param callable|null $selector
@@ -515,6 +531,17 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @throws \InvalidArgumentException when a value is not comparable
      */
     public function min(?callable $selector = null): mixed;
+
+    /**
+     * Find the minimum value like min(), in one traversal, or return `$default` when there is
+     * no non-null value.
+     *
+     * @param mixed $default
+     * @param callable|null $selector
+     * @return mixed
+     * @throws \InvalidArgumentException when a value is not comparable
+     */
+    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed;
 
     /**
      * Find the maximum value in the stream; `null` values are skipped.
@@ -527,6 +554,17 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function max(?callable $selector = null): mixed;
 
     /**
+     * Find the maximum value like max(), in one traversal, or return `$default` when there is
+     * no non-null value.
+     *
+     * @param mixed $default
+     * @param callable|null $selector
+     * @return mixed
+     * @throws \InvalidArgumentException when a value is not comparable
+     */
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed;
+
+    /**
      * Find the element yielding the minimum value via key selector.
      *
      * @param callable $keySelector
@@ -536,6 +574,16 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function minBy(callable $keySelector): mixed;
 
     /**
+     * Find the element yielding the minimum value like minBy() (the first one on a tie), in
+     * one traversal, or return `$default` when the stream is empty.
+     *
+     * @param mixed $default
+     * @param callable $keySelector
+     * @return mixed
+     */
+    public function minByOrDefault(mixed $default, callable $keySelector): mixed;
+
+    /**
      * Find the element yielding the maximum value via key selector.
      *
      * @param callable $keySelector
@@ -543,6 +591,16 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @throws \UnderflowException when the stream is empty
      */
     public function maxBy(callable $keySelector): mixed;
+
+    /**
+     * Find the element yielding the maximum value like maxBy() (the first one on a tie), in
+     * one traversal, or return `$default` when the stream is empty.
+     *
+     * @param mixed $default
+     * @param callable $keySelector
+     * @return mixed
+     */
+    public function maxByOrDefault(mixed $default, callable $keySelector): mixed;
 
     /**
      * Perform an accumulator fold over the stream with constant memory.

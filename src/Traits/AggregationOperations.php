@@ -28,7 +28,13 @@ use UnderflowException;
  * OverflowException (more than one), with the messages of the lazy side
  * (ALinqContract::single()).
  *
- * @version    1.4.0
+ * Since 2.1.0 (forward 036): minOrDefault(), maxOrDefault(), averageOrDefault(),
+ * minByOrDefault() and maxByOrDefault() answer exactly as their siblings, except that the
+ * UnderflowException of "nothing to aggregate" (empty, or only nulls where the sibling skips
+ * them) becomes the given default. They run on the same private helpers as the siblings,
+ * so every other exception (not comparable, not numeric, a throwing selector) is the same.
+ *
+ * @version    2.1.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -130,8 +136,36 @@ trait AggregationOperations
      */
     public function average(?callable $selector = null): int|float
     {
+        return $this->mean($selector, false, null);
+    }
+
+    /**
+     * Get average of elements, or the default when there is nothing to average
+     * (AverageOrDefault: LINQ's nullable Average, with a chosen default instead of null)
+     *
+     * The same answer as average(), except that an empty collection (or one with only nulls)
+     * returns $default instead of throwing.
+     *
+     * @param mixed $default Returned when there is no non-null value
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws InvalidArgumentException for a value that is not numeric (as average())
+     */
+    public function averageOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->mean($selector, true, $default);
+    }
+
+    /**
+     * Arithmetic mean of the numeric values, nulls skipped; when there is none, $default
+     * ($orDefault) or UnderflowException.
+     */
+    private function mean(?callable $selector, bool $orDefault, mixed $default): mixed
+    {
         $values = $this->numericValues($selector, 'average');
         if ($values === []) {
+            if ($orDefault) {
+                return $default;
+            }
             throw new UnderflowException('Cannot compute average() of an empty collection (null values are skipped).');
         }
         return array_sum($values) / count($values);
@@ -145,7 +179,24 @@ trait AggregationOperations
      */
     public function min(?callable $selector = null)
     {
-        return $this->extreme($selector, 'min', -1);
+        return $this->extreme($selector, 'min', -1, false, null);
+    }
+
+    /**
+     * Get minimum value, or the default when there is none (MinOrDefault: LINQ's nullable
+     * Min, with a chosen default instead of null)
+     *
+     * The same answer as min(), except that an empty collection (or one with only nulls)
+     * returns $default instead of throwing. A `null` default is indistinguishable from
+     * "nothing to compare", as in firstOrDefault().
+     *
+     * @param mixed $default Returned when there is no non-null value
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws InvalidArgumentException for a value that is not comparable (as min())
+     */
+    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->extreme($selector, 'min', -1, true, $default);
     }
 
     /**
@@ -156,13 +207,30 @@ trait AggregationOperations
      */
     public function max(?callable $selector = null)
     {
-        return $this->extreme($selector, 'max', 1);
+        return $this->extreme($selector, 'max', 1, false, null);
     }
 
     /**
-     * Smallest ($direction -1) or largest (1) comparable value, nulls skipped.
+     * Get maximum value, or the default when there is none (MaxOrDefault: LINQ's nullable
+     * Max, with a chosen default instead of null)
+     *
+     * The same answer as max(), except that an empty collection (or one with only nulls)
+     * returns $default instead of throwing.
+     *
+     * @param mixed $default Returned when there is no non-null value
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws InvalidArgumentException for a value that is not comparable (as max())
      */
-    private function extreme(?callable $selector, string $operation, int $direction): mixed
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->extreme($selector, 'max', 1, true, $default);
+    }
+
+    /**
+     * Smallest ($direction -1) or largest (1) comparable value, nulls skipped; when there is
+     * none, $default ($orDefault) or UnderflowException.
+     */
+    private function extreme(?callable $selector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         $found = false;
         $extreme = null;
@@ -178,6 +246,9 @@ trait AggregationOperations
         }
 
         if (!$found) {
+            if ($orDefault) {
+                return $default;
+            }
             throw new UnderflowException(sprintf('Cannot compute %s() of an empty collection (null values are skipped).', $operation));
         }
         return $extreme;
@@ -260,7 +331,23 @@ trait AggregationOperations
      */
     public function maxBy(callable $keySelector): mixed
     {
-        return $this->extremeBy($keySelector, 'maxBy', 1);
+        return $this->extremeBy($keySelector, 'maxBy', 1, false, null);
+    }
+
+    /**
+     * Returns the element with the largest key, or the default when the collection is empty
+     * (MaxByOrDefault: LINQ's MaxBy over a nullable source, with a chosen default)
+     *
+     * The same answer as maxBy(), except that an empty collection returns $default instead
+     * of throwing; like maxBy(), a null key is compared, not skipped.
+     *
+     * @param mixed $default Returned when the collection is empty
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @return mixed The first element whose key is the largest, or $default
+     */
+    public function maxByOrDefault(mixed $default, callable $keySelector): mixed
+    {
+        return $this->extremeBy($keySelector, 'maxBy', 1, true, $default);
     }
 
     /**
@@ -272,15 +359,35 @@ trait AggregationOperations
      */
     public function minBy(callable $keySelector): mixed
     {
-        return $this->extremeBy($keySelector, 'minBy', -1);
+        return $this->extremeBy($keySelector, 'minBy', -1, false, null);
     }
 
     /**
-     * First element whose key is the smallest ($direction -1) or the largest (1).
+     * Returns the element with the smallest key, or the default when the collection is empty
+     * (MinByOrDefault: LINQ's MinBy over a nullable source, with a chosen default)
+     *
+     * The same answer as minBy(), except that an empty collection returns $default instead
+     * of throwing; like minBy(), a null key is compared, not skipped.
+     *
+     * @param mixed $default Returned when the collection is empty
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @return mixed The first element whose key is the smallest, or $default
      */
-    private function extremeBy(callable $keySelector, string $operation, int $direction): mixed
+    public function minByOrDefault(mixed $default, callable $keySelector): mixed
+    {
+        return $this->extremeBy($keySelector, 'minBy', -1, true, $default);
+    }
+
+    /**
+     * First element whose key is the smallest ($direction -1) or the largest (1); when the
+     * collection is empty, $default ($orDefault) or UnderflowException.
+     */
+    private function extremeBy(callable $keySelector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         if ($this->items === []) {
+            if ($orDefault) {
+                return $default;
+            }
             throw new UnderflowException(sprintf('Cannot compute %s() of an empty collection.', $operation));
         }
 

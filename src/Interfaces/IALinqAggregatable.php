@@ -15,7 +15,12 @@ namespace Antevemus\ALinq\Interfaces;
  * and count `bool` as 0/1; anything else throws `InvalidArgumentException`. Group keys must
  * be int, string or BackedEnum. `single()` (1.4.0) throws where LINQ `Single` throws.
  *
- * @version    1.4.0
+ * Since 2.1.0 (forward 036): `minOrDefault`, `maxOrDefault`, `averageOrDefault`,
+ * `minByOrDefault` and `maxByOrDefault` answer as their siblings, with `$default` instead of
+ * the `UnderflowException` of "nothing to aggregate"; every other exception is the same.
+ * Classes that implement this interface on their own must add them.
+ *
+ * @version    2.1.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -64,6 +69,16 @@ interface IALinqAggregatable extends IALinqBaseCollection
     public function average(?callable $selector = null): int|float;
 
     /**
+     * Get average of elements, or `$default` when there is no non-null value to average
+     * (LINQ's nullable Average, with a chosen default instead of null)
+     *
+     * @param mixed $default Returned instead of the UnderflowException of average()
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws \InvalidArgumentException when a value is not numeric
+     */
+    public function averageOrDefault(mixed $default = null, ?callable $selector = null);
+
+    /**
      * Get minimum value (Min in LINQ); `null` values are skipped; scalars and DateTimeInterface are comparable
      *
      * @throws \UnderflowException when there is no non-null value
@@ -72,12 +87,33 @@ interface IALinqAggregatable extends IALinqBaseCollection
     public function min(?callable $selector = null);
 
     /**
+     * Get minimum value, or `$default` when there is no non-null value (LINQ's nullable Min,
+     * with a chosen default instead of null); a `null` default is indistinguishable from
+     * "nothing to compare", as in firstOrDefault()
+     *
+     * @param mixed $default Returned instead of the UnderflowException of min()
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws \InvalidArgumentException when a value is not comparable
+     */
+    public function minOrDefault(mixed $default = null, ?callable $selector = null);
+
+    /**
      * Get maximum value (Max in LINQ); `null` values are skipped; scalars and DateTimeInterface are comparable
      *
      * @throws \UnderflowException when there is no non-null value
      * @throws \InvalidArgumentException when a value is not comparable
      */
     public function max(?callable $selector = null);
+
+    /**
+     * Get maximum value, or `$default` when there is no non-null value (LINQ's nullable Max,
+     * with a chosen default instead of null)
+     *
+     * @param mixed $default Returned instead of the UnderflowException of max()
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws \InvalidArgumentException when a value is not comparable
+     */
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null);
 
     /**
      * Get product of elements; `null` values are skipped, an empty product is 1
@@ -120,9 +156,27 @@ interface IALinqAggregatable extends IALinqBaseCollection
     public function maxBy(callable $keySelector);
 
     /**
+     * Returns the element whose selected key is the maximum (the first one on a tie), or
+     * `$default` when the collection is empty (LINQ's MaxBy over a nullable source)
+     *
+     * @param mixed $default Returned instead of the UnderflowException of maxBy()
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     */
+    public function maxByOrDefault(mixed $default, callable $keySelector);
+
+    /**
      * Returns the element whose selected key is the minimum
      *
      * @throws \UnderflowException when the collection is empty
      */
     public function minBy(callable $keySelector);
+
+    /**
+     * Returns the element whose selected key is the minimum (the first one on a tie), or
+     * `$default` when the collection is empty (LINQ's MinBy over a nullable source)
+     *
+     * @param mixed $default Returned instead of the UnderflowException of minBy()
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     */
+    public function minByOrDefault(mixed $default, callable $keySelector);
 }

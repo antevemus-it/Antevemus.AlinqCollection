@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-12
+
+Minor release: aggregates with a fallback (ROADMAP milestone 13, Reversa forward 036), asked for by the first production consumer of the library. Additive: no answer of 2.0.0 changes.
+
+### Added
+
+- **`minOrDefault()`, `maxOrDefault()`, `averageOrDefault()`, `minByOrDefault()`, `maxByOrDefault()`** on `ALinqCollection` and `ALinqLazyCollection`: `minOrDefault(mixed $default = null, ?callable $selector = null)`, the same for `max`/`average`, and `minByOrDefault(mixed $default, callable $keySelector)`, the same for `maxBy`. Each one answers exactly as its sibling (`min()`, `max()`, `average()`, `minBy()`, `maxBy()`); only the `UnderflowException` of "nothing to aggregate" (an empty collection, or only nulls where the sibling skips them) becomes `$default`. Every other exception keeps its class and its message, the sibling's (a non-comparable value in `minOrDefault()` throws the message of `min()`). `$default` comes first, as in `firstOrDefault()`. `minByOrDefault()`/`maxByOrDefault()` do not skip a `null` key, as `minBy()`/`maxBy()` do not: `[null, null]` gives the first item, not the default.
+- **One traversal.** The methods read the source once, so they are safe on single-pass sources (`fromCursor()`, `fromHttpPages()`, a generator), where the usual guard `any() ? min() : null` reads it twice and fails on a cursor (`A PDO cursor is single-pass…`). Before → after:
+  ```php
+  $dated = $quotes->where(fn($q) => !empty($q->created_at));
+  $oldest = $dated->any() ? $dated->min(fn($q) => strtotime($q->created_at)) : null;          // before
+  $oldest = $quotes->select(fn($q) => strtotime((string) $q->created_at) ?: null)->minOrDefault();             // after
+  ```
+  The projection (`select`: quote → timestamp, or nothing) is kept apart from the aggregation (`minOrDefault`: the smallest, or the default), and it is still one traversal. `strtotime()` returns `false`, not `null`, for an empty or unparsable date, and `false` is not skipped as a null: without `?: null` a malformed date wins the minimum. The `(string)` cast avoids passing `null` to `strtotime()`, deprecated since PHP 8.1.
+- **Interface note:** the five methods were added to `Interfaces\IALinqAggregatable` and `Interfaces\IALinqLazyCollection`, as `single()` was in 1.4.0. A class that implements these interfaces on its own must add them.
+
+### Changed
+
+- The lazy `min()`, `max()`, `minBy()`, `maxBy()` and `average()` now run on shared private helpers (the eager side already did); answers and messages are unchanged, proved by the 2.0.0 suite running unmodified.
+- Tests: `tests/Unit/AggregationOrDefaultTest.php` (single pass on a source that refuses a second opening, the consumer's code, a SQLite cursor) and `tests/Contract/AggregateOrDefaultContractTest.php` (17 sibling/variant pairs × 13 inputs × 2 sides, with the sibling as the oracle); the five methods joined `ParityTest`. Suite **598 tests, 2321 assertions** (from 563/2148). Measured coverage (pcov): 243 of 249 methods, 1380 of 1394 lines of `src/`; the 14 uncovered lines are the same defensive guards.
+
 ## [2.0.0] - 2026-10-12
 
 Major release that removes what 1.x announced as deprecated, and nothing else: `extract()` (deprecated since 1.3.0). The property resolution moves to a shared package, `antevemus/adeep-property-access` 1.0.0, which this library now requires (ROADMAP milestone 11): one dependency, from the same author, with no dependencies of its own; Antevemus.ASpecification 2.0 resolves names through the same package, so both libraries read the same value from the same candidate by construction. PHP 8.4 is still the minimum. **Read [UPGRADE-2.0.md](UPGRADE-2.0.md) ([pt-BR](UPGRADE-2.0.pt-BR.md)) before upgrading**; there is no data to convert.

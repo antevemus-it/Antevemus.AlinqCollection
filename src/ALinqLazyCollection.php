@@ -47,7 +47,8 @@ use WeakMap;
  *   is an integer.
  * - Only a Closure is a re-iterable factory; an array (even a callable one) is data.
  * - Empty throws: first(), last(), min(), max(), minBy(), maxBy() and average() throw
- *   UnderflowException; the *OrDefault() variants return the default.
+ *   UnderflowException; the *OrDefault() variants return the default (for the
+ *   aggregates since 2.1.0, forward 036, in the same single pass as their siblings).
  * - Numeric aggregations skip null and throw InvalidArgumentException on a non-numeric
  *   value; min()/max() compare scalars and DateTimeInterface.
  * - A negative take()/skip()/pad() size, chunk(0) or range step 0 throw
@@ -64,7 +65,11 @@ use WeakMap;
  * Since 1.5.0 (forward 027): fromHttpPages() streams the items of a paginated HTTP API,
  * downloading page n+1 with curl_multi while the items of page n are consumed.
  *
- * @version    1.5.0
+ * Since 2.1.0 (forward 036): minOrDefault(), maxOrDefault(), averageOrDefault(),
+ * minByOrDefault() and maxByOrDefault(), on the same private helpers as min(), max(),
+ * average(), minBy() and maxBy(): one traversal, no buffering.
+ *
+ * @version    2.1.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -1281,6 +1286,28 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      */
     public function average(?callable $selector = null): int|float
     {
+        return $this->mean($selector, false, null);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * One traversal, like average(): null values are skipped; nothing to average returns
+     * $default.
+     *
+     * @throws InvalidArgumentException When a value is not numeric
+     */
+    public function averageOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->mean($selector, true, $default);
+    }
+
+    /**
+     * Running mean in one traversal, nulls skipped; when there is no value, $default
+     * ($orDefault) or UnderflowException.
+     */
+    private function mean(?callable $selector, bool $orDefault, mixed $default): mixed
+    {
         $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $sum = 0;
         $count = 0;
@@ -1294,6 +1321,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         }
 
         if ($count === 0) {
+            if ($orDefault) {
+                return $default;
+            }
             throw new UnderflowException('Cannot compute average() of an empty collection (null values are skipped).');
         }
 
@@ -1310,26 +1340,19 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      */
     public function min(?callable $selector = null): mixed
     {
-        $selector = $selector === null ? null : ALinqCallable::withKey($selector);
-        $min = null;
-        $first = true;
+        return $this->extreme($selector, 'min', -1, false, null);
+    }
 
-        foreach ($this as $key => $item) {
-            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, 'min');
-            if ($val === null) {
-                continue;
-            }
-            if ($first || $val < $min) {
-                $min = $val;
-                $first = false;
-            }
-        }
-
-        if ($first) {
-            throw new UnderflowException('Cannot compute min() of an empty collection (null values are skipped).');
-        }
-
-        return $min;
+    /**
+     * {@inheritdoc}
+     *
+     * One traversal, like min(): null values are skipped; nothing to compare returns $default.
+     *
+     * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
+     */
+    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->extreme($selector, 'min', -1, true, $default);
     }
 
     /**
@@ -1342,26 +1365,50 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      */
     public function max(?callable $selector = null): mixed
     {
+        return $this->extreme($selector, 'max', 1, false, null);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * One traversal, like max(): null values are skipped; nothing to compare returns $default.
+     *
+     * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
+     */
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    {
+        return $this->extreme($selector, 'max', 1, true, $default);
+    }
+
+    /**
+     * Smallest ($direction -1, `<`) or largest (1, `>`) comparable value in one traversal,
+     * nulls skipped; when there is none, $default ($orDefault) or UnderflowException.
+     */
+    private function extreme(?callable $selector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    {
         $selector = $selector === null ? null : ALinqCallable::withKey($selector);
-        $max = null;
+        $best = null;
         $first = true;
 
         foreach ($this as $key => $item) {
-            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, 'max');
+            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, $operation);
             if ($val === null) {
                 continue;
             }
-            if ($first || $val > $max) {
-                $max = $val;
+            if ($first || ($direction < 0 ? $val < $best : $val > $best)) {
+                $best = $val;
                 $first = false;
             }
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute max() of an empty collection (null values are skipped).');
+            if ($orDefault) {
+                return $default;
+            }
+            throw new UnderflowException(sprintf('Cannot compute %s() of an empty collection (null values are skipped).', $operation));
         }
 
-        return $max;
+        return $best;
     }
 
     /**
@@ -1371,25 +1418,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      */
     public function minBy(callable $keySelector): mixed
     {
-        $keySelector = ALinqCallable::withKey($keySelector);
-        $bestItem = null;
-        $bestKey = null;
-        $first = true;
+        return $this->extremeBy($keySelector, 'minBy', -1, false, null);
+    }
 
-        foreach ($this as $key => $item) {
-            $val = $keySelector($item, $key);
-            if ($first || $val < $bestKey) {
-                $bestKey = $val;
-                $bestItem = $item;
-                $first = false;
-            }
-        }
-
-        if ($first) {
-            throw new UnderflowException('Cannot compute minBy() of an empty collection.');
-        }
-
-        return $bestItem;
+    /**
+     * {@inheritdoc}
+     *
+     * One traversal, like minBy(); an empty collection returns $default.
+     */
+    public function minByOrDefault(mixed $default, callable $keySelector): mixed
+    {
+        return $this->extremeBy($keySelector, 'minBy', -1, true, $default);
     }
 
     /**
@@ -1399,6 +1438,26 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      */
     public function maxBy(callable $keySelector): mixed
     {
+        return $this->extremeBy($keySelector, 'maxBy', 1, false, null);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * One traversal, like maxBy(); an empty collection returns $default.
+     */
+    public function maxByOrDefault(mixed $default, callable $keySelector): mixed
+    {
+        return $this->extremeBy($keySelector, 'maxBy', 1, true, $default);
+    }
+
+    /**
+     * First element whose key is the smallest ($direction -1, `<`) or the largest (1, `>`),
+     * in one traversal; when the collection is empty, $default ($orDefault) or
+     * UnderflowException.
+     */
+    private function extremeBy(callable $keySelector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    {
         $keySelector = ALinqCallable::withKey($keySelector);
         $bestItem = null;
         $bestKey = null;
@@ -1406,7 +1465,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
 
         foreach ($this as $key => $item) {
             $val = $keySelector($item, $key);
-            if ($first || $val > $bestKey) {
+            if ($first || ($direction < 0 ? $val < $bestKey : $val > $bestKey)) {
                 $bestKey = $val;
                 $bestItem = $item;
                 $first = false;
@@ -1414,7 +1473,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         }
 
         if ($first) {
-            throw new UnderflowException('Cannot compute maxBy() of an empty collection.');
+            if ($orDefault) {
+                return $default;
+            }
+            throw new UnderflowException(sprintf('Cannot compute %s() of an empty collection.', $operation));
         }
 
         return $bestItem;
