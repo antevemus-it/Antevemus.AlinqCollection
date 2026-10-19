@@ -34,7 +34,7 @@ jobs:
           - leg: 'with intl'
             extensions: json, mbstring, curl, pdo_sqlite, intl
           - leg: 'without intl'
-            extensions: json, mbstring, curl, pdo_sqlite, :intl
+            extensions: 'json, mbstring, curl, pdo_sqlite, :intl'
     steps:
       - uses: actions/checkout@v7
 
@@ -46,7 +46,9 @@ jobs:
           tools: composer:v2
 
       - name: Extension check
-        run: php -r 'echo "intl loaded: ", var_export(extension_loaded("intl"), true), PHP_EOL;'
+        # Block scalar: the ": " inside the PHP string is a mapping indicator in a plain YAML scalar.
+        run: |
+          php -r 'echo "intl loaded: ", var_export(extension_loaded("intl"), true), PHP_EOL;'
 
       - name: Validate composer.json
         run: composer validate --strict
