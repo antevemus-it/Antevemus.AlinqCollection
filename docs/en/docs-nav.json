@@ -1,0 +1,109 @@
+{
+  "items": [
+    {
+      "text": "Home",
+      "path": "index"
+    },
+    {
+      "text": "Getting started",
+      "items": [
+        {
+          "text": "Installation and quick start",
+          "path": "getting-started/index"
+        }
+      ]
+    },
+    {
+      "text": "Concepts",
+      "items": [
+        {
+          "text": "Origins and philosophy",
+          "path": "concepts/origins"
+        },
+        {
+          "text": "Core features",
+          "path": "concepts/core-features"
+        },
+        {
+          "text": "Architecture",
+          "path": "concepts/architecture"
+        },
+        {
+          "text": "Synergy with ASpecification",
+          "path": "concepts/aspecification-synergy"
+        }
+      ]
+    },
+    {
+      "text": "API reference",
+      "items": [
+        {
+          "text": "Factories",
+          "path": "api/factories"
+        },
+        {
+          "text": "Filtering and slicing",
+          "path": "api/filtering"
+        },
+        {
+          "text": "Joining and set theory",
+          "path": "api/joining"
+        },
+        {
+          "text": "Aggregations and metrics",
+          "path": "api/aggregations"
+        },
+        {
+          "text": "Projections and transformations",
+          "path": "api/projections"
+        },
+        {
+          "text": "Grouping and partitioning",
+          "path": "api/grouping"
+        },
+        {
+          "text": "Sorting and ordering",
+          "path": "api/ordering"
+        },
+        {
+          "text": "Dynamic query builder",
+          "path": "api/query-builder"
+        },
+        {
+          "text": "Deep property access",
+          "path": "api/property-access"
+        },
+        {
+          "text": "Streaming and big data",
+          "path": "api/lazy-streaming"
+        },
+        {
+          "text": "The contract",
+          "path": "api/contract"
+        }
+      ]
+    },
+    {
+      "text": "Quality",
+      "items": [
+        {
+          "text": "Tests",
+          "path": "quality/tests"
+        }
+      ]
+    },
+    {
+      "text": "Project",
+      "items": [
+        {
+          "text": "Roadmap",
+          "path": "project/roadmap"
+        },
+        {
+          "text": "License and authors",
+          "path": "project/license-and-authors"
+        }
+      ]
+    }
+  ]
+}

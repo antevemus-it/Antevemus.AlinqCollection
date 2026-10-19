@@ -5,9 +5,9 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 26 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
-- **Total Tests:** 731 tests (2.2.0)
-- **Total Assertions:** 2968 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 3051 with ext-intl (1 skipped: the test of the missing extension)
+- **Test Files:** 27 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
+- **Total Tests:** 743 tests (2.2.1)
+- **Total Assertions:** 3971 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4054 with ext-intl (1 skipped: the test of the missing extension)
 - **Lines of Test Code:** 13,000+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
@@ -156,7 +156,7 @@ Validate `ALinqLazyCollection::fromHttpPages()` (1.5.0, forward 027). `FromHttpP
 Exclude them with `--exclude-group http` (they take about 2.5 s and need `ext-curl`).
 
 ### 17. `tests/Unit/ReadmePropertyAccessTest.php` (2 tests)
-Runs the two code blocks of README §9 (EN and pt-BR) as written, read from the README files, and checks every commented answer (`// 99.9 (public getter)`, `// Returns: ...`) against what the code returns.
+Runs the two code blocks of §9 (EN and pt-BR) as written, read from `docs/<language>/api/property-access.md` (the README files until 2.2.0), and checks every commented answer (`// 99.9 (public getter)`, `// Returns: ...`) against what the code returns.
 
 ### 18. `tests/Unit/AggregationOrDefaultTest.php` (33 tests)
 The aggregates with a fallback (2.1.0, `minOrDefault`, `maxOrDefault`, `averageOrDefault`, `minByOrDefault`, `maxByOrDefault`):
@@ -191,11 +191,14 @@ The lazy grouping of 2.2.0: `groupBy`/`countBy`/`aggregateBy`/`exceptByKeys` are
 ### 27. `tests/Unit/ConsumerExamplesTest.php` (4 tests)
 The consumer's code that motivated 2.2.0, transcribed and run next to its rewrite: three orderings by an accented name (with ext-intl), the hand-written index (`KeepLast`) and grouping (`toLookup`), the documents without a participant (`exceptByKeys`) and the CSV reader of the economic indexes (`separator: null`), including where the two separator rules part.
 
-### 28. `tests/Unit/ReadmeConsumerGapsTest.php` (15 tests)
-Runs the seven README blocks of 2.2.0 (marked `<!-- tested: id -->`, EN and pt-BR) as written and checks every commented answer (`// [1, 3]`, `// throws Class: message`); the culture block runs only with ext-intl. A guard checks that both READMEs carry the same blocks, with the same code (comments aside) and the same answers.
+### 28. `tests/Unit/ReadmeConsumerGapsTest.php` (19 tests)
+Runs the seven blocks of 2.2.0 and the Quick Start (2.2.1), marked `<!-- tested: id -->`, as written on their pages of `docs/en` and `docs/pt-BR` (the Quick Start also in each README), and checks every commented answer (`// [1, 3]`, `// throws Class: message`, `// Result: [...]`, `// true (via array_any)`); the culture block runs only with ext-intl. A guard checks that both languages carry the same blocks on the same pages, with the same code (comments aside) and the same answers, and that the only tested block of each README is the Quick Start of its language.
 
 ### 29. `tests/Contract/ConsumerGapsPropertyTest.php` (6 tests)
 Properties with an independent oracle (2.2.0, RN-03): 300 seeded inputs per property (lists and dictionaries of 0-60 items; int, string, `1`/`'1'`/`'01'`, `BackedEnum` and occasional invalid keys; repeated values; null), on both collections: `toLookup` against `$m[$k][] = $x` and against `groupBy`; `toDictionary` `KeepFirst`/`KeepLast` against the hand-written index; `countBy`/`aggregateBy` against hand-written counters (the position inside the group); `exceptByKeys`/`intersectByKeys` against `where(in_array(..., true))->distinctBy()`; the laws of every comparer (antisymmetry, transitivity on every triple of a sample, `equals` ⇔ `compare === 0` ⇒ equal hashes; the culture ones with ext-intl).
+
+### 30. `tests/Unit/DocumentationTreeTest.php` (8 tests)
+The guard of the documentation (2.2.1): `docs/en` and `docs/pt-BR` have the same files; both `docs-nav.json` parse, have the same shape and list every page; every relative link of a page or a README resolves; every page has the same code fences and PHP blocks in both languages, token by token (the 20 blocks with Portuguese identifiers declared and pinned by hash); the PHP blocks of each page are the declared ones (29 per language); each README has one code block, the Quick Start, and stays below 25 000 bytes; the Quick Start is a tested block; no page or README cites internal material or links outside the language folders but to the public root files.
 
 ---
 

@@ -1,0 +1,24 @@
+# 🗺️ Roadmap & Ecosystem
+
+- [x] **v1.0.0**: Stable production release with 8 core traits, 305 tests, and PHP 8.4 native engine.
+- [x] **ASpecification Synergy**: Integration with `Antevemus.ASpecification` via `ALinqBridge`.
+- [x] **v1.1.0**: Generator-based lazy evaluation pipeline (`ALinqLazyCollection`) for handling multi-gigabyte streams without in-memory buffering.
+- [x] **v1.1.1**: Streaming engine correctness: `remember()` caches only complete passes, `fromFile()` keeps long lines whole, single-pass cursors fail loudly on re-traversal.
+- [x] **v1.1.2**: Lazy materializers never lose items (list reindexed, dictionary preserved), resumable `remember()`, `last()` with the real key.
+- [x] **v1.2.0**: README promises I: `groupBy()` groups are collections, `select()` receives the key, every operator accepts native callables, `distinct()` is strict and safe for arrays/objects, `selectMany()` flattens any iterable, `between`/`notIn`/`isNull` in the query builder, dot-notation and getter resolution in `ALinqPropertyAccess`.
+- [x] **v1.3.0**: The contract: one key rule, strict identity, LINQ semantics on empty collections, validated arguments and group keys, `null`-aware aggregations and query builder, `count($predicate)`, `JsonSerializable`; eager × lazy parity enforced by test (§11).
+- [x] **v1.3.2**: Lazy sources hardening: irregular CSV rows, BOM, directories in `fromFile()`, one statement per `fromCursor()` collection.
+- [x] **v1.4.0**: `whereIn()` / `whereNotIn()` / `whereBetween()` / `single()`, announced in the 0.1.0 release notes and shipped at last (see the CHANGELOG erratum).
+- [x] **v1.4.0**: `leftJoin()` / `rightJoin()` / `fullJoin()`: outer joins returning `[$outer, $inner]` pairs with `null` on the side without a match, as `Enumerable.LeftJoin`/`RightJoin`/`FullJoin` in .NET 10/11 (they replace `groupJoin()` + `selectMany()` by hand).
+- [x] **v1.4.0**: `thenBy()` / `thenByDescending()`: composite, stable multi-key ordering, on the lazy collection too.
+- [x] **v1.4.1**: security: the non-public last resort of the property accessor is opt-in with `#[Specifiable]`, so filters and orderings over an unmarked private field stop acting as a read oracle.
+- [x] **v1.4.2**: `singleOrDefault()` throws with the same messages as `single()`, on both collections.
+- [x] **v1.4.3**: `suggest` for ASpecification raised to `^1.9.0`; roadmap milestone 12 corrected (a Fiber is not parallelism).
+- [x] **v1.5.0**: `fromHttpPages()`: a lazy source over a paginated HTTP API that downloads the next page with `curl_multi` while the current one is consumed (zero dependency, ROADMAP milestone 12, core part).
+- [x] **v1.5.1**: the GitHub Actions workflow runs (a duplicated environment key made GitHub refuse it); `suggest` for ASpecification raised to `^1.10.0`.
+- [x] **v2.0.0**: shared property accessor with `Antevemus.ASpecification`: both libraries resolve names through [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (ROADMAP milestone 11), `ALinqPropertyAccess` becomes a deprecated facade until 3.0; `extract()` (deprecated since 1.3.0) removed; `suggest` for ASpecification raised to `^2.0.0`. See [UPGRADE-2.0.md](https://github.com/antevemus-it/Antevemus.AlinqCollection/blob/main/UPGRADE-2.0.md).
+- [x] **v2.1.0**: `minOrDefault()` / `maxOrDefault()` / `averageOrDefault()` / `minByOrDefault()` / `maxByOrDefault()`: the aggregate, or a fallback when there is nothing to aggregate, in one traversal (safe on single-pass sources).
+- [x] **v2.2.0**: the gaps found by the first production consumer: `StringComparer` (ordinal, ignore case, culture through ICU) on `orderBy*()`, `distinct*()`, `min*()`, `max*()`; `toLookup()` / `ALinqLookup`; `toDictionary(onDuplicate:)`; `groupBy()` / `countBy()` / `aggregateBy()` / `toDictionary()` / `toLookup()` on the lazy collection; `exceptByKeys()` / `intersectByKeys()`; `join()` / `groupJoin()` over any iterable; `fromCsv(separator: null)`; `implode()` ([ROADMAP milestone 14](https://github.com/antevemus-it/Antevemus.AlinqCollection/blob/main/ROADMAP.md)).
+- [ ] **Future**: the rest of the concurrent I/O milestone, in companion packages: an async collection on Fibers for async SDKs and CPU parallelism with worker processes. A Fiber alone is not parallelism.
+
+The milestone view of this list, with target releases, lives in [ROADMAP.md](https://github.com/antevemus-it/Antevemus.AlinqCollection/blob/main/ROADMAP.md).

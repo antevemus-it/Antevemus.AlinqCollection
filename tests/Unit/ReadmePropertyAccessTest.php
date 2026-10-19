@@ -8,12 +8,17 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * README §9 "Deep Dot-Notation Property Access" (EN and pt-BR): the code blocks are the test.
+ * §9 "Deep Dot-Notation Property Access" (EN and pt-BR): the code blocks are the test.
  *
- * Each PHP block of the section is read from the README itself and executed. A statement followed
- * by a comment that starts with a literal (`// 99.9 (public getter)`, `// null`, `// 0`) asserts
- * that the statement evaluates to that literal; a `// Returns: <literal>` (`// Retorna:`) line
- * asserts the variable assigned on the line before. A README edited without its answers fails here.
+ * Each PHP block of the section is read from its page (docs/<language>/api/property-access.md since
+ * 2.2.1; the README until 2.2.0) and executed. A statement followed by a comment that starts with a
+ * literal (`// 99.9 (public getter)`, `// null`, `// 0`) asserts that the statement evaluates to that
+ * literal; a `// Returns: <literal>` (`// Retorna:`) line asserts the variable assigned on the line
+ * before. A page edited without its answers fails here.
+ *
+ * @version    2.2.1
+ * @package    Antevemus\ALinq\Tests
+ * @subpackage Unit
  */
 final class ReadmePropertyAccessTest extends TestCase
 {
@@ -23,8 +28,8 @@ final class ReadmePropertyAccessTest extends TestCase
     public static function readmes(): array
     {
         return [
-            'README.md' => ['README.md'],
-            'README.pt-BR.md' => ['README.pt-BR.md'],
+            'docs/en/api/property-access.md' => ['docs/en/api/property-access.md'],
+            'docs/pt-BR/api/property-access.md' => ['docs/pt-BR/api/property-access.md'],
         ];
     }
 
@@ -33,10 +38,10 @@ final class ReadmePropertyAccessTest extends TestCase
     {
         $text = (string) file_get_contents(dirname(__DIR__, 2) . '/' . $readme);
         $start = strpos($text, "\n### 9. ");
-        $end = strpos($text, "\n### 10. ");
         $this->assertNotFalse($start, "$readme has §9");
-        $this->assertNotFalse($end, "$readme has §10");
-        $section = substr($text, $start, $end - $start);
+        // §9 runs to the next `## ` heading or to the end of the page
+        $end = strpos($text, "\n## ", $start + 1);
+        $section = $end === false ? substr($text, $start) : substr($text, $start, $end - $start);
 
         preg_match_all('/```php\n(.*?)```/s', $section, $blocks);
         $this->assertCount(2, $blocks[1], "$readme §9 has two PHP blocks");
@@ -86,7 +91,7 @@ final class ReadmePropertyAccessTest extends TestCase
 
     /**
      * Run the code of a block in its own namespace (so that its classes do not collide with those of
-     * the other README) and return what it recorded.
+     * the other language) and return what it recorded.
      *
      * @return list<mixed>
      */
