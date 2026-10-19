@@ -16,7 +16,11 @@ use InvalidArgumentException;
  * ALinqCollection, as the README promises, so `->select(fn($group, $key) => $group->count())`
  * and nested pipelines work (review 2026-10-08, 2.1).
  *
- * @version    1.3.1
+ * Since 2.2.0 (forward 047) the grouping runs on ALinqContract::groupItems(), shared with the
+ * lazy groupBy() stage and with toLookup(). A group key is a PHP array key: `1` and `'1'` are
+ * the same key (unlike the strict identity of joins and set operations).
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -39,15 +43,8 @@ trait GroupingOperations
      */
     public function groupBy(callable $keySelector): IALinqCollection
     {
-        $keySelector = ALinqCallable::withKey($keySelector);
-        $groups = [];
-        foreach ($this->items as $itemKey => $item) {
-            $key = ALinqContract::groupKey($keySelector($item, $itemKey), $itemKey, 'groupBy');
-            $groups[$key][] = $item;
-        }
-
         $result = [];
-        foreach ($groups as $key => $items) {
+        foreach (ALinqContract::groupItems($this->items, ALinqCallable::withKey($keySelector), null, 'groupBy') as $key => $items) {
             $result[$key] = new self($items);
         }
         return new self($result);

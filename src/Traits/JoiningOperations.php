@@ -23,7 +23,14 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  * leftJoin()/rightJoin()/fullJoin() (1.4.0) are the outer joins of .NET 10/11 LINQ, shared
  * with the lazy side (ALinqContract::outerJoin()).
  *
- * @version    1.4.0
+ * Since 2.2.0 (forward 047): join()/groupJoin() accept any iterable as the inner side (an
+ * array, a generator, an ALinqCollection, an ALinqLazyCollection), read once; the answers
+ * are those of the array form. exceptByKeys()/intersectByKeys() are the `ExceptBy`/
+ * `IntersectBy` of .NET 6 (the second argument is a sequence of keys), on
+ * ALinqContract::setByKeys(), shared with the lazy side. exceptBy()/intersectBy() keep their
+ * MoreLINQ-style answer (a sequence of elements, the selector applied to both sides).
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -37,9 +44,12 @@ trait JoiningOperations
      *
      * The inner side is indexed once by key identity (O(n + m) instead of the nested loop
      * of 1.2.0, review 2026-10-08, 3.23). A null key on either side never matches, as in
-     * LINQ and SQL.
+     * LINQ and SQL. Since 2.2.0 the inner side may be any iterable (a generator, an
+     * ALinqCollection, an ALinqLazyCollection over a cursor): it is read once.
+     *
+     * @param iterable $inner The inner sequence (an array before 2.2.0)
      */
-    public function join(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
     {
         $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
         $innerGrouped = self::indexByKey($inner, $innerKeySelector);
@@ -62,9 +72,12 @@ trait JoiningOperations
      *
      * The matched group handed to the result selector is an ALinqCollection (README §3),
      * empty when nothing matches. A null key on either side never matches, as in LINQ and
-     * SQL: an outer item with a null key gets an empty group.
+     * SQL: an outer item with a null key gets an empty group. Since 2.2.0 the inner side may
+     * be any iterable, read once.
+     *
+     * @param iterable $inner The inner sequence (an array before 2.2.0)
      */
-    public function groupJoin(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
     {
         $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
         $innerGrouped = self::indexByKey($inner, $innerKeySelector);
@@ -148,7 +161,7 @@ trait JoiningOperations
      *
      * @return array<string, array<int, mixed>>
      */
-    private static function indexByKey(array $inner, callable $keySelector): array
+    private static function indexByKey(iterable $inner, callable $keySelector): array
     {
         $keySelector = ALinqCallable::withKey($keySelector);
         $grouped = [];
@@ -263,8 +276,12 @@ trait JoiningOperations
     /**
      * Produces the set difference of two sequences based on a key selector function
      *
-     * @param array $second The sequence to compare to the first sequence
-     * @param callable $keySelector A function to extract the key for each element
+     * Not the `ExceptBy` of .NET 6: here $second is a sequence of ELEMENTS of the same shape
+     * and the key selector is applied to both sides (as in MoreLINQ). For the .NET 6 form,
+     * whose second argument is a sequence of keys, use exceptByKeys().
+     *
+     * @param array $second The sequence to compare to the first sequence (elements, not keys)
+     * @param callable $keySelector A function to extract the key for each element of both sequences
      * @return self A collection containing elements from the first sequence not in the second
      */
     public function exceptBy(array $second, callable $keySelector): IALinqCollection
@@ -275,13 +292,54 @@ trait JoiningOperations
     /**
      * Produces the set intersection of two sequences based on a key selector function
      *
-     * @param array $second The sequence to compare to the first sequence
-     * @param callable $keySelector A function to extract the key for each element
+     * Not the `IntersectBy` of .NET 6: here $second is a sequence of ELEMENTS and the key
+     * selector is applied to both sides (as in MoreLINQ). For the .NET 6 form, whose second
+     * argument is a sequence of keys, use intersectByKeys().
+     *
+     * @param array $second The sequence to compare to the first sequence (elements, not keys)
+     * @param callable $keySelector A function to extract the key for each element of both sequences
      * @return self A collection containing shared elements based on the key selector
      */
     public function intersectBy(array $second, callable $keySelector): IALinqCollection
     {
         return $this->setOperation($second, $keySelector, true);
+    }
+
+    /**
+     * The items whose selected key is NOT in $keys (ExceptBy of .NET 6, since 2.2.0)
+     *
+     * $keys is a sequence of keys (an array, a generator, an ALinqCollection, an
+     * ALinqLazyCollection), read once; the selector runs on the items of this collection only.
+     * A set operation: each key comes out once (the first occurrence), strict identity
+     * (`1` and `'1'` differ), a null key matches a null in $keys, a list is reindexed and a
+     * dictionary keeps its keys.
+     *
+     * @param iterable $keys The keys to remove
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     */
+    public function exceptByKeys(iterable $keys, callable $keySelector): IALinqCollection
+    {
+        return $this->keyedSetOperation($keys, $keySelector, false);
+    }
+
+    /**
+     * The items whose selected key IS in $keys (IntersectBy of .NET 6, since 2.2.0)
+     *
+     * Same rules as exceptByKeys().
+     *
+     * @param iterable $keys The keys to keep
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     */
+    public function intersectByKeys(iterable $keys, callable $keySelector): IALinqCollection
+    {
+        return $this->keyedSetOperation($keys, $keySelector, true);
+    }
+
+    private function keyedSetOperation(iterable $keys, callable $keySelector, bool $keepWhenPresent): IALinqCollection
+    {
+        $kept = ALinqContract::setByKeys($this->items, $keys, ALinqCallable::withKey($keySelector), $keepWhenPresent);
+
+        return new self(ALinqContract::shapeLike($this->items, iterator_to_array($kept, true)));
     }
 
     /**

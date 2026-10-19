@@ -58,6 +58,10 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
 - **Description:** Since 1.3.0 `min()`, `max()`, `average()`, `minBy()` and `maxBy()` throw `UnderflowException` when there is nothing to aggregate, as in LINQ, and callers guarded them with `any() ? min() : null`, which reads the source twice: wasteful on an array, wrong on a single-pass source (`fromCursor()`, `fromHttpPages()`, a generator). `defaultIfEmpty(null)->min()` would not help, because `min()` skips nulls. `minOrDefault()`, `maxOrDefault()`, `averageOrDefault()`, `minByOrDefault()` and `maxByOrDefault()` answer as their sibling and return `$default` only where the sibling throws for want of something to aggregate, in one traversal, on both collections. Asked for by the first production consumer of the library. Specified before code (Reversa forward 036).
 - **Goal:** The guard written once, in the library, correct on every source.
 
+### 14. Consumer Gaps: Culture-Aware Comparison, Lookups, Grouping on the Lazy Side 🧭 (Shipped in v2.2.0)
+- **Description:** The audit of the first production consumer (2026-10-18) measured eight gaps, all closed on both collections, on implementations shared by the eager and the lazy side (`ALinqContract`): `StringComparer` (`ordinal()`, `ordinalIgnoreCase()`, `culture()` through ICU, with `ext-intl` as a `suggest`) accepted by `orderBy*()`, `distinct*()` (as an `IALinqEqualityComparer`), `min*()`, `max*()`, `minBy*()`, `maxBy*()`, so a list of names with accents sorts as a language does; `toLookup()` returning an immutable `ALinqLookup` (a missing key is an empty collection); `toDictionary(onDuplicate: DuplicateKeyPolicy::KeepFirst|KeepLast)`; `groupBy()`, `countBy()`, `aggregateBy()` as deferred stages on the lazy collection (`countBy()`/`aggregateBy()` keep one value per key, not the items) and `toDictionary()`/`toLookup()` as one-pass terminals; `exceptByKeys()`/`intersectByKeys()`, the `ExceptBy`/`IntersectBy` of .NET 6 (the existing `exceptBy()`/`intersectBy()` keep their MoreLINQ answer, with a written warning); `join()`/`groupJoin()` over any iterable; `fromCsv(separator: null)` detecting `,` `;` tab `|` by count outside quotes; `implode()`. The answers of 2.1.0 do not change; the group-key rule (PHP array keys: `1` and `'1'` are one key) and the position that `aggregateBy()` hands to `$func` are now written in README §11. Mutation testing (Infection) entered the library, scoped to the changed lines. Specified before code (Reversa forward 047).
+- **Goal:** The loops a consumer writes by hand (`$m[$k][] = $x`, `$m[$x->id] = $x`, `uasort` with `<=>` on accented names, nested `any()`) have a library call with a written contract, on both collections.
+
 ---
 
 ## 🔮 Long-Term Vision (v2.0+)
@@ -68,6 +72,10 @@ This document outlines the engineering roadmap of the **Antevemus ALinq Collecti
   - **Async collection for async SDKs (companion package, planned):** `ALinqAsyncCollection` on Fibers and the Revolt event loop, for sources whose clients are already non-blocking (Amp, ReactPHP), with bounded concurrency for per-item I/O such as a `map()` that calls an API.
   - **CPU parallelism (companion package, planned):** independent CPU-bound work on several cores needs worker processes (or `ext-parallel`), not Fibers; the cost of moving items between processes makes it worthwhile only for heavy per-item work.
 - **Target Release:** not scheduled for the companion packages, which are separate packages and do not wait for an ALinq major (2.0.0 shipped without them); the core HTTP prefetch shipped in v1.5.0.
+
+### 15. Comparers in Grouping, Set Operations and Joins; Joins on the Lazy Side 🔭
+- **Description:** Left out of v2.2.0 on purpose: a comparer in `groupBy()`/`toLookup()`/`toDictionary()`/`countBy()`/`aggregateBy()`, in the set operations and in the joins would have to choose which text is "the" key of a group (until then, `groupBy(fn($r) => $comparer->hash($r->city))` groups without accents, with an opaque key); `join()`/`groupJoin()` on the lazy collection (`leftJoin()` plus `where(fn($p) => $p[1] !== null)` covers the inner join there); a seed per group in `aggregateBy()` (the `seedSelector` of .NET 9).
+- **Target Release:** not scheduled; waits for a real use case.
 
 ---
 

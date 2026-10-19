@@ -18,7 +18,10 @@ namespace Antevemus\ALinq\Interfaces;
  * accessor (`Antevemus\ADeepPropertyAccess\PropertyAccess`, since 2.0.0): `in`/`notIn` by
  * strict identity, `between` inclusive with `null` never between.
  *
- * @version    2.0.0
+ * Since 2.2.0: `distinct()`/`distinctBy()` take an optional `IALinqEqualityComparer` as the
+ * identity. Classes that implement this interface on their own must add the parameter.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -70,9 +73,10 @@ interface IALinqFilterable extends IALinqBaseCollection
     public function skip(int $count): IALinqCollection;
 
     /**
-     * Get distinct elements by strict identity, or by the key the selector produces (Distinct in LINQ)
+     * Get distinct elements by strict identity, or by the key the selector produces (Distinct in LINQ);
+     * since 2.2.0 an IALinqEqualityComparer may be the identity (hash() buckets, equals() decides)
      */
-    public function distinct(?callable $keySelector = null): IALinqCollection;
+    public function distinct(?callable $keySelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Get first element matching predicate, or $default when there is none (FirstOrDefault in LINQ)
@@ -150,7 +154,8 @@ interface IALinqFilterable extends IALinqBaseCollection
     public function contains($value, ?callable $comparer = null): bool;
 
     /**
-     * Returns distinct elements from a sequence based on a key selector function
+     * Returns distinct elements from a sequence based on a key selector function; since 2.2.0
+     * an IALinqEqualityComparer may be the identity of the selected key
      */
-    public function distinctBy(callable $keySelector): IALinqCollection;
+    public function distinctBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 }

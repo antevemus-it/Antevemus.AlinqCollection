@@ -26,9 +26,10 @@ use Traversable;
  * operators, a dictionary keeps its keys; set operations compare by strict, type-aware
  * identity; an empty collection throws on first/last/min/max/minBy/maxBy/average;
  * json_encode() serializes the items (JsonSerializable). Since 1.4.0 an orderBy*() result
- * carries its pending ordering, so thenBy*() can refine it.
+ * carries its pending ordering, so thenBy*() can refine it. Since 2.2.0 fromCsv() accepts
+ * `separator: null` (detection, see ALinqLazyCollection::fromCsv()).
  *
- * @version    1.4.0
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -179,7 +180,7 @@ final class ALinqCollection implements IALinqCollection
      * Create a lazy streaming collection from a CSV file.
      *
      * @param string $filePath
-     * @param string $separator
+     * @param string|null $separator null detects it from the first record (since 2.2.0)
      * @param string $enclosure
      * @param string $escape
      * @param bool $hasHeader
@@ -189,7 +190,7 @@ final class ALinqCollection implements IALinqCollection
      */
     public static function fromCsv(
         string $filePath,
-        string $separator = ',',
+        ?string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
         bool $hasHeader = true,

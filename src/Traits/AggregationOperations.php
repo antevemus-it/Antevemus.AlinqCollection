@@ -34,7 +34,17 @@ use UnderflowException;
  * them) becomes the given default. They run on the same private helpers as the siblings,
  * so every other exception (not comparable, not numeric, a throwing selector) is the same.
  *
- * @version    2.1.0
+ * Since 2.2.0 (forward 047): min(), max(), minBy(), maxBy() and their *OrDefault() variants
+ * accept a comparer `fn($a, $b): int` (the `IComparer` overloads of .NET 6, e.g.
+ * `StringComparer::culture('pt_BR')`); with a comparer null values are still skipped by
+ * min()/max(), and the comparer, not comparableValue(), decides what can be compared. The
+ * comparison is ALinqContract::isMoreExtreme(), shared with the lazy side. countBy() and
+ * aggregateBy() no longer build the groups (one counter or accumulator per key,
+ * ALinqContract::countByKey()/aggregateByKey(): same answers, less memory); the `$key` that
+ * aggregateBy() hands to `$func` is, as always, the position of the item inside its group.
+ * implode() joins the text of the items.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -174,12 +184,14 @@ trait AggregationOperations
     /**
      * Get minimum value (Min in LINQ)
      *
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` in the `<=>` convention (since 2.2.0); `<=>` when null
      * @throws UnderflowException when the collection is empty or holds only nulls
-     * @throws InvalidArgumentException for a value that is not comparable
+     * @throws InvalidArgumentException for a value that is not comparable (without a comparer)
      */
-    public function min(?callable $selector = null)
+    public function min(?callable $selector = null, ?callable $comparer = null)
     {
-        return $this->extreme($selector, 'min', -1, false, null);
+        return $this->extreme($selector, $comparer, 'min', -1, false, null);
     }
 
     /**
@@ -192,22 +204,25 @@ trait AggregationOperations
      *
      * @param mixed $default Returned when there is no non-null value
      * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0); `<=>` when null
      * @throws InvalidArgumentException for a value that is not comparable (as min())
      */
-    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    public function minOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'min', -1, true, $default);
+        return $this->extreme($selector, $comparer, 'min', -1, true, $default);
     }
 
     /**
      * Get maximum value (Max in LINQ)
      *
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` in the `<=>` convention (since 2.2.0); `<=>` when null
      * @throws UnderflowException when the collection is empty or holds only nulls
-     * @throws InvalidArgumentException for a value that is not comparable
+     * @throws InvalidArgumentException for a value that is not comparable (without a comparer)
      */
-    public function max(?callable $selector = null)
+    public function max(?callable $selector = null, ?callable $comparer = null)
     {
-        return $this->extreme($selector, 'max', 1, false, null);
+        return $this->extreme($selector, $comparer, 'max', 1, false, null);
     }
 
     /**
@@ -219,27 +234,31 @@ trait AggregationOperations
      *
      * @param mixed $default Returned when there is no non-null value
      * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0); `<=>` when null
      * @throws InvalidArgumentException for a value that is not comparable (as max())
      */
-    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'max', 1, true, $default);
+        return $this->extreme($selector, $comparer, 'max', 1, true, $default);
     }
 
     /**
-     * Smallest ($direction -1) or largest (1) comparable value, nulls skipped; when there is
-     * none, $default ($orDefault) or UnderflowException.
+     * Smallest ($direction -1) or largest (1) value, nulls skipped; without a comparer only
+     * comparable values are accepted; when there is none, $default ($orDefault) or
+     * UnderflowException.
      */
-    private function extreme(?callable $selector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    private function extreme(?callable $selector, ?callable $comparer, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         $found = false;
         $extreme = null;
         foreach ($this->selectValues($selector) as $key => $value) {
-            $value = ALinqContract::comparableValue($value, $key, $operation);
+            if ($comparer === null) {
+                $value = ALinqContract::comparableValue($value, $key, $operation);
+            }
             if ($value === null) {
                 continue;
             }
-            if (!$found || ($value <=> $extreme) === $direction) {
+            if (!$found || ALinqContract::isMoreExtreme($value, $extreme, $direction, $comparer)) {
                 $extreme = $value;
                 $found = true;
             }
@@ -285,53 +304,67 @@ trait AggregationOperations
     }
 
     /**
-     * Applies an accumulator function over each group of elements in a sequence
+     * Applies an accumulator function over each group of elements in a sequence (AggregateBy in .NET 9)
      *
-     * @param callable $keySelector A function to extract the key for each element
-     * @param mixed $seed The initial accumulator value
-     * @param callable $func An accumulator function to invoke on each group
-     * @return self A collection of results from the aggregation
+     * `$func($carry, $item, $position)`: the third argument is the position of the item inside
+     * its group (0, 1, ...), not its key in the source; every group starts from the same
+     * $seed. Since 2.2.0 the groups are not built: one accumulator per key.
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
+     * @param mixed $seed The initial accumulator value of every group
+     * @param callable $func `fn($carry, $item, $position)`
+     * @return self `key => accumulator`, keys in first-appearance order
      * @throws InvalidArgumentException when the selector returns a key that is not int, string or BackedEnum
      */
     public function aggregateBy(callable $keySelector, $seed, callable $func): IALinqCollection
     {
-        // groupBy() returns ALinqCollection groups since 1.2.0; each is reduced with its own
-        // aggregate(), so $func receives (carry, item, key) as everywhere else.
-        $result = [];
-        foreach ($this->groupBy($keySelector)->toArray() as $key => $group) {
-            $result[$key] = $group->aggregate($seed, $func);
-        }
-
-        return new self($result);
+        // The message of an invalid key names groupBy(), as it has since 1.3.0 (RN-01, 2.2.0).
+        return new self(ALinqContract::aggregateByKey($this->items, ALinqCallable::withKey($keySelector), $seed, $func, 'groupBy'));
     }
 
     /**
-     * Groups elements by a specified key and counts the elements in each group
+     * Groups elements by a specified key and counts the elements in each group (CountBy in .NET 9)
      *
-     * @param callable $keySelector A function to extract the key for each element
-     * @return self A collection containing counts for each group
+     * Since 2.2.0 the groups are not built: one counter per key.
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
+     * @return self `key => count`, keys in first-appearance order
      * @throws InvalidArgumentException when the selector returns a key that is not int, string or BackedEnum
      */
     public function countBy(callable $keySelector): IALinqCollection
     {
-        $result = [];
-        foreach ($this->groupBy($keySelector)->toArray() as $key => $group) {
-            $result[$key] = $group->count();
-        }
+        // The message of an invalid key names groupBy(), as it has since 1.3.0 (RN-01, 2.2.0).
+        return new self(ALinqContract::countByKey($this->items, ALinqCallable::withKey($keySelector), 'groupBy'));
+    }
 
-        return new self($result);
+    /**
+     * Join the text of the items (or of the selected values) with a separator (since 2.2.0)
+     *
+     * A string, an int, a float (PHP's text) or a Stringable is accepted; null is the empty
+     * text (as `string.Join` in .NET); a bool, an array or another object throws instead of
+     * PHP's silent `"1"`/`""` or its "Array to string conversion" warning. An empty
+     * collection gives ''.
+     *
+     * @param string $separator Placed between two items
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws InvalidArgumentException for a value that has no text
+     */
+    public function implode(string $separator = '', ?callable $selector = null): string
+    {
+        return ALinqContract::implode($this->items, $separator, $selector === null ? null : ALinqCallable::withKey($selector));
     }
 
     /**
      * Returns the element with the largest key (MaxBy in LINQ)
      *
      * @param callable $keySelector A function to extract the comparison key from each element
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0); `<=>` when null
      * @return mixed The first element whose key is the largest
      * @throws UnderflowException when the collection is empty
      */
-    public function maxBy(callable $keySelector): mixed
+    public function maxBy(callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'maxBy', 1, false, null);
+        return $this->extremeBy($keySelector, $comparer, 'maxBy', 1, false, null);
     }
 
     /**
@@ -343,23 +376,25 @@ trait AggregationOperations
      *
      * @param mixed $default Returned when the collection is empty
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0); `<=>` when null
      * @return mixed The first element whose key is the largest, or $default
      */
-    public function maxByOrDefault(mixed $default, callable $keySelector): mixed
+    public function maxByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'maxBy', 1, true, $default);
+        return $this->extremeBy($keySelector, $comparer, 'maxBy', 1, true, $default);
     }
 
     /**
      * Returns the element with the smallest key (MinBy in LINQ)
      *
      * @param callable $keySelector A function to extract the comparison key from each element
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0); `<=>` when null
      * @return mixed The first element whose key is the smallest
      * @throws UnderflowException when the collection is empty
      */
-    public function minBy(callable $keySelector): mixed
+    public function minBy(callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'minBy', -1, false, null);
+        return $this->extremeBy($keySelector, $comparer, 'minBy', -1, false, null);
     }
 
     /**
@@ -371,18 +406,19 @@ trait AggregationOperations
      *
      * @param mixed $default Returned when the collection is empty
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0); `<=>` when null
      * @return mixed The first element whose key is the smallest, or $default
      */
-    public function minByOrDefault(mixed $default, callable $keySelector): mixed
+    public function minByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'minBy', -1, true, $default);
+        return $this->extremeBy($keySelector, $comparer, 'minBy', -1, true, $default);
     }
 
     /**
      * First element whose key is the smallest ($direction -1) or the largest (1); when the
      * collection is empty, $default ($orDefault) or UnderflowException.
      */
-    private function extremeBy(callable $keySelector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    private function extremeBy(callable $keySelector, ?callable $comparer, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         if ($this->items === []) {
             if ($orDefault) {
@@ -397,7 +433,7 @@ trait AggregationOperations
         $first = true;
         foreach ($this->items as $itemKey => $item) {
             $key = $keySelector($item, $itemKey);
-            if ($first || ($key <=> $extremeKey) === $direction) {
+            if ($first || ALinqContract::isMoreExtreme($key, $extremeKey, $direction, $comparer)) {
                 $extremeItem = $item;
                 $extremeKey = $key;
                 $first = false;

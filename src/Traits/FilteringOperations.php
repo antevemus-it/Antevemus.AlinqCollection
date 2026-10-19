@@ -7,6 +7,7 @@ namespace Antevemus\ALinq\Traits;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use InvalidArgumentException;
 use OverflowException;
 use UnderflowException;
@@ -26,9 +27,10 @@ use UnderflowException;
  * whereIn()/whereNotIn()/whereBetween() (1.4.0) are sugar over where(): the field is read by
  * the shared accessor (`PropertyAccess` of antevemus/adeep-property-access, since 2.0.0),
  * `in`/`notIn` are strict (`in_array(..., true)`), `between` is inclusive and a null value
- * is never between.
+ * is never between. Since 2.2.0 (forward 047) distinct()/distinctBy() accept an
+ * IALinqEqualityComparer as the identity (ALinqContract::distinct(), shared with the lazy side).
  *
- * @version    2.0.0
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -115,21 +117,19 @@ trait FilteringOperations
      * Get distinct elements (Distinct in LINQ)
      *
      * Identity is ALinqCallable::hashKey(): strict and type-aware for scalars, by value for
-     * arrays, by identity for objects. The first occurrence wins; a dictionary keeps the key
-     * of that occurrence.
+     * arrays, by identity for objects. Since 2.2.0 an IALinqEqualityComparer (for instance
+     * `StringComparer::culture('pt_BR', ignoreCase: true)`) may decide instead: its hash() is
+     * the bucket and its equals() decides inside the bucket. The first occurrence wins; a
+     * dictionary keeps the key of that occurrence.
+     *
+     * @param callable|null $keySelector `fn($item)` or `fn($item, $key)`; the item itself when null
+     * @param IALinqEqualityComparer|null $comparer Identity of the item or of its selected key
      */
-    public function distinct(?callable $keySelector = null): IALinqCollection
+    public function distinct(?callable $keySelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         $selector = $keySelector === null ? null : ALinqCallable::withKey($keySelector);
-        $result = [];
-        $seen = [];
-        foreach ($this->items as $key => $item) {
-            $identity = ALinqCallable::hashKey($selector === null ? $item : $selector($item, $key));
-            if (!isset($seen[$identity])) {
-                $seen[$identity] = true;
-                $result[$key] = $item;
-            }
-        }
+        $result = iterator_to_array(ALinqContract::distinct($this->items, $selector, $comparer), true);
+
         return new self(ALinqContract::shapeLike($this->items, $result));
     }
 
@@ -337,13 +337,14 @@ trait FilteringOperations
     /**
      * Returns distinct elements from a sequence based on a key selector function
      *
-     * Same identity rule as distinct() (ALinqCallable::hashKey()).
+     * Same identity rule as distinct() (ALinqCallable::hashKey(), or the comparer since 2.2.0).
      *
      * @param callable $keySelector A function to extract the key for each element
+     * @param IALinqEqualityComparer|null $comparer Identity of the selected key (since 2.2.0)
      * @return self A collection of distinct elements based on the key selector
      */
-    public function distinctBy(callable $keySelector): IALinqCollection
+    public function distinctBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->distinct($keySelector);
+        return $this->distinct($keySelector, $comparer);
     }
 }

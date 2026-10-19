@@ -18,7 +18,11 @@ namespace Antevemus\ALinq\Interfaces;
  * collection, including the result of `orderByNatural`/`orderByCustom`/`orderByKey`,
  * throws `LogicException`.
  *
- * @version    1.4.0
+ * Since 2.2.0: `orderBy()`/`orderByDescending()` take an optional comparer over the keys, as
+ * `thenBy*()` (for instance `Antevemus\ALinq\Comparison\StringComparer::culture('pt_BR')`).
+ * Classes that implement this interface on their own must add the parameter.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -31,15 +35,17 @@ interface IALinqOrderable extends IALinqBaseCollection
      * Sort elements by the selected key (OrderBy in LINQ)
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (`<=>` convention, since 2.2.0); `<=>` when null
      */
-    public function orderBy(callable $keySelector): IALinqCollection;
+    public function orderBy(callable $keySelector, ?callable $comparer = null): IALinqCollection;
 
     /**
      * Sort elements in descending order (OrderByDescending in LINQ)
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (`<=>` convention, since 2.2.0); `<=>` when null
      */
-    public function orderByDescending(callable $keySelector): IALinqCollection;
+    public function orderByDescending(callable $keySelector, ?callable $comparer = null): IALinqCollection;
 
     /**
      * Subsequent ascending ordering (ThenBy in LINQ)

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Traits;
 
+use Antevemus\ALinq\ALinqLookup;
+use Antevemus\ALinq\DuplicateKeyPolicy;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
@@ -18,7 +20,11 @@ use UnexpectedValueException;
  * Callbacks follow ALinqCallable::withKey(): `($item, $key)` when they accept two
  * parameters, the item alone otherwise (review 2026-10-08, decision 4a).
  *
- * @version    1.3.1
+ * Since 2.2.0 (forward 047): toDictionary() takes a DuplicateKeyPolicy and toLookup() returns
+ * an ALinqLookup, both on the implementation shared with the lazy side
+ * (ALinqContract::dictionary(), ALinqContract::lookup()).
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -82,31 +88,47 @@ trait SelectionOperations
     /**
      * Convert to dictionary (ToDictionary in LINQ)
      *
-     * The key must be an int, a string or a BackedEnum (RN-07) and must be unique: a key
-     * produced twice throws instead of silently overwriting the first element (RN-08,
-     * as ToDictionary does in LINQ).
+     * The key must be an int, a string or a BackedEnum (RN-07). By default it must be unique:
+     * a key produced twice throws instead of silently overwriting the first element (RN-08,
+     * as ToDictionary does in LINQ). Since 2.2.0 `$onDuplicate` may choose
+     * DuplicateKeyPolicy::KeepFirst (the element selector does not run for the repeats) or
+     * DuplicateKeyPolicy::KeepLast (the key stays at the position of its first occurrence).
+     * A key is a PHP array key: `1` and `'1'` are the same key.
      *
-     * @throws InvalidArgumentException when a key is not int/string/BackedEnum or is produced twice
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`; the item when null
+     * @param DuplicateKeyPolicy $onDuplicate What a repeated key does (since 2.2.0)
+     * @throws InvalidArgumentException when a key is not int/string/BackedEnum or, under Throw, is produced twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null): array
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array
     {
-        $result = [];
-        $keySelector = ALinqCallable::withKey($keySelector);
-        $elementSelector = ALinqCallable::withKey($elementSelector ?? fn($item) => $item);
+        return ALinqContract::dictionary(
+            $this->items,
+            ALinqCallable::withKey($keySelector),
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
+            $onDuplicate
+        );
+    }
 
-        foreach ($this->items as $itemKey => $item) {
-            $key = ALinqContract::groupKey($keySelector($item, $itemKey), $itemKey, 'toDictionary');
-            if (array_key_exists($key, $result)) {
-                throw new InvalidArgumentException(sprintf(
-                    'toDictionary() key %s produced twice (second time for item at key %s)',
-                    var_export($key, true),
-                    var_export($itemKey, true)
-                ));
-            }
-            $result[$key] = $elementSelector($item, $itemKey);
-        }
-
-        return $result;
+    /**
+     * Convert to a lookup, a one-to-many dictionary (ToLookup in LINQ, since 2.2.0)
+     *
+     * A groupBy() already materialized: `get($key)` gives the elements of a key, or an empty
+     * collection for a missing key. The key follows groupBy(): an int, a string or a
+     * BackedEnum; null and every other type throw (unlike .NET, which accepts a null key: a
+     * lookup answers as groupBy() does).
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`; the item when null
+     * @throws InvalidArgumentException when a key is not int, string or BackedEnum
+     */
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup
+    {
+        return ALinqContract::lookup(
+            $this->items,
+            ALinqCallable::withKey($keySelector),
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector)
+        );
     }
 
     /**

@@ -1,0 +1,48 @@
+name: Quality
+
+# Since 2.2.0 (forward 047): mutation testing with Infection, scoped to the code added or changed
+# since v2.1.0 (--git-diff-lines against the tag; the scope and the measured score are recorded in
+# infection.json5). No minimum score is imposed yet: the run reports the MSI.
+on:
+  schedule:
+    # Mondays, 06:41 UTC.
+    - cron: '41 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NO_PROXY: 127.0.0.1,localhost
+
+jobs:
+  mutation:
+    name: Mutation testing of the code changed since v2.1.0 (Infection, PHP 8.4 with intl)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # the diff base (tag v2.1.0) must be in the clone
+          fetch-depth: 0
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: json, mbstring, curl, pdo_sqlite, intl
+          coverage: pcov
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Infection
+        run: vendor/bin/infection --threads=max --only-covering-test-cases --git-diff-lines --git-diff-base=v2.1.0 --no-interaction --no-progress --logger-github=false
+
+      - name: Summary
+        if: always()
+        run: cat coverage/infection/summary.log || true

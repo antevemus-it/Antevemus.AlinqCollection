@@ -6,6 +6,9 @@ namespace Antevemus\ALinq\Tests\Contract;
 
 use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ALinq\ALinqLazyCollection;
+use Antevemus\ALinq\ALinqLookup;
+use Antevemus\ALinq\Comparison\StringComparer;
+use Antevemus\ALinq\DuplicateKeyPolicy;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
 use ErrorException;
 use PHPUnit\Framework\TestCase;
@@ -31,6 +34,13 @@ use Throwable;
  * 2.1.0 (forward 036, RN-02): the five aggregates with a default joined the matrix; their
  * own matrix (only nulls, ties, values that are not comparable, a throwing selector, each
  * answer checked against the sibling without default) is AggregateOrDefaultContractTest.
+ *
+ * 2.2.0 (forward 047, RN-02): groupBy(), countBy(), aggregateBy() (the third argument of $func
+ * is the position inside the group on both sides), toLookup() (an ALinqLookup compares by its
+ * toArray()), toDictionary() under the three policies, exceptByKeys()/intersectByKeys() (keys
+ * as an array, a generator and a collection, null among them), implode(), and the comparer of
+ * orderBy*(), distinct*(), min*() and max*() joined the matrix; toLookup(), exceptByKeys() and
+ * countBy() joined the row matrix.
  */
 final class ParityTest extends TestCase
 {
@@ -50,6 +60,9 @@ final class ParityTest extends TestCase
         'minOrDefault("d", fn(v,k))',
         'averageOrDefault("d", fn(v,k))',
         'maxByOrDefault("d", fn(v,k) k)',
+        // 2.2.0: the message of a repeated key names the source key of the second item
+        'toDictionary(parity)',
+        'toDictionary(1 vs "1")',
     ];
 
     /**
@@ -168,6 +181,47 @@ final class ParityTest extends TestCase
             'toArray()' => fn($c) => $c->toArray(),
             'toObject()' => fn($c) => (array) $c->toObject(),
             'jsonSerialize()' => fn($c) => json_encode($c),
+            // 2.2.0 (forward 047, RN-02): every new operator and every new parameter
+            'groupBy(parity)' => fn($c) => $c->groupBy(fn($v) => is_int($v) ? $v % 2 : 'other'),
+            'groupBy(null key)' => fn($c) => $c->groupBy(fn($v) => null),
+            'countBy(parity)' => fn($c) => $c->countBy(fn($v) => is_int($v) ? $v % 2 : 'other'),
+            'countBy(float key)' => fn($c) => $c->countBy(fn($v) => 1.5),
+            'aggregateBy(parity, position)' => fn($c) => $c->aggregateBy(fn($v) => is_int($v) ? $v % 2 : 'other', '', fn($acc, $v, $p) => $acc . "[$p=" . json_encode($v) . ']'),
+            'aggregateBy(bool key)' => fn($c) => $c->aggregateBy(fn($v) => true, 0, fn($acc) => $acc + 1),
+            'toLookup(parity)' => fn($c) => $c->toLookup(fn($v) => is_int($v) ? $v % 2 : 'other'),
+            'toLookup(parity, json)' => fn($c) => $c->toLookup(fn($v) => is_int($v) ? $v % 2 : 'other', fn($v) => json_encode($v)),
+            'toLookup(null key)' => fn($c) => $c->toLookup(fn($v) => null),
+            'toLookup(get missing)' => fn($c) => $c->toLookup(fn($v) => 'k')->get('missing'),
+            'toDictionary(json)' => fn($c) => $c->toDictionary(fn($v) => json_encode($v)),
+            'toDictionary(parity)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v % 2 : 'other'),
+            'toDictionary(parity, KeepFirst)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v % 2 : 'other', null, DuplicateKeyPolicy::KeepFirst),
+            'toDictionary(parity, json, KeepLast)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v % 2 : 'other', fn($v) => json_encode($v), DuplicateKeyPolicy::KeepLast),
+            'toDictionary(1 vs "1")' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? 1 : '1'),
+            'toDictionary(1 vs "1", KeepLast)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? 1 : '1', fn($v) => json_encode($v), DuplicateKeyPolicy::KeepLast),
+            'toDictionary(float key, KeepFirst)' => fn($c) => $c->toDictionary(fn($v) => 0.5, null, DuplicateKeyPolicy::KeepFirst),
+            'exceptByKeys([1,3,null])' => fn($c) => $c->exceptByKeys([1, 3, null], fn($v) => $v),
+            'exceptByKeys(generator)' => fn($c) => $c->exceptByKeys((function () { yield 2; yield 'y'; yield '0'; })(), fn($v) => $v),
+            'intersectByKeys([2,"0",false])' => fn($c) => $c->intersectByKeys([2, '0', false], fn($v) => $v),
+            'intersectByKeys(collection)' => fn($c) => $c->intersectByKeys(ALinqCollection::from([1, 'z', null]), fn($v) => $v),
+            'intersectByKeys(lazy, parity)' => fn($c) => $c->intersectByKeys(ALinqLazyCollection::from([1, 'other']), fn($v) => is_int($v) ? $v % 2 : 'other'),
+            'orderBy(json, reversed comparer)' => fn($c) => $c->orderBy(fn($v) => json_encode($v), fn($a, $b) => $b <=> $a),
+            'orderByDescending(json, ordinal)' => fn($c) => $c->orderByDescending(fn($v) => json_encode($v), StringComparer::ordinal()),
+            'orderBy(v, ordinal)' => fn($c) => $c->orderBy(fn($v) => $v, StringComparer::ordinal()),
+            'distinct(null, parity comparer)' => fn($c) => $c->distinct(null, new C\ParityComparer()),
+            'distinct(json, ordinalIgnoreCase)' => fn($c) => $c->distinct(fn($v) => is_string($v) ? strtoupper($v) : json_encode($v), StringComparer::ordinalIgnoreCase()),
+            'distinctBy(json, parity comparer)' => fn($c) => $c->distinctBy(fn($v) => json_encode($v), new C\ParityComparer()),
+            'min(null, reversed)' => fn($c) => $c->min(null, fn($a, $b) => $b <=> $a),
+            'max(json, ordinal)' => fn($c) => $c->max(fn($v) => json_encode($v), StringComparer::ordinal()),
+            'max(v, ordinal)' => fn($c) => $c->max(null, StringComparer::ordinal()),
+            'minBy(json, reversed)' => fn($c) => $c->minBy(fn($v) => json_encode($v), fn($a, $b) => $b <=> $a),
+            'maxBy(text or null, ordinal)' => fn($c) => $c->maxBy(fn($v) => is_int($v) ? (string) (10 - $v) : null, StringComparer::ordinal()),
+            'minOrDefault("d", null, reversed)' => fn($c) => $c->minOrDefault('d', null, fn($a, $b) => $b <=> $a),
+            'maxOrDefault("d", json, ordinal)' => fn($c) => $c->maxOrDefault('d', fn($v) => json_encode($v), StringComparer::ordinal()),
+            'minByOrDefault("d", json, reversed)' => fn($c) => $c->minByOrDefault('d', fn($v) => json_encode($v), fn($a, $b) => $b <=> $a),
+            'maxByOrDefault("d", json, ordinal)' => fn($c) => $c->maxByOrDefault('d', fn($v) => json_encode($v), StringComparer::ordinal()),
+            'implode()' => fn($c) => $c->implode(),
+            'implode(", ")' => fn($c) => $c->implode(', '),
+            'implode("|", json)' => fn($c) => $c->implode('|', fn($v) => json_encode($v)),
         ];
     }
 
@@ -245,6 +299,10 @@ final class ParityTest extends TestCase
             'orderByDescending(salary)->thenBy(dept)->thenBy(id)' => fn($c) => $c->orderByDescending(fn($r) => C\Employee::read($r, 'salary'))->thenBy(fn($r) => C\Employee::read($r, 'dept'))->thenBy(fn($r) => C\Employee::read($r, 'id')),
             'single(id===2)' => fn($c) => $c->single(fn($r) => C\Employee::read($r, 'id') === 2),
             'single(dept===a)' => fn($c) => $c->single(fn($r) => C\Employee::read($r, 'dept') === 'a'),
+            // 2.2.0 (forward 047, RN-02)
+            'toLookup(dept)' => fn($c) => $c->toLookup(fn($r) => C\Employee::read($r, 'dept')),
+            'exceptByKeys([1,3], id)' => fn($c) => $c->exceptByKeys([1, 3], fn($r) => C\Employee::read($r, 'id')),
+            'countBy(dept)' => fn($c) => $c->countBy(fn($r) => C\Employee::read($r, 'dept')),
         ];
     }
 
@@ -263,7 +321,8 @@ final class ParityTest extends TestCase
             }
         }
 
-        $this->assertSame(56, $total);
+        // 14 row operations of 1.4.0 + 3 of 2.2.0 (toLookup, exceptByKeys, countBy), × 4 inputs
+        $this->assertSame((14 + 3) * 4, $total);
         $this->assertSame([], $rows, "Eager × lazy divergences on rows:\n" . implode("\n", $rows));
     }
 
@@ -316,6 +375,9 @@ final class ParityTest extends TestCase
             if ($result instanceof IALinqCollection || $result instanceof ALinqLazyCollection) {
                 return ['kind' => 'collection', 'val' => self::deep($result->toArray())];
             }
+            if ($result instanceof ALinqLookup) {
+                return ['kind' => 'lookup', 'val' => self::deep($result->toArray())];
+            }
             return ['kind' => 'value', 'val' => self::deep($result)];
         } catch (Throwable $e) {
             return ['kind' => 'throw', 'val' => $e::class . ': ' . $e->getMessage()];
@@ -326,7 +388,7 @@ final class ParityTest extends TestCase
 
     private static function deep(mixed $value): mixed
     {
-        if ($value instanceof IALinqCollection || $value instanceof ALinqLazyCollection) {
+        if ($value instanceof IALinqCollection || $value instanceof ALinqLazyCollection || $value instanceof ALinqLookup) {
             return self::deep($value->toArray());
         }
         if (is_array($value)) {
@@ -370,5 +432,28 @@ final class Employee
     public static function read(mixed $row, string $field): mixed
     {
         return PropertyAccess::getValue($row, $field);
+    }
+}
+
+/**
+ * An equality comparer for the matrix (2.2.0): integers are equal when they have the same
+ * parity, any other value is equal only to itself (by its JSON text). The hash is coarser than
+ * the equality for strings (every string shares one bucket), so distinct() must ask equals().
+ */
+final class ParityComparer implements \Antevemus\ALinq\Interfaces\IALinqEqualityComparer
+{
+    public function equals(mixed $a, mixed $b): bool
+    {
+        return self::identity($a) === self::identity($b);
+    }
+
+    public function hash(mixed $value): string
+    {
+        return is_string($value) ? 'string' : self::identity($value);
+    }
+
+    private static function identity(mixed $value): string
+    {
+        return is_int($value) ? 'parity' . ($value % 2) : (string) json_encode($value);
     }
 }

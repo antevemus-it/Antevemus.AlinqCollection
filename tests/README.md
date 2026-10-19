@@ -5,10 +5,10 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 17 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 3 contract test files (`tests/Contract/`)
-- **Total Tests:** 598 tests (2.1.0)
-- **Total Assertions:** 2321 assertions
-- **Lines of Test Code:** 9,500+ lines
+- **Test Files:** 26 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
+- **Total Tests:** 731 tests (2.2.0)
+- **Total Assertions:** 2968 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 3051 with ext-intl (1 skipped: the test of the missing extension)
+- **Lines of Test Code:** 13,000+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
 
@@ -130,7 +130,7 @@ Validates the shared callback helper:
 - `hashKey()` — Strict, type-aware identity buckets
 
 ### 14. `tests/Contract/ParityTest.php` (3 tests)
-Enforces the eager × lazy contract (README §11):
+Enforces the eager × lazy contract (README §11); since 2.2.0 the matrix holds the grouping operators, `toLookup` (an `ALinqLookup` compares by its `toArray()`), `toDictionary` under the three policies, `exceptByKeys`/`intersectByKeys`, `implode` and every comparer parameter, and the row matrix runs 17 operations × 4 inputs (68 comparisons):
 - Every operation both collections share runs over the same seven inputs on both sides; results are compared strictly, keys included, and when an operation throws the exception class and message (1.4.0) must match
 - A second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields (marked `#[Specifiable]` since 1.4.1)
 - A guard fails when a public method shared by both classes is missing from the matrix
@@ -166,6 +166,36 @@ The aggregates with a fallback (2.1.0, `minOrDefault`, `maxOrDefault`, `averageO
 
 ### 19. `tests/Contract/AggregateOrDefaultContractTest.php` (2 tests)
 Uses the sibling as the oracle: 17 pairs (sibling, `OrDefault` variant) × 13 inputs × 2 sides. Where the sibling throws `UnderflowException` the variant returns the default; everywhere else (values, ties, non-comparable or non-numeric values, a throwing selector) the answer, or the exception class and message, is the same; eager and lazy agree. A tie returns the first item, by identity.
+
+### 20. `tests/Unit/StringComparerTest.php` (17 tests)
+`StringComparer` (2.2.0): `ordinal()` is bytes and not PHP's `<=>` (`'10'`/`'9'`, `'1e1'`/`'10'`); -1/0/1; `null` first and equal only to `null`, its hash never shared with a text; `Stringable` by its text; any other type throws; `ordinalIgnoreCase()` folds Unicode case and refuses invalid UTF-8; immutable; accepted by `contains()`, `orderByCustom()`, `thenBy()`, `intersectWith()`, `exceptWith()`. With ext-intl: `culture('pt_BR')` orders accented names, the strength of each option, `numeric`, locale resolution (`pt_XX` accepted, unknown and empty locales refused), invalid UTF-8 refused with the ICU error and not the text. Without ext-intl: the `LogicException` of the factory.
+
+### 21. `tests/Unit/ComparerOperationsTest.php` (13 tests)
+The comparer of 2.2.0 on both collections: `orderBy()`/`orderByDescending()` with a comparer, `distinct()`/`distinctBy()` with an `IALinqEqualityComparer` (and a comparer whose hash puts everything in one bucket, so `equals()` decides), `min`/`max`/`minBy`/`maxBy` and the `*OrDefault` variants with a comparer (null skipped, the comparer decides what is comparable), and one extreme comparison for both sides (NAN, arrays with different keys).
+
+### 22. `tests/Unit/LookupAndDictionaryTest.php` (21 tests)
+`toLookup()` + `ALinqLookup` (missing key = empty collection, element selector with the source key, the answer of `groupBy()`, `BackedEnum` and `1`/`'1'`/`'01'` keys, a null key throws, immutable, empty source) and `toDictionary(onDuplicate:)` (Throw keeps the message of 2.1.0, KeepFirst does not run the element selector for repeats, KeepLast keeps the position of the first occurrence, every key validated in every policy, an enum and not a string, the interface signatures), on both collections.
+
+### 23. `tests/Unit/LazyGroupingTest.php` (9 tests)
+The lazy grouping of 2.2.0: `groupBy`/`countBy`/`aggregateBy`/`exceptByKeys` are deferred and open a single-pass source once (a second traversal re-reads it; `remember()` replays), the terminals read it once, `aggregateBy()` hands the position inside the group on both sides, one seed for every group, the invalid-key message of the eager side, the stages are dictionaries downstream, `countBy()` over 200 000 items stays under a 1 MiB peak growth while `groupBy()` crosses it, a SQLite cursor, and the eager answers of `countBy`/`aggregateBy` unchanged.
+
+### 24. `tests/Unit/KeyedSetAndJoinTest.php` (13 tests)
+`exceptByKeys()`/`intersectByKeys()` with keys as an array, a generator, an eager and a lazy collection; the selector runs on the items only; strict identity and `null` matching `null`; dictionary keys kept; `exceptBy()` unchanged next to the .NET form; the lazy stage reads the keys on every traversal; `join()`/`groupJoin()` over a generator, an eager and a lazy collection answer as over an array and read the inner side once; the interface signatures.
+
+### 25. `tests/Unit/CsvSeparatorDetectionTest.php` (27 tests)
+`fromCsv(separator: null)`: each candidate, a separator inside quotes, a quoted record over several lines, the most frequent wins, one field reads with `,`, blank lines before the first record, BOM, CRLF, escaped and doubled quotes, empty files; with a header; ties (two and four candidates); first records over 64 KiB (one line, or several shorter lines in quotes) and of exactly 64 KiB; detection on every traversal and deferred; a stream that cannot seek; the default is still `,`.
+
+### 26. `tests/Unit/ImplodeTest.php` (8 tests)
+`implode()` on both collections: strings, numbers, `Stringable`, null as empty text, empty collection, PHP's text of a float, the selector with the key, the exception for a bool, an array or an object, the lazy side streams, both interfaces.
+
+### 27. `tests/Unit/ConsumerExamplesTest.php` (4 tests)
+The consumer's code that motivated 2.2.0, transcribed and run next to its rewrite: three orderings by an accented name (with ext-intl), the hand-written index (`KeepLast`) and grouping (`toLookup`), the documents without a participant (`exceptByKeys`) and the CSV reader of the economic indexes (`separator: null`), including where the two separator rules part.
+
+### 28. `tests/Unit/ReadmeConsumerGapsTest.php` (15 tests)
+Runs the seven README blocks of 2.2.0 (marked `<!-- tested: id -->`, EN and pt-BR) as written and checks every commented answer (`// [1, 3]`, `// throws Class: message`); the culture block runs only with ext-intl. A guard checks that both READMEs carry the same blocks, with the same code (comments aside) and the same answers.
+
+### 29. `tests/Contract/ConsumerGapsPropertyTest.php` (6 tests)
+Properties with an independent oracle (2.2.0, RN-03): 300 seeded inputs per property (lists and dictionaries of 0-60 items; int, string, `1`/`'1'`/`'01'`, `BackedEnum` and occasional invalid keys; repeated values; null), on both collections: `toLookup` against `$m[$k][] = $x` and against `groupBy`; `toDictionary` `KeepFirst`/`KeepLast` against the hand-written index; `countBy`/`aggregateBy` against hand-written counters (the position inside the group); `exceptByKeys`/`intersectByKeys` against `where(in_array(..., true))->distinctBy()`; the laws of every comparer (antisymmetry, transitivity on every triple of a sample, `equals` ⇔ `compare === 0` ⇒ equal hashes; the culture ones with ext-intl).
 
 ---
 

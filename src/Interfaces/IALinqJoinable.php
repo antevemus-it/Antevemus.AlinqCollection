@@ -19,7 +19,14 @@ namespace Antevemus\ALinq\Interfaces;
  * the default result is the pair `[$outer, $inner]`, the output is always a list and a
  * `null` key never matches (that side comes out without a partner).
  *
- * @version    1.4.0
+ * Since 2.2.0 (forward 047): `join()`/`groupJoin()` take any iterable as the inner side (read
+ * once); `exceptByKeys()`/`intersectByKeys()` are the `ExceptBy`/`IntersectBy` of .NET 6 (a
+ * sequence of keys; a `null` key matches a `null` in it, a set rule). `exceptBy()`/
+ * `intersectBy()` keep the MoreLINQ form (a sequence of elements, the selector applied to
+ * both sides). Classes that implement this interface on their own must widen the two
+ * parameters and add the two methods.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -32,14 +39,14 @@ interface IALinqJoinable extends IALinqBaseCollection
      * Join with another collection (Join in LINQ); keys match by strict identity and a
      * null key never matches (LINQ and SQL semantics); result is a list
      */
-    public function join(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
 
     /**
      * Left join with another collection (GroupJoin in LINQ); the matched group is an
      * ALinqCollection (empty when nothing matches); keys match by strict identity and a
      * null key never matches (LINQ and SQL semantics)
      */
-    public function groupJoin(array $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
 
     /**
      * Left outer join (LeftJoin in .NET 10/11 LINQ): every outer item, paired with each match
@@ -108,14 +115,30 @@ interface IALinqJoinable extends IALinqBaseCollection
     public function replaceRecursive(array $replacements): IALinqCollection;
 
     /**
-     * Produces the set difference of two sequences based on a key selector function
+     * Produces the set difference of two sequences based on a key selector function; $second
+     * holds ELEMENTS and the selector applies to both sides (MoreLINQ), unlike the `ExceptBy`
+     * of .NET 6: for a sequence of keys use exceptByKeys()
      */
     public function exceptBy(array $second, callable $keySelector): IALinqCollection;
 
     /**
-     * Produces the set intersection of two sequences based on a key selector function
+     * Produces the set intersection of two sequences based on a key selector function; $second
+     * holds ELEMENTS and the selector applies to both sides (MoreLINQ), unlike the `IntersectBy`
+     * of .NET 6: for a sequence of keys use intersectByKeys()
      */
     public function intersectBy(array $second, callable $keySelector): IALinqCollection;
+
+    /**
+     * The distinct items whose selected key is not in $keys (ExceptBy of .NET 6, since 2.2.0):
+     * $keys is read once, the selector runs on this collection only, strict identity
+     */
+    public function exceptByKeys(iterable $keys, callable $keySelector): IALinqCollection;
+
+    /**
+     * The distinct items whose selected key is in $keys (IntersectBy of .NET 6, since 2.2.0):
+     * $keys is read once, the selector runs on this collection only, strict identity
+     */
+    public function intersectByKeys(iterable $keys, callable $keySelector): IALinqCollection;
 
     /**
      * Produces the set union of two sequences based on a key selector function

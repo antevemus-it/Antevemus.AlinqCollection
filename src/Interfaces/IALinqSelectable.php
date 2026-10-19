@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq\Interfaces;
 
+use Antevemus\ALinq\ALinqLookup;
+use Antevemus\ALinq\DuplicateKeyPolicy;
 use stdClass;
 
 /**
@@ -15,7 +17,11 @@ use stdClass;
  * any iterable and throws for anything else; dictionary keys must be int, string or
  * BackedEnum and a repeated key is an error.
  *
- * @version    1.3.1
+ * Since 2.2.0 (forward 047): `toDictionary()` takes a `DuplicateKeyPolicy` (Throw by default,
+ * KeepFirst, KeepLast) and `toLookup()` returns an immutable `ALinqLookup`. Classes that
+ * implement this interface on their own must add them.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -44,12 +50,23 @@ interface IALinqSelectable extends IALinqBaseCollection
     public function column(string|int $columnKey, string|int|null $indexKey = null): IALinqCollection;
 
     /**
-     * Convert to dictionary (ToDictionary in LINQ)
+     * Convert to dictionary (ToDictionary in LINQ); `1` and `'1'` are the same key
      *
+     * @param DuplicateKeyPolicy $onDuplicate What a repeated key does (since 2.2.0; Throw by default)
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum,
-     *         or produces the same key twice
+     *         or, under DuplicateKeyPolicy::Throw, produces the same key twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null): array;
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array;
+
+    /**
+     * Convert to an immutable one-to-many lookup (ToLookup in LINQ, since 2.2.0): get() of a
+     * missing key is an empty collection; keys follow groupBy() (a null key throws)
+     *
+     * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`
+     * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum
+     */
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup;
 
     /**
      * Convert collection to an object

@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.1.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.2.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/testes-598%20aprovados%20%7C%202321%20asserções-success.svg)](tests/)
+[![Tests Passing](https://img.shields.io/badge/testes-731%20aprovados%20%7C%202968%20asserções-success.svg)](tests/)
 [![Architecture](https://img.shields.io/badge/Arquitetura-LINQ%20%7C%20Coleções%20Funcionais-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Sinergia-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -353,6 +353,42 @@ $pedidos->fullJoin($clientes, $chavePedido, $chaveCliente, $rotulo)->toArray();
 // $pedido = ['id' => 2, 'cliente' => null], $cliente = null
 ```
 
+#### Chaves em vez de elementos: `exceptByKeys()`, `intersectByKeys()`; qualquer iterable no `join()` (desde a 2.2.0)
+
+`exceptByKeys(iterable $keys, callable $keySelector)` e `intersectByKeys(...)` são o `ExceptBy`/`IntersectBy` do .NET 6: o segundo argumento é uma sequência de **chaves** (array, gerador, `ALinqCollection`, `ALinqLazyCollection`), lida uma vez; o seletor roda só sobre esta coleção. São operações de conjunto: cada chave sai uma vez (a primeira ocorrência), chaves comparam por identidade estrita (`'2'` não é `2`), lista é reindexada e dicionário mantém as chaves, e chave `null` casa com um `null` em `$keys` (regra de conjunto; em junção `null` nunca casa).
+
+> **Divergência do .NET em `exceptBy()`/`intersectBy()`.** Os `exceptBy(array $second, callable $keySelector)` e `intersectBy(...)` existentes recebem uma sequência de **elementos** do mesmo formato e aplicam o seletor aos **dois** lados (a forma do MoreLINQ, anterior ao .NET 6). Eles não mudam. Chamados do jeito do .NET (`exceptBy([1, 2], fn($r) => $r['id'])`), leem um índice de um inteiro, emitem aviso e respondem errado: use `exceptByKeys()`.
+
+`join()` e `groupJoin()` aceitam qualquer iterable como lado inner desde a 2.2.0 (era `array`): ele é indexado numa leitura só, então gerador ou cursor lazy funcionam, com as mesmas respostas da forma com array.
+
+<!-- tested: 3-keys -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+
+$documents = ALinqCollection::from([
+    ['id' => 1, 'type' => 'ID card'],
+    ['id' => 2, 'type' => 'ID card'],
+    ['id' => 3, 'type' => 'Proof of address'],
+]);
+$links = ALinqCollection::from([['document_id' => 2, 'participant_id' => 10]]);
+
+// exceptByKeys(): o segundo argumento é uma sequência de CHAVES (o ExceptBy do .NET 6), identidade estrita
+$unlinked = $documents->exceptByKeys($links->select(fn($l) => $l['document_id']), fn($d) => $d['id'])->column('id')->toArray();
+$unlinked; // [1, 3]
+$documents->intersectByKeys([2, 3], fn($d) => $d['id'])->column('id')->toArray(); // [2, 3]
+$documents->exceptByKeys(['2'], fn($d) => $d['id'])->count(); // 3
+
+// exceptBy(): o segundo argumento é uma sequência de ELEMENTOS, o seletor vale para os dois lados
+$documents->exceptBy([['id' => 2]], fn($d) => $d['id'])->column('id')->toArray(); // [1, 3]
+
+// join()/groupJoin(): qualquer iterable como lado inner, lido uma vez (gerador, cursor lazy, coleção)
+$participants = (function () {
+    yield ['id' => 10, 'document_id' => 2, 'name' => 'Ana'];
+})();
+$documents->join($participants, fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $p) => $p['name'] . ': ' . $d['type'])->toArray(); // ['Ana: ID card']
+$documents->groupJoin(ALinqCollection::from([]), fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $ps) => $ps->count())->toArray(); // [0, 0, 0]
+```
+
 ---
 
 ### 4. Agregações e Métricas (`AggregationOperations`)
@@ -428,6 +464,34 @@ $tabelaPrecos = $catalogo->toDictionary(
 ); // ['A1' => 799, 'A2' => 29]
 ```
 
+#### Chaves repetidas e lookups: `toDictionary(onDuplicate:)`, `toLookup()` (desde a 2.2.0)
+
+`toDictionary($keySelector, $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw)`: `Throw` é o comportamento de todas as versões anteriores (a mesma mensagem); `KeepFirst` mantém o primeiro elemento e não roda o seletor de elemento para os repetidos; `KeepLast` mantém o último, na posição da primeira ocorrência, como `$mapa[$linha->id] = $linha`. O seletor de chave roda para todos os itens e toda chave é validada em todas as políticas. `toLookup($keySelector, $elementSelector = null)` devolve um `ALinqLookup` imutável (§6): `get()` de chave ausente é coleção vazia, nunca índice indefinido. Os dois existem também na coleção lazy, como operações terminais que leem o fluxo uma vez.
+
+<!-- tested: 5-dictionary -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\DuplicateKeyPolicy;
+
+$quotes = ALinqCollection::from([
+    ['id' => 7, 'unit' => 'North', 'status' => 'draft'],
+    ['id' => 8, 'unit' => 'South', 'status' => 'sent'],
+    ['id' => 7, 'unit' => 'North', 'status' => 'approved'], // uma versão posterior da cotação 7
+]);
+
+// toDictionary(): chave repetida lança por padrão; uma política pode manter a primeira ou a última
+$quotes->toDictionary(fn($q) => $q['id'], fn($q) => $q['status']); // throws InvalidArgumentException: toDictionary() key 7 produced twice (second time for item at key 2)
+$quotes->toDictionary(fn($q) => $q['id'], fn($q) => $q['status'], DuplicateKeyPolicy::KeepFirst); // [7 => 'draft', 8 => 'sent']
+$quotes->toDictionary(fn($q) => $q['id'], fn($q) => $q['status'], DuplicateKeyPolicy::KeepLast); // [7 => 'approved', 8 => 'sent']
+
+// toLookup(): uma chave, vários elementos; chave ausente é coleção vazia
+$byUnit = $quotes->toLookup(fn($q) => $q['unit'], fn($q) => $q['id']);
+$byUnit->get('North')->toArray(); // [7, 7]
+$byUnit['South']->toArray(); // [8]
+$byUnit->get('East')->count(); // 0
+$byUnit->keys(); // ['North', 'South']
+```
+
 ---
 
 ### 6. Agrupamento e Particionamento (`GroupingOperations`)
@@ -453,6 +517,26 @@ $resumo = $transacoes
     ])
     ->orderByDescending(fn($linha) => $linha['total'])
     ->toArray();
+```
+
+#### `ALinqLookup`: um `groupBy()` materializado (desde a 2.2.0)
+
+`toLookup()` devolve um `ALinqLookup` (o `ILookup<TKey, TElement>` do .NET): chaves na ordem da primeira aparição, os elementos de cada chave na ordem da fonte, `get($key)` (uma `ALinqCollection`, vazia para chave ausente), `contains($key)`, `keys()`, `count()` (número de chaves), iteração como `chave => ALinqCollection` (o formato do `groupBy()`), `toArray()` e `json_encode()`. `ArrayAccess` só de leitura: `$lookup['x']` é `get('x')`, `isset()` é `contains()`, e escrever lança. A chave segue o `groupBy()`: `int`, `string` ou `BackedEnum` (o valor); `null` lança, diferente do .NET, para que um lookup responda como o `groupBy()`.
+
+<!-- tested: 6-lookup -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+
+$lookup = ALinqCollection::from([3, 1, 4, 1, 5, 9, 2, 6])->toLookup(fn($n) => $n % 3);
+$lookup->toArray(); // [0 => [3, 9, 6], 1 => [1, 4, 1], 2 => [5, 2]]
+count($lookup); // 3
+$lookup->contains(1); // true
+$lookup[7]->toArray(); // []
+json_encode($lookup); // '[[3,9,6],[1,4,1],[5,2]]'
+$lookup[7] = ALinqCollection::from([]); // throws LogicException: ALinqLookup is immutable.
+
+// Chaves de grupo são chaves de array do PHP: 1 e '1' são uma chave só, '01' é outra
+ALinqCollection::from([['k' => 1], ['k' => '1'], ['k' => '01']])->toLookup(fn($r) => $r['k'])->keys(); // [1, '01']
 ```
 
 ---
@@ -505,6 +589,68 @@ $mesmaOrdem = $colaboradores
 ```
 
 `orderBy()`/`orderByDescending()` são estáveis e chamam cada seletor de chave uma vez por item. `thenBy()`/`thenByDescending()` acrescentam um critério que só decide entre itens empatados em todos os critérios anteriores; empate total mantém a ordem da origem. O seletor de chave deles recebe `($item, $key)` com a chave da origem, antes da ordenação. Um segundo `orderBy()` começa uma ordenação nova (a chave dele vira a principal), como no LINQ.
+
+#### Comparando texto: `StringComparer` (desde a 2.2.0)
+
+`orderBy()`/`orderByDescending()` passam a aceitar o comparador que o `thenBy()` já aceitava (`fn($chaveA, $chaveB): int`), assim como `min()`, `max()`, `minBy()`, `maxBy()` e as variantes `*OrDefault()`; `distinct()`/`distinctBy()` aceitam um `IALinqEqualityComparer` (um `equals()` e um `hash()` compatível, o `IEqualityComparer<T>` do .NET). `Antevemus\ALinq\Comparison\StringComparer` é os dois, então um objeto serve a todo operador, inclusive `contains()`, `orderByCustom()`, `intersectWith()` e `exceptWith()`, que já aceitavam um callable:
+
+- `StringComparer::ordinal()`: byte a byte. **Não** é o padrão: sem comparador as chaves passam pelo `<=>` do PHP, que lê strings numéricas como números (`'10' <=> '9'` é `1`, `'1e1' <=> '10'` é `0`).
+- `StringComparer::ordinalIgnoreCase()`: dobra de caixa Unicode simples, depois bytes (precisa de `ext-mbstring`). O .NET converte para maiúsculas com a cultura invariante; a igualdade coincide nos casos comuns, a ordem pode diferir em casos raros.
+- `StringComparer::culture($locale, ignoreCase: false, ignoreAccents: false, numeric: false)`: a collation de um idioma, pela ICU (precisa de `ext-intl`, listada em `suggest`; sem ela a fábrica lança `LogicException`). Locale que a ICU não conhece lança `InvalidArgumentException`; `pt_XX` cai para `pt`.
+
+`null` vem antes de todo texto e só é igual a `null`; um `Stringable` é comparado pelo seu texto; qualquer outro valor lança `InvalidArgumentException`. Com comparador, `min()`/`max()` continuam pulando `null`, e quem decide o que pode ser comparado é o comparador, não a biblioteca.
+
+<!-- tested: 7-ordinal -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+
+$names = ALinqCollection::from(['Zeca', 'Álvaro', 'ana', 'Bruno', 'Ética']);
+
+// Sem comparador: o <=> do PHP, byte a byte (maiúsculas primeiro, letras acentuadas por último)
+$names->orderBy(fn($n) => $n)->toArray(); // ['Bruno', 'Zeca', 'ana', 'Álvaro', 'Ética']
+
+// ordinal(): bytes, sem a leitura numérica de strings numéricas que o <=> faz
+ALinqCollection::from(['10', '9'])->orderBy(fn($s) => $s)->toArray(); // ['9', '10']
+ALinqCollection::from(['10', '9'])->orderBy(fn($s) => $s, StringComparer::ordinal())->toArray(); // ['10', '9']
+
+// ordinalIgnoreCase(): dobra de caixa Unicode; acentos continuam contando
+ALinqCollection::from(['Ana', 'ANA', 'ana', 'Ána'])->distinct(null, StringComparer::ordinalIgnoreCase())->toArray(); // ['Ana', 'Ána']
+StringComparer::ordinalIgnoreCase()->equals('ÉTICA', 'ética'); // true
+```
+
+Com `ext-intl`:
+
+<!-- tested: 7-culture -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+
+$people = ALinqCollection::from([
+    ['name' => 'Zeca', 'team' => 'B'],
+    ['name' => 'Álvaro', 'team' => 'A'],
+    ['name' => 'ana', 'team' => 'B'],
+    ['name' => 'Ética', 'team' => 'A'],
+    ['name' => 'Bruno', 'team' => 'A'],
+]);
+$ptBr = StringComparer::culture('pt_BR', ignoreCase: true, ignoreAccents: true);
+
+$people->orderBy(fn($p) => $p['name'], $ptBr)->column('name')->toArray(); // ['Álvaro', 'ana', 'Bruno', 'Ética', 'Zeca']
+$sorted = $people
+    ->orderBy(fn($p) => $p['team'])
+    ->thenBy(fn($p) => $p['name'], $ptBr)
+    ->column('name')
+    ->toArray();
+$sorted; // ['Álvaro', 'Bruno', 'Ética', 'ana', 'Zeca']
+$ptBr->equals('Ética', 'ETICA'); // true
+$people->minBy(fn($p) => $p['name'], $ptBr)['name']; // 'Álvaro'
+
+// Agrupar sem acento: o hash é uma chave opaca (não é para exibir)
+$people->countBy(fn($p) => $ptBr->hash(mb_substr($p['name'], 0, 1)))->count(); // 4
+
+// numeric: sequências de dígitos comparam pelo valor
+ALinqCollection::from(['item10', 'item2'])->orderBy(fn($s) => $s, StringComparer::culture('en_US', numeric: true))->toArray(); // ['item2', 'item10']
+```
 
 ---
 
@@ -739,6 +885,37 @@ $ordenados = ALinqLazyCollection::range(1, 6)
     ->toArray();                          // [6, 3, 4, 1, 5, 2]
 ```
 
+#### Agrupamentos e dicionários acumulam dados (desde a 2.2.0)
+
+A coleção lazy tem `groupBy()`, `countBy()` e `aggregateBy()` como **estágios postergados**, como o `orderBy()`: nada roda até a primeira travessia, e cada travessia lê o upstream uma vez. Não são iguais em memória:
+
+- `groupBy()` guarda todos os itens (O(n)) e entrega `chave => ALinqCollection`;
+- `countBy()` guarda **um inteiro por chave** e `aggregateBy()` um acumulador por chave (O(chaves)): `fromCursor($stmt)->countBy(...)` conta milhões de linhas sem guardá-las;
+- `toDictionary()` e `toLookup()` são terminais: uma passada (`toLookup()` guarda todos os elementos);
+- `exceptByKeys()`/`intersectByKeys()` leem as chaves primeiro e depois fazem streaming, lembrando as chaves já emitidas;
+- `implode()` faz streaming (a memória é o texto que ele monta).
+
+Os estágios releem o upstream a cada travessia, como o `orderBy()`: sobre `fromCursor()` a segunda travessia lança; chame `remember()` antes. O resultado deles é um dicionário indexado pela chave do grupo, e os operadores seguintes mantêm essas chaves (um `groupBy()` eager cujas chaves por acaso são `0, 1, 2…` é uma lista, que um `where()` seguinte reindexa). A `$position` que o `aggregateBy()` entrega a `$func` é a posição do item **dentro do seu grupo** (0, 1, …), nas duas coleções, como o `aggregateBy()` eager sempre fez; todo grupo parte da mesma `$seed`.
+
+<!-- tested: 10-grouping -->
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+
+$orders = ALinqLazyCollection::from([
+    ['id' => 1, 'status' => 'paid', 'total' => 10],
+    ['id' => 2, 'status' => 'open', 'total' => 25],
+    ['id' => 3, 'status' => 'paid', 'total' => 5],
+]);
+
+$counts = $orders->countBy(fn($o) => $o['status']); // postergado: nada roda ainda
+$counts->toArray(); // ['paid' => 2, 'open' => 1]
+$orders->aggregateBy(fn($o) => $o['status'], 0, fn($sum, $o) => $sum + $o['total'])->toArray(); // ['paid' => 15, 'open' => 25]
+$orders->aggregateBy(fn($o) => $o['status'], '', fn($trace, $o, $position) => $trace . $position)->toArray(); // ['paid' => '01', 'open' => '0']
+$orders->groupBy(fn($o) => $o['status'])->select(fn($group) => $group->sum(fn($o) => $o['total']))->toArray(); // ['paid' => 15, 'open' => 25]
+$orders->toLookup(fn($o) => $o['status'], fn($o) => $o['id'])->get('paid')->toArray(); // [1, 3]
+$orders->implode(', ', fn($o) => '#' . $o['id']); // '#1, #2, #3'
+```
+
 #### Entrada irregular (desde a 1.3.2)
 
 Entrada irregular falha alto ou é uma escolha explícita, nunca uma remodelagem silenciosa:
@@ -754,17 +931,35 @@ ALinqLazyCollection::fromCsv('clientes.csv')->toArray();                // largu
 ALinqLazyCollection::fromCsv('clientes.csv', strict: false)->toArray(); // comportamento 1.3.1: o registro irregular vem como lista
 ```
 
+#### Detecção do separador do CSV (desde a 2.2.0)
+
+`fromCsv($path, separator: null)` detecta o separador a cada travessia, depois do BOM, a partir do primeiro registro não vazio, lido com as regras de aspas (separador entre aspas não conta, e um campo entre aspas pode atravessar linhas), até 64 KiB. Os candidatos são `,` `;` tab `|`, e vence o que aparece **mais vezes fora das aspas**. Empate entre os mais frequentes lança `RuntimeException('Cannot detect the CSV separator of "<path>": "," and ";" both appear N times in the first record; pass $separator')`; registro sem nenhum deles é lido com `,` (um campo só lê igual com qualquer separador); primeiro registro acima de 64 KiB ou stream que não aceita `fseek` lançam. O padrão continua `','`: ninguém passa a detectar sem pedir.
+
+<!-- tested: 10-csv -->
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+
+$path = tempnam(sys_get_temp_dir(), 'index');
+file_put_contents($path, "date;value\n2026-01;0,52\n2026-02;0,61\n");
+
+ALinqLazyCollection::fromCsv($path, separator: null)->toArray(); // [['date' => '2026-01', 'value' => '0,52'], ['date' => '2026-02', 'value' => '0,61']]
+ALinqLazyCollection::fromCsv($path, ';')->toArray() === ALinqLazyCollection::fromCsv($path, separator: null)->toArray(); // true
+
+unlink($path);
+```
+
 ### 11. O Contrato: Chaves, Igualdade, Coleções Vazias (desde a 1.3.0)
 
-As duas coleções obedecem a um único contrato escrito, garantido por um teste de paridade que executa toda operação compartilhada sobre as mesmas entradas no lado eager e no lado lazy (`tests/Contract/ParityTest.php`, zero divergências permitidas). Quando uma operação lança, a classe da exceção e, desde a 1.4.0, a mensagem precisam ser as mesmas nos dois lados; uma segunda matriz roda os operadores baseados em campo e chave (`whereIn`, `whereBetween`, as junções externas, `thenBy`, `single`) sobre linhas dadas como arrays e como entidades com campos privados.
+As duas coleções obedecem a um único contrato escrito, garantido por um teste de paridade que executa toda operação compartilhada sobre as mesmas entradas no lado eager e no lado lazy (`tests/Contract/ParityTest.php`, zero divergências permitidas). Quando uma operação lança, a classe da exceção e, desde a 1.4.0, a mensagem precisam ser as mesmas nos dois lados; uma segunda matriz roda os operadores baseados em campo e chave (`whereIn`, `whereBetween`, as junções externas, `thenBy`, `single` e, desde a 2.2.0, `toLookup`, `exceptByKeys`, `countBy`) sobre linhas dadas como arrays e como entidades com campos privados. Desde a 2.2.0 os operadores de agrupamento (`groupBy`, `countBy`, `aggregateBy`, `toDictionary`, `toLookup`), `exceptByKeys`/`intersectByKeys`, `implode` e todo parâmetro de comparador estão na matriz, e propriedades com oráculo independente (`tests/Contract/ConsumerGapsPropertyTest.php`) os conferem sobre entradas geradas.
 
 | Regra | Comportamento |
 |---|---|
 | **Chaves** | Uma **lista** (`array_is_list()`) sai **reindexada** de toda operação de filtragem, fatiamento, conjunto ou ordenação; um **dicionário** (qualquer outro formato de chaves, inclusive `[10 => 'a', 20 => 'b']`) **mantém as chaves**. `select()` sempre preserva as chaves. `concat()`, `selectMany()`, `join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`, `zip()`, `unionBy()` sempre produzem lista. `chunk()` é uma lista de coleções (cada pedaço segue a regra da sua origem). A coleção lazy sabe se a fonte é lista (`from(array)`, `fromFile()`, `fromCsv()`, `fromCursor()`, `fromHttpPages()`, `range()`, `repeat()`); um generator cru é "desconhecido": mantém as chaves durante o streaming e `toArray()` só reindexa quando todas as chaves são inteiras. A materialização nunca perde item: chave repetida é anexada. |
-| **Igualdade** | Elementos e chaves são comparados por **identidade estrita e tipada** em toda parte: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `contains`, e o `whereIn`/`whereNotIn` das coleções. `1`, `'1'`, `1.0` e `true` são quatro valores diferentes; arrays comparam por valor; objetos por identidade. Chave `null` nunca casa em `join`/`groupJoin` nem nas junções externas (semântica do LINQ e do SQL; numa junção externa esse item sai sem par). Uma coluna de banco que chega como string não casa com uma chave inteira: faça o cast do seu lado. Um comparador customizado (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) pode devolver `bool` (`true` = iguais) ou um inteiro no estilo `<=>` (`0` = iguais). |
-| **Chaves de grupo** | `groupBy`, `countBy`, `aggregateBy` e `toDictionary` aceitam chaves `int`, `string` e `BackedEnum` (o seu valor); `null`, `bool`, `float`, arrays e objetos lançam `InvalidArgumentException` em vez de serem coagidos em silêncio. `toDictionary()` lança em chave repetida. |
+| **Igualdade** | Elementos e chaves são comparados por **identidade estrita e tipada** em toda parte: `distinct`, `distinctBy`, `intersect`, `except`, `intersectBy`, `exceptBy`, `unionBy`, `join`, `groupJoin`, `leftJoin`, `rightJoin`, `fullJoin`, `exceptByKeys`, `intersectByKeys` (2.2.0), `contains`, e o `whereIn`/`whereNotIn` das coleções. `1`, `'1'`, `1.0` e `true` são quatro valores diferentes; arrays comparam por valor; objetos por identidade. Chave `null` nunca casa em `join`/`groupJoin` nem nas junções externas (semântica do LINQ e do SQL; numa junção externa esse item sai sem par); numa operação de conjunto (`intersectBy`, `exceptBy`, `exceptByKeys`, `intersectByKeys`, `distinct`) `null` é um valor como outro qualquer e casa com `null`. Uma coluna de banco que chega como string não casa com uma chave inteira: faça o cast do seu lado. Um comparador customizado (`contains($v, $cmp)`, `intersectWith`, `exceptWith`) pode devolver `bool` (`true` = iguais) ou um inteiro no estilo `<=>` (`0` = iguais). |
+| **Chaves de grupo** | `groupBy`, `countBy`, `aggregateBy`, `toDictionary` e `toLookup` (2.2.0) aceitam chaves `int`, `string` e `BackedEnum` (o seu valor); `null`, `bool`, `float`, arrays e objetos lançam `InvalidArgumentException` em vez de serem coagidos em silêncio (`toLookup()` também, diferente do .NET, que aceita chave `null`). A chave de grupo é então uma **chave de array do PHP**, não identidade estrita: `1` e `'1'` são a mesma chave (`'01'` é outra), ao contrário da linha **Igualdade** acima. `toDictionary()` lança em chave repetida, a menos que se passe `DuplicateKeyPolicy::KeepFirst`/`KeepLast` (2.2.0). `aggregateBy()` entrega a `$func` a posição do item dentro do grupo (0, 1, …), não a chave da fonte; todo grupo parte da mesma semente. Na coleção lazy `groupBy`, `countBy` e `aggregateBy` são estágios postergados cujo resultado é um dicionário indexado pela chave do grupo (2.2.0). |
 | **Coleções vazias** | Como no LINQ: `first()`, `last()`, `min()`, `max()`, `minBy()`, `maxBy()`, `average()` lançam `UnderflowException` em coleção vazia ou quando nenhum elemento casa; `firstOrDefault()`, `lastOrDefault()`, `singleOrDefault()` devolvem o default, assim como `minOrDefault()`, `maxOrDefault()`, `averageOrDefault()`, `minByOrDefault()`, `maxByOrDefault()` (2.1.0) onde o irmão lança por não haver o que agregar; `singleOrDefault()` lança `OverflowException` com mais de um resultado; `single()` (1.4.0) lança `UnderflowException('Sequence contains no elements.')` / `('Sequence contains no matching element.')` e `OverflowException('Sequence contains more than one element.')` / `('Sequence contains more than one matching element.')`; `random()` lança `UnderflowException` como `first()` e `random(n > 1)` devolve coleção vazia como `take(n)`; `sum()` de nada é `0`, `product()` de nada é `1`; `any()` significa "tem ao menos um item"; `all($p)` de nada é `true`; `all()` sem predicado significa "todo item é truthy". |
-| **Ordenação** (1.4.0) | `orderBy()`/`orderByDescending()` são estáveis; `thenBy()`/`thenByDescending()` refinam uma coleção que vem direto de `orderBy*()`/`thenBy*()` e lançam `LogicException('thenBy() requires a preceding orderBy().')` (ou `thenByDescending() ...`) depois de qualquer outra operação; empate total mantém a ordem da origem; seletores de chave recebem `($item, $key)` com a chave da origem; um comparador recebe as duas chaves, `fn($chaveA, $chaveB): int`. |
+| **Ordenação** (1.4.0) | `orderBy()`/`orderByDescending()` são estáveis; `thenBy()`/`thenByDescending()` refinam uma coleção que vem direto de `orderBy*()`/`thenBy*()` e lançam `LogicException('thenBy() requires a preceding orderBy().')` (ou `thenByDescending() ...`) depois de qualquer outra operação; empate total mantém a ordem da origem; seletores de chave recebem `($item, $key)` com a chave da origem; um comparador recebe as duas chaves, `fn($chaveA, $chaveB): int` (também no `orderBy*()` desde a 2.2.0). |
+| **Comparadores** (2.2.0) | Sem comparador, a ordenação e `min`/`max`/`minBy`/`maxBy` usam o `<=>` do PHP (strings numéricas comparam como números), igual nas duas coleções. Um comparador de ordem é `fn($a, $b): int` na convenção do `<=>` (`orderBy*`, `thenBy*`, `min*`, `max*`, `minBy*`, `maxBy*`, `orderByCustom`); um comparador de igualdade (`contains`, `intersectWith`, `exceptWith`) pode responder `bool` ou `<=>`; `distinct`/`distinctBy` aceitam um `IALinqEqualityComparer` (`hash()` separa em baldes, `equals()` decide). `StringComparer` (`ordinal()`, `ordinalIgnoreCase()`, `culture()`) é dos dois tipos. Com comparador, `min`/`max` continuam pulando `null` e o comparador decide o que é comparável. Não há comparador em agrupamento, operações de conjunto nem junções: agrupe por `$comparador->hash($texto)` para agrupar sem acento. |
 | **Argumentos** | `take`/`skip`/`pad` com contagem negativa, `chunk(0)`, `random(0)`, `range()` com passo não positivo lançam `InvalidArgumentException` (nada fatia pela cauda nem é ignorado em silêncio). |
 | **Números** | `sum`, `average`, `min`, `max`, `product` **ignoram `null`** (`average([1, null, 2])` é `1.5`); quando só resta `null`, a coleção conta como vazia. Valor não numérico (string, array, objeto) lança `InvalidArgumentException` em `sum`/`average`/`product`; `min`/`max` comparam qualquer escalar ou `DateTimeInterface`. |
 | **Callbacks** | Um callback recebe `($item, $key)` quando aceita dois parâmetros e só o item caso contrário, então `where('is_int')`, `select('trim')` e `fn($v, $k) => ...` funcionam em todo operador das duas coleções. |
@@ -787,27 +982,32 @@ vendor/bin/phpunit
  PHPUnit 11.5.42 - ANTEVEMUS ALINQ COLLECTION TEST SUITE
 ====================================================================
 
-...............................................................  63 / 598 ( 10%)
-............................................................... 126 / 598 ( 21%)
-............................................................... 189 / 598 ( 31%)
-............................................................... 252 / 598 ( 42%)
-............................................................... 315 / 598 ( 52%)
-............................................................... 378 / 598 ( 63%)
-............................................................... 441 / 598 ( 73%)
-............................................................... 504 / 598 ( 84%)
-............................................................... 567 / 598 ( 94%)
-...............................                                 598 / 598 (100%)
+...............................................................  63 / 731 (  8%)
+............................................................... 126 / 731 ( 17%)
+............................................................... 189 / 731 ( 25%)
+............................................................... 252 / 731 ( 34%)
+............................................................... 315 / 731 ( 43%)
+............................................................... 378 / 731 ( 51%)
+............................................................... 441 / 731 ( 60%)
+............................................................... 504 / 731 ( 68%)
+............................................................... 567 / 731 ( 77%)
+............................................................... 630 / 731 ( 86%)
+............................................................... 693 / 731 ( 94%)
+......................................                          731 / 731 (100%)
 
-Time: 00:02.964, Memory: 8.00 MB
+Time: 00:03.181, Memory: 14.00 MB
 
-OK (598 tests, 2321 assertions)
+OK, but some tests were skipped!
+Tests: 731, Assertions: 2968, Skipped: 10.
 ====================================================================
  RESULTADO: 100% APROVADO | 0 REGRESSÕES | 0 DEPRECATIONS
 ====================================================================
 ```
 
-- **598 Testes & 2321 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy e a delegação ao acessor de propriedades compartilhado (`tests/Contract`), os blocos da §9 do README como estão escritos, e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
-- **Cobertura medida** (pcov, 2.1.0): 243 de 249 métodos e 1380 de 1394 linhas de `src/`; as 14 linhas descobertas são guardas defensivas (uma na junção externa compartilhada: a checagem de tipo desconhecido; treze no caminho HTTP: ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket e URL base ilegível em `link()`).
+- **731 Testes & 2968 Asserções** certificando todos os 8 traits funcionais, o motor de streaming, o contrato eager × lazy e a delegação ao acessor de propriedades compartilhado (`tests/Contract`), as propriedades dos operadores da 2.2.0 contra oráculos escritos à mão (`tests/Contract/ConsumerGapsPropertyTest.php`), os blocos da §9 do README e os da 2.2.0 como estão escritos (o mesmo código nos dois idiomas), e a fonte HTTP paginada contra um servidor `php -S` local em 127.0.0.1 (`tests/Unit/Http`, grupo `http`).
+- **Sem `ext-intl` os 10 testes que usam `StringComparer::culture()` são pulados** (os 10 pulados acima, num PHP sem intl); com ela a suíte roda 731 testes e 3051 asserções com 1 pulado (o teste da extensão ausente). O CI roda as duas pernas.
+- **Cobertura medida** (pcov, 2.2.0, com `ext-intl`, PHP 8.4.26): 289 de 299 métodos e 1619 de 1637 linhas de `src/`; as 18 linhas descobertas são guardas defensivas ou dependem do ambiente: duas novas no `StringComparer` (ext-mbstring ausente, ext-intl ausente), uma na junção externa compartilhada (a checagem de tipo desconhecido), catorze no caminho HTTP (ext-curl ausente, falhas ao montar o handle do curl, mensagem de transporte ou URL efetiva vazias, falha na espera do socket, URL base ilegível e entrada sem `rel` em `link()`) e a saída antecipada do `zip()` (coberta no PHP 8.4.13). Sem `ext-intl` (PHP 8.4.13): 288 de 299 métodos, 1574 de 1617 linhas (a diferença é o caminho do `culture()`).
+- **Teste de mutação** (Infection, desde a 2.2.0, no escopo das linhas alteradas desde a 2.1.0; `infection.json5`, workflow Quality): 415 mutantes, 380 mortos, 24 erros e 1 time-out (detectados), 10 sobreviventes, todos equivalentes (MSI 97,59%).
 - **Compatibilidade Nativa com PHP 8.4**: Validado com `array_any`, `array_all`, `array_find`, `array_find_key`.
 - **Uma Dependência de Runtime, do Mesmo Autor**: Biblioteca pura em PHP 8.4; a única exigência é o [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (desde a 2.0.0), o acessor de propriedades compartilhado com o ASpecification, que não tem dependências próprias. Nenhum pacote de terceiros.
 
@@ -833,6 +1033,7 @@ OK (598 tests, 2321 assertions)
 - [x] **v1.5.1**: o workflow do GitHub Actions passa a rodar (uma chave de ambiente duplicada fazia o GitHub recusá-lo); `suggest` do ASpecification passa a `^1.10.0`.
 - [x] **v2.0.0**: acessor de propriedades compartilhado com o `Antevemus.ASpecification`: as duas bibliotecas resolvem nomes pelo [`antevemus/adeep-property-access`](https://github.com/antevemus-it/Antevemus.ADeepPropertyAccess) (marco 11 do ROADMAP), `ALinqPropertyAccess` vira fachada depreciada até a 3.0; `extract()` (depreciado desde a 1.3.0) removido; `suggest` do ASpecification passa a `^2.0.0`. Veja o [UPGRADE-2.0.pt-BR.md](UPGRADE-2.0.pt-BR.md).
 - [x] **v2.1.0**: `minOrDefault()` / `maxOrDefault()` / `averageOrDefault()` / `minByOrDefault()` / `maxByOrDefault()`: o agregado, ou um fallback quando não há o que agregar, numa passada só (seguros em fontes de passada única).
+- [x] **v2.2.0**: as lacunas achadas pelo primeiro consumidor em produção: `StringComparer` (ordinal, sem caixa, cultura pela ICU) em `orderBy*()`, `distinct*()`, `min*()`, `max*()`; `toLookup()` / `ALinqLookup`; `toDictionary(onDuplicate:)`; `groupBy()` / `countBy()` / `aggregateBy()` / `toDictionary()` / `toLookup()` na coleção lazy; `exceptByKeys()` / `intersectByKeys()`; `join()` / `groupJoin()` sobre qualquer iterable; `fromCsv(separator: null)`; `implode()` ([marco 14 do ROADMAP](ROADMAP.md)).
 - [ ] **Futuro**: o restante do marco de I/O concorrente, em pacotes satélites: coleção assíncrona sobre Fibers para SDKs assíncronos e paralelismo de CPU com processos. Fiber sozinha não é paralelismo.
 
 A visão por marcos desta lista, com releases-alvo, vive em [ROADMAP.md](ROADMAP.md).

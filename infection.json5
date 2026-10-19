@@ -1,0 +1,34 @@
+// Mutation testing of ALinq (forward 047, 2.2.0). Scope: the lines added or changed since v2.1.0
+// (new files included), selected on the command line with --git-diff-lines, not by this file, so the
+// scope follows the code that 2.2.0 touched and the code of 2.1.0 and before stays out until it is
+// named. Runs in the scheduled workflow (.github/workflows/quality.yml) with a coverage driver
+// (pcov) and ext-intl; locally:
+//
+//   XDEBUG_MODE=off vendor/bin/infection --threads=max --only-covering-test-cases \
+//       --git-diff-lines --git-diff-base=v2.1.0 \
+//       --initial-tests-php-options="-d pcov.enabled=1 -d pcov.directory=$PWD/src"
+//
+// (new files must be known to git, committed or `git add -N`, to be in the diff).
+//
+// No minMsi / minCoveredMsi yet: the score is measured and registered, not imposed. Measured on
+// 2026-10-19 (2.2.0, Infection 0.35.6, PHP 8.4.26 with intl and pcov): see CHANGELOG [2.2.0].
+{
+    "$schema": "vendor/infection/infection/resources/schema.json",
+    "source": {
+        "directories": ["src"]
+    },
+    "timeout": 120,
+    "logs": {
+        "text": "coverage/infection/infection.log",
+        "summary": "coverage/infection/summary.log",
+        "json": "coverage/infection/infection.json",
+        "perMutator": "coverage/infection/per-mutator.md"
+    },
+    "tmpDir": "coverage/infection/tmp",
+    "phpUnit": {
+        "configDir": "."
+    },
+    "mutators": {
+        "@default": true
+    }
+}

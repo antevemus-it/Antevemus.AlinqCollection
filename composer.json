@@ -35,9 +35,12 @@
     "antevemus/adeep-property-access": "^1.0.0"
   },
   "require-dev": {
-    "phpunit/phpunit": "^11.0"
+    "phpunit/phpunit": "^11.0",
+    "infection/infection": "^0.35.6"
   },
   "suggest": {
+    "ext-intl": "Required by StringComparer::culture() (since 2.2.0): text compared by the collation rules of a language (ICU), ignoring case and/or accents, numeric ordering; without it culture() throws LogicException and ordinal()/ordinalIgnoreCase() keep working",
+    "ext-mbstring": "Required by StringComparer::ordinalIgnoreCase() (since 2.2.0): Unicode case folding; without it ordinalIgnoreCase() throws LogicException",
     "ext-curl": "Required by ALinqLazyCollection::fromHttpPages() (since 1.5.0): lazy source over a paginated HTTP API that prefetches the next page with curl_multi",
     "antevemus/aspecification": "^2.0.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (README \u00a7 Synergy); since 2.0 both packages resolve property names through the same antevemus/adeep-property-access"
   },
@@ -52,5 +55,10 @@
     }
   },
   "minimum-stability": "stable",
-  "prefer-stable": true
+  "prefer-stable": true,
+  "config": {
+    "allow-plugins": {
+      "infection/extension-installer": false
+    }
+  }
 }

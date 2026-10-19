@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Helpers;
 
 use Antevemus\ADeepPropertyAccess\PropertyAccess;
+use Antevemus\ALinq\ALinqLookup;
 use Antevemus\ALinq\ALinqQueryBuilder;
+use Antevemus\ALinq\DuplicateKeyPolicy;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use BackedEnum;
 use Closure;
 use DateTimeInterface;
 use Generator;
 use InvalidArgumentException;
 use OverflowException;
+use Stringable;
 use UnderflowException;
 
 /**
@@ -36,7 +40,20 @@ use UnderflowException;
  * - outerJoin(): leftJoin()/rightJoin()/fullJoin(), as `Enumerable.LeftJoin/RightJoin/FullJoin`.
  * - orderPositions(): the stable, composite sort behind orderBy()/thenBy().
  *
- * @version    2.0.0
+ * Since 2.2.0 (forward 047, D26) the same holds for every operator 2.2.0 added or extended:
+ *
+ * - isMoreExtreme(): the one comparison behind min()/max()/minBy()/maxBy() and their
+ *   *OrDefault() variants, with or without a comparer (before, `<=>` on the eager side and
+ *   `<`/`>` on the lazy side, which disagreed on values that do not compare both ways: NAN,
+ *   arrays with different keys).
+ * - distinct(): identity by ALinqCallable::hashKey() or by an IALinqEqualityComparer.
+ * - groupItems(), countByKey(), aggregateByKey(): groupBy(), toLookup(), countBy() and
+ *   aggregateBy() (the last two keep one counter or accumulator per key, not the items).
+ * - dictionary(): toDictionary() with a DuplicateKeyPolicy; lookup(): toLookup().
+ * - setByKeys(): exceptByKeys()/intersectByKeys(), the `ExceptBy`/`IntersectBy` of .NET 6.
+ * - implode(): the text of the items joined by a separator.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -60,9 +77,11 @@ final class ALinqContract
 
     /**
      * Validates a key produced by a key selector for groupBy(), countBy(), aggregateBy(),
-     * toDictionary() and groupJoin(): int and string pass through, a BackedEnum becomes its
-     * value, everything else throws (PHP would silently truncate a float, turn null into ''
-     * and bool into 0/1, or throw a raw TypeError for arrays and objects).
+     * toDictionary() and toLookup() (2.2.0): int and string pass through, a BackedEnum becomes
+     * its value, everything else throws (PHP would silently truncate a float, turn null into ''
+     * and bool into 0/1, or throw a raw TypeError for arrays and objects). The key is then a
+     * PHP array key: `1` and `'1'` are the same key, `'01'` is another one (unlike the strict
+     * identity of joins and sets, where `1` and `'1'` differ).
      *
      * @param mixed $key The key produced by the selector
      * @param mixed $sourceKey The key of the item it was produced for (for the message)
@@ -382,5 +401,223 @@ final class ALinqContract
         });
 
         return $positions;
+    }
+
+    /**
+     * Whether $candidate replaces $current as the extreme of min()/max() ($direction -1/1) or
+     * minBy()/maxBy(): `<=>` without a comparer, otherwise the comparer's answer read in the
+     * `<=>` convention. The one comparison of both collections (2.2.0).
+     *
+     * @param callable|null $comparer `fn($a, $b): int`
+     */
+    public static function isMoreExtreme(mixed $candidate, mixed $current, int $direction, ?callable $comparer): bool
+    {
+        $order = $comparer === null ? $candidate <=> $current : $comparer($candidate, $current) <=> 0;
+
+        return $order === $direction;
+    }
+
+    /**
+     * The first occurrence of each identity, with its source key: identity by
+     * ALinqCallable::hashKey() of the item (or of the selected key), or, with a comparer, its
+     * hash() as the bucket and equals() inside the bucket (2.2.0, D5). O(n) expected.
+     *
+     * @param Closure(mixed, mixed): mixed|null $keySelector normalized by ALinqCallable::withKey()
+     * @return Generator<array-key, mixed>
+     */
+    public static function distinct(iterable $items, ?Closure $keySelector, ?IALinqEqualityComparer $comparer): Generator
+    {
+        $seen = [];
+        foreach ($items as $key => $item) {
+            $identifier = $keySelector === null ? $item : $keySelector($item, $key);
+            if ($comparer === null) {
+                $hash = ALinqCallable::hashKey($identifier);
+                if (isset($seen[$hash])) {
+                    continue;
+                }
+                $seen[$hash] = true;
+            } else {
+                $hash = $comparer->hash($identifier);
+                foreach ($seen[$hash] ?? [] as $kept) {
+                    if ($comparer->equals($kept, $identifier)) {
+                        continue 2;
+                    }
+                }
+                $seen[$hash][] = $identifier;
+            }
+            yield $key => $item;
+        }
+    }
+
+    /**
+     * The items (or the selected elements) grouped by key, keys in the order of their first
+     * appearance, each group a list in source order (groupBy(), toLookup()). A key follows
+     * groupKey(): `1` and `'1'` are one key, as PHP array keys.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
+     * @param string $operation The operator name (for the message of an invalid key)
+     * @return array<array-key, list<mixed>>
+     * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
+     */
+    public static function groupItems(iterable $items, Closure $keySelector, ?Closure $elementSelector, string $operation): array
+    {
+        $groups = [];
+        foreach ($items as $itemKey => $item) {
+            $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            $groups[$key][] = $elementSelector === null ? $item : $elementSelector($item, $itemKey);
+        }
+
+        return $groups;
+    }
+
+    /**
+     * The number of items per key, keys in first-appearance order (countBy()): one integer per
+     * key, the items are not kept.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return array<array-key, int>
+     * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
+     */
+    public static function countByKey(iterable $items, Closure $keySelector, string $operation): array
+    {
+        $counts = [];
+        foreach ($items as $itemKey => $item) {
+            $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            $counts[$key] = ($counts[$key] ?? 0) + 1;
+        }
+
+        return $counts;
+    }
+
+    /**
+     * One accumulator per key (aggregateBy()): `$func($carry, $item, $position)`, where the
+     * third argument is the position of the item inside its group (0, 1, ...), as the eager
+     * aggregateBy() has always passed (each group was a reindexed list); every group starts
+     * from the same $seed. Keys in first-appearance order; the items are not kept.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return array<array-key, mixed>
+     * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
+     */
+    public static function aggregateByKey(iterable $items, Closure $keySelector, mixed $seed, callable $func, string $operation): array
+    {
+        $carries = [];
+        $positions = [];
+        foreach ($items as $itemKey => $item) {
+            $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            $position = $positions[$key] ?? 0;
+            $carries[$key] = $func($position === 0 ? $seed : $carries[$key], $item, $position);
+            $positions[$key] = $position + 1;
+        }
+
+        return $carries;
+    }
+
+    /**
+     * toDictionary(): `key => element`, with the policy for a key produced twice. The key
+     * selector runs for every item and every key is validated; under KeepFirst the element
+     * selector does not run for a repeated key; under KeepLast the key keeps the position of
+     * its first occurrence.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
+     * @return array<array-key, mixed>
+     * @throws InvalidArgumentException When a key is not valid, or (Throw) is produced twice
+     */
+    public static function dictionary(iterable $items, Closure $keySelector, ?Closure $elementSelector, DuplicateKeyPolicy $onDuplicate): array
+    {
+        $result = [];
+        foreach ($items as $itemKey => $item) {
+            $key = self::groupKey($keySelector($item, $itemKey), $itemKey, 'toDictionary');
+            if (array_key_exists($key, $result)) {
+                if ($onDuplicate === DuplicateKeyPolicy::KeepFirst) {
+                    continue;
+                }
+                if ($onDuplicate === DuplicateKeyPolicy::Throw) {
+                    throw new InvalidArgumentException(sprintf(
+                        'toDictionary() key %s produced twice (second time for item at key %s)',
+                        var_export($key, true),
+                        var_export($itemKey, true)
+                    ));
+                }
+            }
+            $result[$key] = $elementSelector === null ? $item : $elementSelector($item, $itemKey);
+        }
+
+        return $result;
+    }
+
+    /**
+     * toLookup(): the groups of groupItems() as an immutable ALinqLookup.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
+     * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
+     */
+    public static function lookup(iterable $items, Closure $keySelector, ?Closure $elementSelector): ALinqLookup
+    {
+        return new ALinqLookup(self::groupItems($items, $keySelector, $elementSelector, 'toLookup'));
+    }
+
+    /**
+     * exceptByKeys()/intersectByKeys(), the `ExceptBy`/`IntersectBy` of .NET 6: $keys is read
+     * once, first, into a set by the strict identity of ALinqCallable::hashKey(); the selector
+     * runs on the items only; an item is kept when its key is absent ($keepWhenPresent false)
+     * or present (true) in the set, each key at most once (the first occurrence), with its
+     * source key. A null key matches a null in $keys (a set rule; null never matches in a join).
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return Generator<array-key, mixed>
+     */
+    public static function setByKeys(iterable $items, iterable $keys, Closure $keySelector, bool $keepWhenPresent): Generator
+    {
+        $present = [];
+        foreach ($keys as $key) {
+            $present[ALinqCallable::hashKey($key)] = true;
+        }
+
+        $seen = [];
+        foreach ($items as $itemKey => $item) {
+            $identity = ALinqCallable::hashKey($keySelector($item, $itemKey));
+            if (isset($seen[$identity]) || isset($present[$identity]) !== $keepWhenPresent) {
+                continue;
+            }
+            $seen[$identity] = true;
+            yield $itemKey => $item;
+        }
+    }
+
+    /**
+     * implode(): the text of each item (or of the selected value) joined by $separator. A
+     * string, an int, a float (PHP's own text) or a Stringable is accepted; null is the empty
+     * text (as `string.Join`); anything else throws instead of PHP's `"1"`/`""` for a bool or
+     * its "Array to string conversion" warning. Nothing to join is ''.
+     *
+     * @param Closure(mixed, mixed): mixed|null $selector normalized by ALinqCallable::withKey()
+     * @throws InvalidArgumentException For a bool, an array or an object that is not Stringable
+     */
+    public static function implode(iterable $items, string $separator, ?Closure $selector): string
+    {
+        $text = '';
+        $first = true;
+        foreach ($items as $key => $item) {
+            $value = $selector === null ? $item : $selector($item, $key);
+            if ($value === null) {
+                $piece = '';
+            } elseif (is_string($value) || is_int($value) || is_float($value) || $value instanceof Stringable) {
+                $piece = (string) $value;
+            } else {
+                throw new InvalidArgumentException(sprintf(
+                    'implode() expects strings, numbers, Stringable or null, %s found at key %s',
+                    get_debug_type($value),
+                    var_export($key, true)
+                ));
+            }
+            $text .= $first ? $piece : $separator . $piece;
+            $first = false;
+        }
+
+        return $text;
     }
 }

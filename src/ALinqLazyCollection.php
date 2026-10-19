@@ -8,6 +8,7 @@ use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Http\HttpPageOptions;
 use Antevemus\ALinq\Http\HttpPageStream;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use Antevemus\ALinq\Interfaces\IALinqLazyCollection;
 use ArrayIterator;
 use Closure;
@@ -69,7 +70,21 @@ use WeakMap;
  * minByOrDefault() and maxByOrDefault(), on the same private helpers as min(), max(),
  * average(), minBy() and maxBy(): one traversal, no buffering.
  *
- * @version    2.1.0
+ * Since 2.2.0 (forward 047), on the implementations shared with the eager side
+ * (ALinqContract):
+ *
+ * - groupBy(), countBy() and aggregateBy() are deferred stages, like orderBy(): nothing runs
+ *   until the first traversal, and each traversal reads the upstream once. groupBy() keeps
+ *   every item (O(n)) and yields `key => ALinqCollection`; countBy() keeps one integer per key
+ *   and aggregateBy() one accumulator per key (O(keys)). Their result is a dictionary keyed by
+ *   the group key.
+ * - toDictionary() (with a DuplicateKeyPolicy) and toLookup() are terminal: one pass.
+ * - exceptByKeys()/intersectByKeys() are stages that read the keys first, then stream.
+ * - orderBy*(), distinct*(), min*(), max*() accept a comparer; implode() joins the text of
+ *   the items in one pass.
+ * - fromCsv(separator: null) detects the separator from the first record.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -222,13 +237,22 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *   field of the first record (header or data) instead.
      * - A directory is refused instead of producing an empty stream.
      *
+     * Separator detection (2.2.0): `$separator = null` detects it on every traversal, after
+     * the BOM, from the first non-blank record read with the enclosure rules (a separator
+     * between quotes does not count; a quoted field may span lines), sampled up to 64 KiB.
+     * The candidates are `,` `;` tab `|`; the one counted most often outside quotes wins; a tie
+     * between the most frequent throws; a record with none of them is read with `,` (one
+     * field reads the same with any separator). An empty file is an empty stream.
+     *
      * @throws RuntimeException When the path is a directory or the file cannot be opened
      *                          (both deferred to the first traversal), or, in strict mode,
-     *                          when a record's width differs from the header's
+     *                          when a record's width differs from the header's; with
+     *                          `$separator = null`, when the separator is ambiguous, the
+     *                          first record exceeds 64 KiB or the stream cannot seek
      */
     public static function fromCsv(
         string $filePath,
-        string $separator = ',',
+        ?string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
         bool $hasHeader = true,
@@ -242,11 +266,23 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 $headerWidth = 0;
                 $recordNumber = 0;
                 $rowNumber = 0;
+                $canSeek = self::skipLeadingUtf8Bom($handle);
                 // True while the first record still has to lose a BOM at field level.
-                $stripFirstField = !self::skipLeadingUtf8Bom($handle);
+                $stripFirstField = !$canSeek;
+                if ($separator === null) {
+                    if (!$canSeek) {
+                        throw new RuntimeException(sprintf(
+                            'Cannot detect the CSV separator on a stream that cannot seek: "%s"; pass $separator',
+                            $filePath
+                        ));
+                    }
+                    $fieldSeparator = self::detectCsvSeparator($handle, $filePath, $enclosure, $escape);
+                } else {
+                    $fieldSeparator = $separator;
+                }
 
                 if ($hasHeader) {
-                    $headerRow = fgetcsv($handle, 0, $separator, $enclosure, $escape);
+                    $headerRow = fgetcsv($handle, 0, $fieldSeparator, $enclosure, $escape);
                     if ($headerRow !== false) {
                         $headers = $stripFirstField ? self::stripCsvBom($headerRow) : $headerRow;
                         $headerWidth = count($headers);
@@ -254,7 +290,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                     $stripFirstField = false;
                 }
 
-                while (($row = fgetcsv($handle, 0, $separator, $enclosure, $escape)) !== false) {
+                while (($row = fgetcsv($handle, 0, $fieldSeparator, $enclosure, $escape)) !== false) {
                     // fgetcsv() answers [null] for a blank line: it is not a record.
                     if ($row === [null]) {
                         continue;
@@ -291,6 +327,84 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 }
             }
         }, true);
+    }
+
+    /**
+     * The largest first record the separator detection reads (64 KiB).
+     */
+    private const CSV_SAMPLE_LIMIT = 65536;
+
+    /**
+     * Detects the CSV separator from the first non-blank record (fromCsv(separator: null),
+     * 2.2.0): the candidates `,` `;` tab `|` are counted outside the enclosure (a quoted field
+     * may span lines), the most frequent wins, a tie between the most frequent throws, none
+     * at all is `,`. The stream is put back where it was.
+     *
+     * @param resource $handle A seekable stream, positioned after the BOM
+     * @throws RuntimeException On a tie, or when the first record exceeds 64 KiB
+     */
+    private static function detectCsvSeparator($handle, string $filePath, string $enclosure, string $escape): string
+    {
+        $start = ftell($handle);
+        $counts = [',' => 0, ';' => 0, "\t" => 0, '|' => 0];
+        $sampled = 0;
+        $inQuotes = false;
+
+        while (($line = fgets($handle, self::CSV_SAMPLE_LIMIT + 2)) !== false) {
+            if ($sampled === 0 && rtrim($line, "\r\n") === '') {
+                continue; // a blank line before the first record is not a record
+            }
+            $sampled += strlen($line);
+            if ($sampled > self::CSV_SAMPLE_LIMIT) {
+                throw new RuntimeException(sprintf(
+                    'Cannot detect the CSV separator of "%s": the first record is longer than %d bytes; pass $separator',
+                    $filePath,
+                    self::CSV_SAMPLE_LIMIT
+                ));
+            }
+
+            $length = strlen($line);
+            for ($i = 0; $i < $length; $i++) {
+                $char = $line[$i];
+                if ($inQuotes) {
+                    if ($char === $escape && $escape !== $enclosure) {
+                        $i++; // the escaped character cannot close the field
+                    } elseif ($char === $enclosure) {
+                        $inQuotes = false;
+                    }
+                } elseif ($char === $enclosure) {
+                    $inQuotes = true;
+                } elseif (isset($counts[$char])) {
+                    $counts[$char]++;
+                }
+            }
+
+            if (!$inQuotes) {
+                break; // the record is complete
+            }
+        }
+
+        fseek($handle, $start);
+
+        $most = max($counts);
+        if ($most === 0) {
+            return ',';
+        }
+        $tied = array_keys(array_filter($counts, static fn(int $count): bool => $count === $most));
+        if (count($tied) > 1) {
+            $names = array_map(static fn(int|string $candidate): string => json_encode((string) $candidate), $tied);
+            $last = array_pop($names);
+            throw new RuntimeException(sprintf(
+                'Cannot detect the CSV separator of "%s": %s and %s %s %d times in the first record; pass $separator',
+                $filePath,
+                implode(', ', $names),
+                $last,
+                count($tied) === 2 ? 'both appear' : 'all appear',
+                $most
+            ));
+        }
+
+        return (string) $tied[0];
     }
 
     /**
@@ -720,25 +834,19 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * {@inheritdoc}
      *
      * Identity by ALinqCallable::hashKey(): typed and strict for scalars, by value for
-     * arrays, by identity for objects (RN-06).
+     * arrays, by identity for objects (RN-06); or, since 2.2.0, by an IALinqEqualityComparer
+     * (ALinqContract::distinct(), shared with the eager side).
      */
-    public function distinct(?callable $keySelector = null): self
+    public function distinct(?callable $keySelector = null, ?IALinqEqualityComparer $comparer = null): self
     {
         $keySelector = $keySelector === null ? null : ALinqCallable::withKey($keySelector);
         $isList = $this->sourceIsList;
-        return self::pipe(function () use ($keySelector, $isList) {
-            $seen = [];
-            foreach ($this as $key => $item) {
-                $identifier = $keySelector !== null ? $keySelector($item, $key) : $item;
-                $hash = ALinqCallable::hashKey($identifier);
-
-                if (!isset($seen[$hash])) {
-                    $seen[$hash] = true;
-                    if ($isList) {
-                        yield $item;
-                    } else {
-                        yield $key => $item;
-                    }
+        return self::pipe(function () use ($keySelector, $comparer, $isList) {
+            foreach (ALinqContract::distinct($this, $keySelector, $comparer) as $key => $item) {
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
                 }
             }
         }, $isList);
@@ -747,10 +855,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
-    public function distinctBy(callable $keySelector): self
+    public function distinctBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self
     {
-        $keySelector = ALinqCallable::withKey($keySelector);
-        return $this->distinct($keySelector);
+        return $this->distinct($keySelector, $comparer);
     }
 
     /**
@@ -901,17 +1008,138 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
-    public function orderBy(callable $keySelector): self
+    public function orderBy(callable $keySelector, ?callable $comparer = null): self
     {
-        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), 1, null]]);
+        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), 1, $comparer]]);
     }
 
     /**
      * {@inheritdoc}
      */
-    public function orderByDescending(callable $keySelector): self
+    public function orderByDescending(callable $keySelector, ?callable $comparer = null): self
     {
-        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), -1, null]]);
+        return self::orderedStage($this, [[ALinqCallable::withKey($keySelector), -1, $comparer]]);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.2.0): on traversal it reads the upstream once, keeps every item
+     * grouped (O(n)) and yields `key => ALinqCollection` (eager groups, as chunk() does), keys
+     * in first-appearance order. The result is a dictionary keyed by the group key.
+     *
+     * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
+     */
+    public function groupBy(callable $keySelector): self
+    {
+        $keySelector = ALinqCallable::withKey($keySelector);
+        return self::pipe(function () use ($keySelector) {
+            foreach (ALinqContract::groupItems($this, $keySelector, null, 'groupBy') as $key => $items) {
+                yield $key => new ALinqCollection($items);
+            }
+        }, false);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.2.0) that keeps one integer per key, not the items (O(keys)).
+     *
+     * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
+     */
+    public function countBy(callable $keySelector): self
+    {
+        $keySelector = ALinqCallable::withKey($keySelector);
+        return self::pipe(function () use ($keySelector) {
+            // The message of an invalid key names groupBy(), as on the eager side since 1.3.0.
+            yield from ALinqContract::countByKey($this, $keySelector, 'groupBy');
+        }, false);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.2.0) that keeps one accumulator and one position counter per key,
+     * not the items (O(keys)); `$func($carry, $item, $position)` receives the position of the
+     * item inside its group, as on the eager side.
+     *
+     * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
+     */
+    public function aggregateBy(callable $keySelector, mixed $seed, callable $func): self
+    {
+        $keySelector = ALinqCallable::withKey($keySelector);
+        return self::pipe(function () use ($keySelector, $seed, $func) {
+            yield from ALinqContract::aggregateByKey($this, $keySelector, $seed, $func, 'groupBy');
+        }, false);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Terminal (2.2.0): one pass over the stream.
+     *
+     * @throws InvalidArgumentException When a key is not valid, or (Throw) is produced twice
+     */
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array
+    {
+        return ALinqContract::dictionary(
+            $this,
+            ALinqCallable::withKey($keySelector),
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
+            $onDuplicate
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Terminal (2.2.0): one pass over the stream; every element is kept (O(n)).
+     *
+     * @throws InvalidArgumentException When a key is not int, string or BackedEnum
+     */
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup
+    {
+        return ALinqContract::lookup(
+            $this,
+            ALinqCallable::withKey($keySelector),
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector)
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.2.0): on traversal the keys are read first (O(keys)), then the
+     * stream flows, remembering the keys already emitted.
+     */
+    public function exceptByKeys(iterable $keys, callable $keySelector): self
+    {
+        return $this->keyedSetStage($keys, $keySelector, false);
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.2.0), as exceptByKeys().
+     */
+    public function intersectByKeys(iterable $keys, callable $keySelector): self
+    {
+        return $this->keyedSetStage($keys, $keySelector, true);
+    }
+
+    private function keyedSetStage(iterable $keys, callable $keySelector, bool $keepWhenPresent): self
+    {
+        $keySelector = ALinqCallable::withKey($keySelector);
+        $isList = $this->sourceIsList;
+        return self::pipe(function () use ($keys, $keySelector, $keepWhenPresent, $isList) {
+            foreach (ALinqContract::setByKeys($this, $keys, $keySelector, $keepWhenPresent) as $key => $item) {
+                if ($isList) {
+                    yield $item;
+                } else {
+                    yield $key => $item;
+                }
+            }
+        }, $isList);
     }
 
     /**
@@ -1338,9 +1566,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * @throws UnderflowException When the collection is empty or holds only null
      * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
-    public function min(?callable $selector = null): mixed
+    public function min(?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'min', -1, false, null);
+        return $this->extreme($selector, $comparer, 'min', -1, false, null);
     }
 
     /**
@@ -1350,9 +1578,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
-    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    public function minOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'min', -1, true, $default);
+        return $this->extreme($selector, $comparer, 'min', -1, true, $default);
     }
 
     /**
@@ -1363,9 +1591,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * @throws UnderflowException When the collection is empty or holds only null
      * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
-    public function max(?callable $selector = null): mixed
+    public function max(?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'max', 1, false, null);
+        return $this->extreme($selector, $comparer, 'max', 1, false, null);
     }
 
     /**
@@ -1375,27 +1603,32 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a value is not comparable (array, non-DateTime object)
      */
-    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed
     {
-        return $this->extreme($selector, 'max', 1, true, $default);
+        return $this->extreme($selector, $comparer, 'max', 1, true, $default);
     }
 
     /**
-     * Smallest ($direction -1, `<`) or largest (1, `>`) comparable value in one traversal,
-     * nulls skipped; when there is none, $default ($orDefault) or UnderflowException.
+     * Smallest ($direction -1) or largest (1) value in one traversal, nulls skipped; without a
+     * comparer only comparable values are accepted; the comparison is
+     * ALinqContract::isMoreExtreme(), shared with the eager side (2.2.0); when there is none,
+     * $default ($orDefault) or UnderflowException.
      */
-    private function extreme(?callable $selector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    private function extreme(?callable $selector, ?callable $comparer, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         $selector = $selector === null ? null : ALinqCallable::withKey($selector);
         $best = null;
         $first = true;
 
         foreach ($this as $key => $item) {
-            $val = ALinqContract::comparableValue($selector !== null ? $selector($item, $key) : $item, $key, $operation);
+            $val = $selector !== null ? $selector($item, $key) : $item;
+            if ($comparer === null) {
+                $val = ALinqContract::comparableValue($val, $key, $operation);
+            }
             if ($val === null) {
                 continue;
             }
-            if ($first || ($direction < 0 ? $val < $best : $val > $best)) {
+            if ($first || ALinqContract::isMoreExtreme($val, $best, $direction, $comparer)) {
                 $best = $val;
                 $first = false;
             }
@@ -1416,9 +1649,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws UnderflowException When the collection is empty
      */
-    public function minBy(callable $keySelector): mixed
+    public function minBy(callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'minBy', -1, false, null);
+        return $this->extremeBy($keySelector, $comparer, 'minBy', -1, false, null);
     }
 
     /**
@@ -1426,9 +1659,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * One traversal, like minBy(); an empty collection returns $default.
      */
-    public function minByOrDefault(mixed $default, callable $keySelector): mixed
+    public function minByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'minBy', -1, true, $default);
+        return $this->extremeBy($keySelector, $comparer, 'minBy', -1, true, $default);
     }
 
     /**
@@ -1436,9 +1669,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws UnderflowException When the collection is empty
      */
-    public function maxBy(callable $keySelector): mixed
+    public function maxBy(callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'maxBy', 1, false, null);
+        return $this->extremeBy($keySelector, $comparer, 'maxBy', 1, false, null);
     }
 
     /**
@@ -1446,17 +1679,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * One traversal, like maxBy(); an empty collection returns $default.
      */
-    public function maxByOrDefault(mixed $default, callable $keySelector): mixed
+    public function maxByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed
     {
-        return $this->extremeBy($keySelector, 'maxBy', 1, true, $default);
+        return $this->extremeBy($keySelector, $comparer, 'maxBy', 1, true, $default);
     }
 
     /**
-     * First element whose key is the smallest ($direction -1, `<`) or the largest (1, `>`),
-     * in one traversal; when the collection is empty, $default ($orDefault) or
-     * UnderflowException.
+     * First element whose key is the smallest ($direction -1) or the largest (1), in one
+     * traversal (ALinqContract::isMoreExtreme(), shared with the eager side since 2.2.0); when
+     * the collection is empty, $default ($orDefault) or UnderflowException.
      */
-    private function extremeBy(callable $keySelector, string $operation, int $direction, bool $orDefault, mixed $default): mixed
+    private function extremeBy(callable $keySelector, ?callable $comparer, string $operation, int $direction, bool $orDefault, mixed $default): mixed
     {
         $keySelector = ALinqCallable::withKey($keySelector);
         $bestItem = null;
@@ -1465,7 +1698,7 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
 
         foreach ($this as $key => $item) {
             $val = $keySelector($item, $key);
-            if ($first || ($direction < 0 ? $val < $bestKey : $val > $bestKey)) {
+            if ($first || ALinqContract::isMoreExtreme($val, $bestKey, $direction, $comparer)) {
                 $bestKey = $val;
                 $bestItem = $item;
                 $first = false;
@@ -1493,6 +1726,18 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
         }
 
         return $acc;
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Terminal (2.2.0): one pass; the memory is the text being built.
+     *
+     * @throws InvalidArgumentException For a value that has no text
+     */
+    public function implode(string $separator = '', ?callable $selector = null): string
+    {
+        return ALinqContract::implode($this, $separator, $selector === null ? null : ALinqCallable::withKey($selector));
     }
 
     /**

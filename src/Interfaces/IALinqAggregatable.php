@@ -20,7 +20,14 @@ namespace Antevemus\ALinq\Interfaces;
  * the `UnderflowException` of "nothing to aggregate"; every other exception is the same.
  * Classes that implement this interface on their own must add them.
  *
- * @version    2.1.0
+ * Since 2.2.0 (forward 047): `min`, `max`, `minBy`, `maxBy` and their `*OrDefault` variants
+ * take an optional comparer `fn($a, $b): int` as their last parameter (null values are still
+ * skipped by `min`/`max`; the comparer decides what can be compared); `implode()` joins the
+ * text of the items; `countBy`/`aggregateBy` answer as before without building the groups
+ * (`aggregateBy` hands `$func` the position of the item inside its group). Classes that
+ * implement this interface on their own must add the parameters and `implode()`.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -81,10 +88,11 @@ interface IALinqAggregatable extends IALinqBaseCollection
     /**
      * Get minimum value (Min in LINQ); `null` values are skipped; scalars and DateTimeInterface are comparable
      *
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0); with it, the comparer decides what is comparable
      * @throws \UnderflowException when there is no non-null value
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function min(?callable $selector = null);
+    public function min(?callable $selector = null, ?callable $comparer = null);
 
     /**
      * Get minimum value, or `$default` when there is no non-null value (LINQ's nullable Min,
@@ -93,17 +101,19 @@ interface IALinqAggregatable extends IALinqBaseCollection
      *
      * @param mixed $default Returned instead of the UnderflowException of min()
      * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0)
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function minOrDefault(mixed $default = null, ?callable $selector = null);
+    public function minOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null);
 
     /**
      * Get maximum value (Max in LINQ); `null` values are skipped; scalars and DateTimeInterface are comparable
      *
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0); with it, the comparer decides what is comparable
      * @throws \UnderflowException when there is no non-null value
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function max(?callable $selector = null);
+    public function max(?callable $selector = null, ?callable $comparer = null);
 
     /**
      * Get maximum value, or `$default` when there is no non-null value (LINQ's nullable Max,
@@ -111,9 +121,10 @@ interface IALinqAggregatable extends IALinqBaseCollection
      *
      * @param mixed $default Returned instead of the UnderflowException of max()
      * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($a, $b): int` (since 2.2.0)
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function maxOrDefault(mixed $default = null, ?callable $selector = null);
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null);
 
     /**
      * Get product of elements; `null` values are skipped, an empty product is 1
@@ -135,8 +146,9 @@ interface IALinqAggregatable extends IALinqBaseCollection
     public function aggregate($seed, callable $func);
 
     /**
-     * Applies an accumulator function over each group of elements in a sequence
+     * Applies an accumulator function over each group of elements in a sequence (AggregateBy in .NET 9)
      *
+     * @param callable $func `fn($carry, $item, $position)`: the position of the item inside its group, not its source key
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum
      */
     public function aggregateBy(callable $keySelector, $seed, callable $func): IALinqCollection;
@@ -151,9 +163,10 @@ interface IALinqAggregatable extends IALinqBaseCollection
     /**
      * Returns the element whose selected key is the maximum
      *
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0)
      * @throws \UnderflowException when the collection is empty
      */
-    public function maxBy(callable $keySelector);
+    public function maxBy(callable $keySelector, ?callable $comparer = null);
 
     /**
      * Returns the element whose selected key is the maximum (the first one on a tie), or
@@ -161,15 +174,17 @@ interface IALinqAggregatable extends IALinqBaseCollection
      *
      * @param mixed $default Returned instead of the UnderflowException of maxBy()
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0)
      */
-    public function maxByOrDefault(mixed $default, callable $keySelector);
+    public function maxByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null);
 
     /**
      * Returns the element whose selected key is the minimum
      *
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0)
      * @throws \UnderflowException when the collection is empty
      */
-    public function minBy(callable $keySelector);
+    public function minBy(callable $keySelector, ?callable $comparer = null);
 
     /**
      * Returns the element whose selected key is the minimum (the first one on a tie), or
@@ -177,6 +192,16 @@ interface IALinqAggregatable extends IALinqBaseCollection
      *
      * @param mixed $default Returned instead of the UnderflowException of minBy()
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` (since 2.2.0)
      */
-    public function minByOrDefault(mixed $default, callable $keySelector);
+    public function minByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null);
+
+    /**
+     * Join the text of the items (or of the selected values) with a separator (since 2.2.0):
+     * strings, ints, floats and Stringable by their text, null as '', '' when empty
+     *
+     * @param callable|null $selector `fn($item)` or `fn($item, $key)`
+     * @throws \InvalidArgumentException for a bool, an array or an object that is not Stringable
+     */
+    public function implode(string $separator = '', ?callable $selector = null): string;
 }

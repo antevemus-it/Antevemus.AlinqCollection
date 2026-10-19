@@ -19,22 +19,34 @@ env:
 
 jobs:
   tests:
-    name: PHP ${{ matrix.php }}
+    # Two legs since 2.2.0: with ext-intl the StringComparer::culture() tests and the README
+    # culture block run; without it they are skipped and the LogicException of the missing
+    # extension is the test that runs (ext-intl is a suggest, never a require).
+    name: PHP ${{ matrix.php }} (${{ matrix.leg }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
         php: ['8.4']
+        leg: ['with intl', 'without intl']
+        include:
+          - leg: 'with intl'
+            extensions: json, mbstring, curl, pdo_sqlite, intl
+          - leg: 'without intl'
+            extensions: json, mbstring, curl, pdo_sqlite, :intl
     steps:
       - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: json, mbstring, curl, pdo_sqlite
+          extensions: ${{ matrix.extensions }}
           coverage: none
           tools: composer:v2
+
+      - name: Extension check
+        run: php -r 'echo "intl loaded: ", var_export(extension_loaded("intl"), true), PHP_EOL;'
 
       - name: Validate composer.json
         run: composer validate --strict

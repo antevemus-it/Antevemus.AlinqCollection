@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Interfaces;
 
 use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\ALinqLookup;
+use Antevemus\ALinq\DuplicateKeyPolicy;
 use Antevemus\ALinq\Http\HttpPageOptions;
 use Countable;
 use IteratorAggregate;
@@ -42,7 +44,14 @@ use Traversable;
  * traversal (safe on a single-pass source such as fromCursor()). Classes that implement this
  * interface on their own must add them.
  *
- * @version    2.1.0
+ * Since 2.2.0 (forward 047): the deferred stages groupBy(), countBy() and aggregateBy() (they
+ * accumulate: groupBy() every item, countBy()/aggregateBy() one value per key), the terminals
+ * toDictionary() (with a DuplicateKeyPolicy), toLookup() and implode(), the stages
+ * exceptByKeys()/intersectByKeys(), a comparer on orderBy*(), distinct*(), min*() and max*(),
+ * and `fromCsv(separator: null)`. Classes that implement this interface on their own must add
+ * them and widen fromCsv()'s separator.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -80,8 +89,12 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * record); a directory or a file that cannot be opened throws RuntimeException on the
      * first traversal.
      *
+     * With `$separator = null` (since 2.2.0) the separator is detected on every traversal from
+     * the first non-blank record (`,` `;` tab `|`, counted outside quotes; the most frequent
+     * wins, a tie throws RuntimeException, none is `,`); a stream that cannot seek throws.
+     *
      * @param string $filePath
-     * @param string $separator
+     * @param string|null $separator
      * @param string $enclosure
      * @param string $escape
      * @param bool $hasHeader If true, yields associative arrays keyed by header columns.
@@ -93,7 +106,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      */
     public static function fromCsv(
         string $filePath,
-        string $separator = ',',
+        ?string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
         bool $hasHeader = true,
@@ -266,17 +279,19 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * Yield unique elements by tracking a hash set of observed keys lazily.
      *
      * @param callable|null $keySelector
+     * @param IALinqEqualityComparer|null $comparer The identity (since 2.2.0): hash() buckets, equals() decides
      * @return self
      */
-    public function distinct(?callable $keySelector = null): self;
+    public function distinct(?callable $keySelector = null, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Yield unique elements based on a key selector.
      *
      * @param callable $keySelector
+     * @param IALinqEqualityComparer|null $comparer The identity of the selected key (since 2.2.0)
      * @return self
      */
-    public function distinctBy(callable $keySelector): self;
+    public function distinctBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Yield chunks of $size elements (the last one may be shorter), each chunk an eager
@@ -359,17 +374,94 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * sorted when the result is traversed; thenBy()/thenByDescending() may follow.
      *
      * @param callable $keySelector fn($item, $key): mixed
+     * @param callable|null $comparer fn($keyA, $keyB): int in the `<=>` convention (since 2.2.0)
      * @return self
      */
-    public function orderBy(callable $keySelector): self;
+    public function orderBy(callable $keySelector, ?callable $comparer = null): self;
 
     /**
      * Stable descending sort by the selected key (OrderByDescending in LINQ).
      *
      * @param callable $keySelector fn($item, $key): mixed
+     * @param callable|null $comparer fn($keyA, $keyB): int in the `<=>` convention (since 2.2.0)
      * @return self
      */
-    public function orderByDescending(callable $keySelector): self;
+    public function orderByDescending(callable $keySelector, ?callable $comparer = null): self;
+
+    /**
+     * Group the items by key (GroupBy in LINQ), as a deferred stage (since 2.2.0): on traversal
+     * the upstream is read once and every item is kept (O(n)); yields `key => ALinqCollection`
+     * in first-appearance order. Keys follow the eager groupBy() (int, string or BackedEnum).
+     *
+     * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @return self
+     * @throws \InvalidArgumentException when a key is not valid (at traversal)
+     */
+    public function groupBy(callable $keySelector): self;
+
+    /**
+     * Count the items per key (CountBy in .NET 9), as a deferred stage keeping one integer per
+     * key (since 2.2.0); yields `key => count` in first-appearance order.
+     *
+     * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @return self
+     * @throws \InvalidArgumentException when a key is not valid (at traversal)
+     */
+    public function countBy(callable $keySelector): self;
+
+    /**
+     * Fold the items of each key (AggregateBy in .NET 9), as a deferred stage keeping one
+     * accumulator per key (since 2.2.0); every group starts from $seed and `$func` receives the
+     * position of the item inside its group, as on the eager side.
+     *
+     * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @param mixed $seed
+     * @param callable $func fn($carry, $item, $position): mixed
+     * @return self
+     * @throws \InvalidArgumentException when a key is not valid (at traversal)
+     */
+    public function aggregateBy(callable $keySelector, mixed $seed, callable $func): self;
+
+    /**
+     * Materialize a dictionary `key => element` in one pass (ToDictionary in LINQ, since 2.2.0).
+     *
+     * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @param callable|null $elementSelector fn($item, $key): mixed
+     * @param DuplicateKeyPolicy $onDuplicate Throw (default), KeepFirst or KeepLast
+     * @return array
+     * @throws \InvalidArgumentException when a key is not valid or, under Throw, produced twice
+     */
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array;
+
+    /**
+     * Materialize an immutable one-to-many lookup in one pass (ToLookup in LINQ, since 2.2.0).
+     *
+     * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @param callable|null $elementSelector fn($item, $key): mixed
+     * @return ALinqLookup
+     * @throws \InvalidArgumentException when a key is not valid (a null key included)
+     */
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup;
+
+    /**
+     * The distinct items whose selected key is not in $keys (ExceptBy of .NET 6), as a
+     * deferred stage that reads $keys first on each traversal (since 2.2.0).
+     *
+     * @param iterable $keys
+     * @param callable $keySelector fn($item, $key): mixed
+     * @return self
+     */
+    public function exceptByKeys(iterable $keys, callable $keySelector): self;
+
+    /**
+     * The distinct items whose selected key is in $keys (IntersectBy of .NET 6), as a deferred
+     * stage that reads $keys first on each traversal (since 2.2.0).
+     *
+     * @param iterable $keys
+     * @param callable $keySelector fn($item, $key): mixed
+     * @return self
+     */
+    public function intersectByKeys(iterable $keys, callable $keySelector): self;
 
     /**
      * Subsequent ascending ordering (ThenBy in LINQ), applied in the same sort as the
@@ -530,7 +622,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @throws \UnderflowException when there is no non-null value
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function min(?callable $selector = null): mixed;
+    public function min(?callable $selector = null, ?callable $comparer = null): mixed;
 
     /**
      * Find the minimum value like min(), in one traversal, or return `$default` when there is
@@ -541,7 +633,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function minOrDefault(mixed $default = null, ?callable $selector = null): mixed;
+    public function minOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed;
 
     /**
      * Find the maximum value in the stream; `null` values are skipped.
@@ -551,7 +643,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @throws \UnderflowException when there is no non-null value
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function max(?callable $selector = null): mixed;
+    public function max(?callable $selector = null, ?callable $comparer = null): mixed;
 
     /**
      * Find the maximum value like max(), in one traversal, or return `$default` when there is
@@ -562,7 +654,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      * @throws \InvalidArgumentException when a value is not comparable
      */
-    public function maxOrDefault(mixed $default = null, ?callable $selector = null): mixed;
+    public function maxOrDefault(mixed $default = null, ?callable $selector = null, ?callable $comparer = null): mixed;
 
     /**
      * Find the element yielding the minimum value via key selector.
@@ -571,7 +663,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      * @throws \UnderflowException when the stream is empty
      */
-    public function minBy(callable $keySelector): mixed;
+    public function minBy(callable $keySelector, ?callable $comparer = null): mixed;
 
     /**
      * Find the element yielding the minimum value like minBy() (the first one on a tie), in
@@ -581,7 +673,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $keySelector
      * @return mixed
      */
-    public function minByOrDefault(mixed $default, callable $keySelector): mixed;
+    public function minByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed;
 
     /**
      * Find the element yielding the maximum value via key selector.
@@ -590,7 +682,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      * @throws \UnderflowException when the stream is empty
      */
-    public function maxBy(callable $keySelector): mixed;
+    public function maxBy(callable $keySelector, ?callable $comparer = null): mixed;
 
     /**
      * Find the element yielding the maximum value like maxBy() (the first one on a tie), in
@@ -600,7 +692,7 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $keySelector
      * @return mixed
      */
-    public function maxByOrDefault(mixed $default, callable $keySelector): mixed;
+    public function maxByOrDefault(mixed $default, callable $keySelector, ?callable $comparer = null): mixed;
 
     /**
      * Perform an accumulator fold over the stream with constant memory.
@@ -610,6 +702,19 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return mixed
      */
     public function aggregate(mixed $seed, callable $func): mixed;
+
+    /**
+     * Join the text of the items (or of the selected values) with a separator, in one pass
+     * (since 2.2.0): strings, ints, floats and Stringable by their text, null as '', '' when
+     * the stream is empty. The min*()/max*() family above takes an optional comparer
+     * `fn($a, $b): int` as its last parameter since 2.2.0.
+     *
+     * @param string $separator
+     * @param callable|null $selector fn($item, $key): mixed
+     * @return string
+     * @throws \InvalidArgumentException for a bool, an array or an object that is not Stringable
+     */
+    public function implode(string $separator = '', ?callable $selector = null): string;
 
     /**
      * Execute a callback for each element in the stream.

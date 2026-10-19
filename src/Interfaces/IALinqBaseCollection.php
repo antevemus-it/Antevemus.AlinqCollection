@@ -16,7 +16,10 @@ use Traversable;
  * *dictionary* otherwise. Filtering and reordering operators reindex a list and keep the
  * keys of a dictionary; projections keep keys; materialization never loses an item.
  *
- * @version    1.3.2
+ * Since 2.2.0: fromCsv() takes `?string $separator` (null detects it). Classes that implement
+ * this interface on their own must widen the parameter.
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -64,12 +67,14 @@ interface IALinqBaseCollection extends \Countable, \IteratorAggregate, \JsonSeri
     /**
      * Create a lazy streaming collection from a CSV file
      *
+     * @param string|null $separator The field separator; null detects it from the first record
+     *                              (`,` `;` tab `|`, most frequent outside quotes; since 2.2.0)
      * @param bool $strict With a header, a record whose width differs from the header throws
      *                     when read (true); false hands it over as a list (1.3.1 behaviour)
      */
     public static function fromCsv(
         string $filePath,
-        string $separator = ',',
+        ?string $separator = ',',
         string $enclosure = '"',
         string $escape = '\\',
         bool $hasHeader = true,

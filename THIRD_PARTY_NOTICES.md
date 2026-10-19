@@ -43,6 +43,35 @@ THIS LIBRARY IS AN ORIGINAL, INDEPENDENT PHP 8.4+ IMPLEMENTATION. IT DOES NOT
 CONTAIN, EMBED, OR DERIVE FROM ANY PROPRIETARY OR BINARY CODE FROM MICROSOFT.
 
 -------------------------------------------------------------------------------
+2b. CONCEPTUAL INSPIRATION — LARAVEL LAZY COLLECTIONS AND DOCTRINE ITERATION
+-------------------------------------------------------------------------------
+
+The design of ALinqLazyCollection (a deferred pipeline over PHP generators, a
+Closure factory accepted by the constructor, and the method names remember(),
+tap(), pad(), each() and chunk()) is conceptually inspired by the lazy
+collections of the Laravel Framework.
+
+    Conceptual Origin: Illuminate\Support\LazyCollection (Laravel Framework)
+    Originator: Taylor Otwell
+    License: MIT License
+    Website: https://github.com/laravel/framework
+
+The idea of walking a database cursor without loading the whole table
+(fromCursor()) has a precedent in the Doctrine ORM.
+
+    Conceptual Origin: Doctrine\ORM\Query::toIterable() (Doctrine ORM)
+    Originator: Doctrine Project
+    License: MIT License
+    Website: https://github.com/doctrine/orm
+
+THIS LIBRARY DOES NOT CONTAIN, REPRODUCE, OR DERIVE FROM THE SOURCE CODE OF
+THESE PROJECTS. ALinqLazyCollection is an independent implementation with its
+own contract: a resumable remember() that buffers key/item pairs, a chunk()
+that yields ALinqCollection instances, and a single-pass PDO cursor that fails
+loudly on a second traversal. The MIT license texts of these projects are not
+redistributed here because no code of theirs is redistributed.
+
+-------------------------------------------------------------------------------
 3. DEVELOPMENT & TESTING TOOLS
 -------------------------------------------------------------------------------
 

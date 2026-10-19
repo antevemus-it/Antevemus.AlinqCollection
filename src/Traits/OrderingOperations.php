@@ -24,7 +24,10 @@ use LogicException;
  * operation returns a collection without a pending ordering, and thenBy*() on it throws
  * LogicException.
  *
- * @version    1.4.0
+ * Since 2.2.0 (forward 047) orderBy()/orderByDescending() accept the same comparer over the
+ * keys as thenBy()/thenByDescending().
+ *
+ * @version    2.2.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -38,10 +41,12 @@ trait OrderingOperations
      * may follow
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` in the `<=>` convention (since 2.2.0,
+     *                                e.g. `StringComparer::culture('pt_BR')`); `<=>` when null
      */
-    public function orderBy(callable $keySelector): IALinqCollection
+    public function orderBy(callable $keySelector, ?callable $comparer = null): IALinqCollection
     {
-        return self::ordered($this->items, [self::orderingCriterion($this->items, $keySelector, 1, null)]);
+        return self::ordered($this->items, [self::orderingCriterion($this->items, $keySelector, 1, $comparer)]);
     }
 
     /**
@@ -49,10 +54,11 @@ trait OrderingOperations
      * thenBy()/thenByDescending() may follow
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param callable|null $comparer `fn($keyA, $keyB): int` in the `<=>` convention (since 2.2.0); `<=>` when null
      */
-    public function orderByDescending(callable $keySelector): IALinqCollection
+    public function orderByDescending(callable $keySelector, ?callable $comparer = null): IALinqCollection
     {
-        return self::ordered($this->items, [self::orderingCriterion($this->items, $keySelector, -1, null)]);
+        return self::ordered($this->items, [self::orderingCriterion($this->items, $keySelector, -1, $comparer)]);
     }
 
     /**
