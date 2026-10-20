@@ -51,7 +51,11 @@ use Traversable;
  * and `fromCsv(separator: null)`. Classes that implement this interface on their own must add
  * them and widen fromCsv()'s separator.
  *
- * @version    2.2.0
+ * Since 2.3.0 (forward 052): from() takes `?bool $isList = null`, the declared shape of a Closure
+ * factory's stream, and isList(): ?bool answers the shape the collection knows. Classes that
+ * implement this interface on their own must add the parameter and the method.
+ *
+ * @version    2.3.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -63,10 +67,31 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     /**
      * Create a lazy collection from any iterable or generator factory closure.
      *
+     * `$isList` (since 2.3.0) declares the shape of the stream of a Closure factory: `true` a
+     * list (renumbered while streaming, toArray() a list), `false` a dictionary (keys kept, an
+     * integer-keyed dictionary included), `null` unknown (keys as yielded, toArray() a list when
+     * every key is an integer). Given with any source but a Closure it throws
+     * InvalidArgumentException: the shape of an iterable comes from the iterable.
+     *
      * @param iterable|callable $source
+     * @param bool|null $isList
      * @return self
      */
-    public static function from(iterable|callable $source): self;
+    public static function from(iterable|callable $source, ?bool $isList = null): self;
+
+    /**
+     * The shape of the stream as this collection knows it (since 2.3.0): true, a list (the
+     * renumbering operators renumber and toArray() returns a list); false, a dictionary (keys
+     * kept); null, unknown (a generator-factory source without a declaration, a Traversable, a
+     * Generator). An array source answers array_is_list(); fromFile(), fromCsv(), fromCursor(),
+     * fromHttpPages(), range(), repeat() and empty() are lists; each operator answers the shape it
+     * produces (where(), select(), take(), orderBy() keep their source's; selectMany(), concat(),
+     * zip(), chunk() are lists; groupBy(), countBy(), aggregateBy() are dictionaries). Not the eager
+     * isList(), which inspects the items it holds and is never unknown.
+     *
+     * @return bool|null
+     */
+    public function isList(): ?bool;
 
     /**
      * Create a lazy stream that reads a file line-by-line using constant O(1) memory.

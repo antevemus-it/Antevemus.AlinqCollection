@@ -5,9 +5,9 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 ## 📊 Overview & Metrics
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
-- **Test Files:** 27 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
-- **Total Tests:** 743 tests (2.2.2)
-- **Total Assertions:** 3951 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4034 with ext-intl (1 skipped: the test of the missing extension)
+- **Test Files:** 28 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
+- **Total Tests:** 772 tests (2.3.0)
+- **Total Assertions:** 4102 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4185 with ext-intl (1 skipped: the test of the missing extension)
 - **Lines of Test Code:** 13,000+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
@@ -199,6 +199,9 @@ Properties with an independent oracle (2.2.0, RN-03): 300 seeded inputs per prop
 
 ### 30. `tests/Unit/DocumentationTreeTest.php` (8 tests)
 The guard of the documentation (2.2.1): `docs/en` and `docs/pt-BR` have the same files; both `docs-nav.json` parse, have the same shape and list every page; every relative link of a page or a README resolves; every page has the same code fences and PHP blocks in both languages, token by token, all 29 blocks since 2.2.2 (in 2.2.1 the 20 blocks with Portuguese identifiers were declared and pinned by hash); the PHP blocks of each page are the declared ones (29 per language); each README has one code block, the Quick Start, and stays below 25 000 bytes; the Quick Start is a tested block; no page or README cites internal material or links outside the language folders but to the public root files.
+
+### 31. `tests/Unit/LazyShapeDeclarationTest.php` (29 tests)
+`ALinqLazyCollection::from($factory, ?bool $isList)` (2.3.0): `true` makes the stream of a Closure factory a list (`toArray()` a list whatever keys the generator yields, the renumbering operators renumber; the stage itself and `remember()` stream the keys as yielded), `false` a dictionary (an integer-keyed dictionary keeps its keys, a repeated key appends, a JSON object), `null` the unknown shape of 2.2; a declaration with an array list or dictionary, a callable array, a `Traversable` or a `Generator` object throws `InvalidArgumentException` (`null` is accepted with any source); `where`, `whereNot`, `select`, `take`, `skip`, `takeWhile`, `skipWhile`, `distinct`, `pad`, `tap`, `orderByDescending` and `exceptByKeys` over a declared stream answer as over an array of the same shape (streamed pairs and `toArray()`); the interface and the class declare `?bool $isList = null`. `isList(): ?bool` (2.3.0) answers the shape the collection knows: an array list (and `[]`) `true`, an array dictionary `false`, a declared factory its declaration, an undeclared factory, a `Traversable` or a `Generator` object `null`, `range()`/`empty()` `true`; after an operator, the shape it produces (`where`, `select`, `take`, `orderBy`, `remember` keep their source's over a list, a dictionary and an unknown source; `selectMany`, `concat`, `chunk` are lists; `groupBy`, `countBy` dictionaries); over six arrays it agrees with the eager `isList()`.
 
 ---
 

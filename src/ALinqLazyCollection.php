@@ -84,7 +84,12 @@ use WeakMap;
  *   the items in one pass.
  * - fromCsv(separator: null) detects the separator from the first record.
  *
- * @version    2.2.0
+ * Since 2.3.0 (forward 052): from($factory, isList: true|false) declares the shape of a Closure
+ * factory's stream (list or dictionary), so a stage built over a generator materializes and
+ * streams as one built over an array of that shape; isList() answers the shape the collection knows
+ * (true, false, or null when unknown); antevemus/alinq-revolt builds its stages with both.
+ *
+ * @version    2.3.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -175,10 +180,35 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
 
     /**
      * {@inheritdoc}
+     *
+     * Since 2.3.0 (forward 052): `$isList` declares the shape of the stream a Closure factory
+     * produces, which the collection cannot know otherwise. `true`: a list, so the streaming
+     * operators that renumber a list (where(), select(), take(), ...) renumber and toArray() is a list
+     * whatever keys the generator yields (the stage itself and remember() still stream the keys as
+     * yielded: the declaration does not rewrite them); `false`: a
+     * dictionary, so the keys are kept and toArray() keeps them (an integer-keyed dictionary
+     * included), appending on a collision; `null` (default): the unknown shape of 2.2 (keys
+     * streamed as yielded, toArray() a list when every key is an integer). The shape of an array
+     * or a Traversable is known or inferred from the source itself, so a non-null `$isList` with
+     * any source but a Closure is refused: the declaration can never contradict an array.
+     *
+     * @throws InvalidArgumentException When `$isList` is given for a source that is not a Closure
      */
-    public static function from(iterable|callable $source): self
+    public static function from(iterable|callable $source, ?bool $isList = null): self
     {
-        return new self($source);
+        if ($isList !== null && !($source instanceof Closure)) {
+            throw new InvalidArgumentException(sprintf(
+                'ALinqLazyCollection::from() accepts $isList only with a Closure factory, %s given: the shape of an iterable is known or inferred from the iterable itself',
+                get_debug_type($source)
+            ));
+        }
+
+        $collection = new self($source);
+        if ($isList !== null) {
+            $collection->sourceIsList = $isList;
+        }
+
+        return $collection;
     }
 
     /**
@@ -543,6 +573,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
                 $index++;
             }
         };
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * Since 2.3.0 (forward 052): the shape this collection propagates through pipe(), as set by its
+     * source (from(), the factories) or by the operator that built it.
+     */
+    public function isList(): ?bool
+    {
+        return $this->sourceIsList;
     }
 
     /**

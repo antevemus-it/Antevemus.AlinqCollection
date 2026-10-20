@@ -355,7 +355,10 @@ final class ParityTest extends TestCase
         $lazy = array_map(fn($m) => $m->name, (new \ReflectionClass(ALinqLazyCollection::class))->getMethods(\ReflectionMethod::IS_PUBLIC));
         $shared = array_values(array_intersect($eager, $lazy));
 
-        $notQueryOperations = ['__construct', 'getIterator', 'from', 'empty', 'range', 'repeat', 'fromFile', 'fromCsv', 'fromCursor', 'fromHttpPages', 'toCollection', 'lazy'];
+        // isList() (2.3.0 on the lazy side) is not a query: the eager one inspects the items it holds,
+        // the lazy one answers the shape it knows (null when unknown); LazyShapeDeclarationTest checks
+        // that both agree over the same arrays.
+        $notQueryOperations = ['__construct', 'getIterator', 'from', 'empty', 'range', 'repeat', 'fromFile', 'fromCsv', 'fromCursor', 'fromHttpPages', 'toCollection', 'lazy', 'isList'];
         $missing = array_diff($shared, $covered, $notQueryOperations);
         sort($missing);
 

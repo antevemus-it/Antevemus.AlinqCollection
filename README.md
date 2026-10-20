@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.2.2-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.3.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-743%20passed%20%7C%203951%20assertions-success.svg)](docs/en/quality/tests.md)
+[![Tests Passing](https://img.shields.io/badge/tests-772%20passed%20%7C%204102%20assertions-success.svg)](docs/en/quality/tests.md)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -118,8 +118,8 @@ One line per page, grouped as in the navigation; §N is the section of the API R
 
 ## 🧪 Quality
 
-- **Tests:** 743 PHPUnit tests (`vendor/bin/phpunit`) over the 8 traits, the streaming engine, the eager × lazy contract and the code blocks of the documentation, 100% passing on PHP 8.4.
-- **Assertions:** 3951 without `ext-intl` (the 10 tests of `StringComparer::culture()` skipped) and 4034 with it (1 skipped, the test of the missing extension); the CI runs both legs.
+- **Tests:** 772 PHPUnit tests (`vendor/bin/phpunit`) over the 8 traits, the streaming engine, the eager × lazy contract and the code blocks of the documentation, 100% passing on PHP 8.4.
+- **Assertions:** 4102 without `ext-intl` (the 10 tests of `StringComparer::culture()` skipped) and 4185 with it (1 skipped, the test of the missing extension); the CI runs both legs.
 - **Coverage** (pcov, 2.2.0, with `ext-intl`): 289 of 299 methods and 1619 of 1637 lines of `src/`; the 18 uncovered lines are defensive guards or depend on the environment.
 - **Mutation testing:** Infection on the lines changed since 2.1.0, MSI 97.59% (10 escaped mutants, all equivalent).
 - **Contract parity:** every shared operation runs over the same inputs on the eager and the lazy collection, with zero divergences allowed (`tests/Contract/ParityTest.php`; the rules: [The contract](docs/en/api/contract.md)).
