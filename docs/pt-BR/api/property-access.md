@@ -8,17 +8,17 @@ Todo nome que o ALinq lê (em `where*()`, no query builder, em `createPropertySe
 use Antevemus\ADeepPropertyAccess\PropertyAccess;
 
 $payload = [
-    'usuario' => (object)[
-        'perfil' => [
-            'empresa' => (object)[
-                'cnpj' => '12.345.678/0001-90'
+    'user' => (object)[
+        'profile' => [
+            'organization' => (object)[
+                'taxId' => '12.345.678/0001-90'
             ]
         ]
     ]
 ];
 
 // Resolve o caminho aninhado automaticamente:
-$cnpj = PropertyAccess::getValue($payload, 'usuario.perfil.empresa.cnpj');
+$taxId = PropertyAccess::getValue($payload, 'user.profile.organization.taxId');
 // Retorna: '12.345.678/0001-90'
 ```
 
@@ -37,25 +37,25 @@ use Antevemus\ADeepPropertyAccess\PropertyAccess;
 use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ALinq\Attributes\Specifiable;
 
-final class NotaFiscal
+final class Invoice
 {
     public function __construct(
-        #[Specifiable] private string $numero,
+        #[Specifiable] private string $number,
         private float $total,
-        private string $codigoAprovacao = 'X9-SEGREDO',
+        private string $approvalCode = 'X9-SECRET',
     ) {}
     public function getTotal(): float { return $this->total; }
 }
 
-$nota = new NotaFiscal('NF-001', 99.9);
+$invoice = new Invoice('NF-001', 99.9);
 
-PropertyAccess::getValue($nota, 'total');              // 99.9 (getter público)
-PropertyAccess::getValue($nota, 'numero');             // 'NF-001' (privada, marcada com #[Specifiable]: último recurso)
-PropertyAccess::hasProperty($nota, 'numero');          // true
-PropertyAccess::getValue($nota, 'codigoAprovacao');    // null (privada, sem marca)
-PropertyAccess::hasProperty($nota, 'codigoAprovacao'); // false
-PropertyAccess::getValue($nota, 'inexistente');        // null
-ALinqCollection::from([$nota])->whereBetween('codigoAprovacao', 'A', 'Z')->count(); // 0
+PropertyAccess::getValue($invoice, 'total');           // 99.9 (getter público)
+PropertyAccess::getValue($invoice, 'number');          // 'NF-001' (privada, marcada com #[Specifiable]: último recurso)
+PropertyAccess::hasProperty($invoice, 'number');       // true
+PropertyAccess::getValue($invoice, 'approvalCode');    // null (privada, sem marca)
+PropertyAccess::hasProperty($invoice, 'approvalCode'); // false
+PropertyAccess::getValue($invoice, 'missing');         // null
+ALinqCollection::from([$invoice])->whereBetween('approvalCode', 'A', 'Z')->count(); // 0
 ```
 
 Por que opt-in: a biblioteca só recebe um nome em texto (em `where*()`, nos seletores de `orderBy()`, em `select()`, no query builder, em `createPropertySelector()`, em `createPropertyComparer()`) e não distingue o código do autor da entidade de um nome vindo do request. Sem a marca, filtrar ou ordenar por um campo privado o revelaria: `whereBetween('password_hash', 'a', 'b')` responde, faixa após faixa, por onde o valor começa. A 1.4.0 lia toda propriedade não pública; a 1.4.1 lê só as marcadas. `#[Antevemus\ALinq\Attributes\Specifiable]` é a marca a usar no código ALinq; `#[Antevemus\ASpecification\Attributes\Specifiable]` e `#[Antevemus\ADeepPropertyAccess\Attributes\Specifiable]` valem como a mesma marca (reconhecidas pelo nome, sem dependência entre os pacotes). Getters públicos, `__get` guardado por `__isset` e propriedades públicas não precisam de marca.

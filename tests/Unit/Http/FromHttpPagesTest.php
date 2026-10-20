@@ -25,7 +25,7 @@ use UnexpectedValueException;
  * The server runs on 127.0.0.1 only and is stopped in tearDownAfterClass() (and by a
  * shutdown function, should the run abort).
  *
- * @version    1.5.0
+ * @version    2.2.2
  * @package    antevemus
  * @subpackage alinq.tests
  * @author     Heliton Junior
@@ -529,15 +529,15 @@ final class FromHttpPagesTest extends TestCase
         $this->assertSame([0, 1, 2], $lazy->toArray());
     }
 
-    // ------------------------------------------------------------------ README example
+    // ----------------------------------------------------------- documentation example
 
     /**
-     * README §10 "Paginated HTTP API with prefetch" (EN and pt-BR, identical code): the block
+     * docs/en/api/lazy-streaming.md "Paginated HTTP API with prefetch" (EN and pt-BR, identical code): the block
      * as written, with the host of the example API pointed at the local server.
      */
     public function testTheReadmeExampleRunsAsWritten(): void
     {
-        // ---- README block; only these two lines differ (local server instead of the example API) ----
+        // ---- documentation block; only these two lines differ (local server instead of the example API) ----
         $api = self::server()->url('/orders');
         $token = 'readme-token';
 
@@ -555,7 +555,7 @@ final class FromHttpPagesTest extends TestCase
         )
             ->where(fn(array $order) => $order['status'] === 'paid')
             ->sum(fn(array $order) => $order['total']); // page n+1 downloads while page n is summed
-        // ---- end of README block ----
+        // ---- end of documentation block ----
 
         $expected = 0;
         for ($n = 0; $n < 300; $n++) {

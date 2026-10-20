@@ -5,23 +5,23 @@
 O método `groupBy()` retorna uma coleção contendo instâncias de `ALinqCollection`, permitindo pipelines fluentes aninhados:
 
 ```php
-$transacoes = ALinqCollection::from([
-    ['categoria' => 'Alimentacao', 'valor' => 25.50],
-    ['categoria' => 'Transporte',  'valor' => 15.00],
-    ['categoria' => 'Alimentacao', 'valor' => 64.00],
-    ['categoria' => 'Transporte',  'valor' => 30.00],
-    ['categoria' => 'Lazer',       'valor' => 120.00],
+$transactions = ALinqCollection::from([
+    ['category' => 'Food', 'amount' => 25.50],
+    ['category' => 'Transport', 'amount' => 15.00],
+    ['category' => 'Food', 'amount' => 64.00],
+    ['category' => 'Transport', 'amount' => 30.00],
+    ['category' => 'Leisure', 'amount' => 120.00],
 ]);
 
-$resumo = $transacoes
-    ->groupBy(fn($t) => $t['categoria'])
-    ->select(fn(ALinqCollection $grupo, string $categoria) => [
-        'categoria'          => $categoria,
-        'total'              => $grupo->sum(fn($t) => $t['valor']),
-        'quantidade_itens'   => $grupo->count(),
-        'gasto_medio'        => round($grupo->average(fn($t) => $t['valor']), 2),
+$summary = $transactions
+    ->groupBy(fn($t) => $t['category'])
+    ->select(fn(ALinqCollection $group, string $category) => [
+        'category'     => $category,
+        'total'        => $group->sum(fn($t) => $t['amount']),
+        'transaction_count' => $group->count(),
+        'average_spend'     => round($group->average(fn($t) => $t['amount']), 2),
     ])
-    ->orderByDescending(fn($linha) => $linha['total'])
+    ->orderByDescending(fn($row) => $row['total'])
     ->toArray();
 ```
 

@@ -12,6 +12,6 @@
 | `toObject()` | `toObject(): stdClass` | Converte os itens para um objeto `stdClass`. |
 
 ```php
-$numeros = ALinqCollection::range(10, 50, 10); // [10, 20, 30, 40, 50]
-$status  = ALinqCollection::repeat('PENDENTE', 3); // ['PENDENTE', 'PENDENTE', 'PENDENTE']
+$numbers = ALinqCollection::range(10, 50, 10); // [10, 20, 30, 40, 50]
+$flags   = ALinqCollection::repeat('PENDING', 3); // ['PENDING', 'PENDING', 'PENDING']
 ```

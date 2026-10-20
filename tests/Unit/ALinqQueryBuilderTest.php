@@ -488,7 +488,7 @@ class ALinqQueryBuilderTest extends TestCase
         $this->assertSame($builder, $result2);
     }
 
-    // ===== NEW OPERATORS (review 2026-10-08 §3.3; README §8) =====
+    // ===== NEW OPERATORS (review 2026-10-08 §3.3; docs/en/api/query-builder.md) =====
 
     public function testWhereWithBetweenOperatorIsInclusive(): void
     {

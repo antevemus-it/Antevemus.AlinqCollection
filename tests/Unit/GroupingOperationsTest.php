@@ -363,7 +363,7 @@ class GroupingOperationsTest extends TestCase
 
 
     /**
-     * Review 2026-10-08, 2.1 (README Quick Start and §6): groupBy() returns ALinqCollection
+     * Review 2026-10-08, 2.1 (README Quick Start and docs/en/api/grouping.md): groupBy() returns ALinqCollection
      * groups and select() hands the group key to a two-parameter selector.
      */
     public function testGroupByReturnsCollectionsAndSelectReceivesTheKey(): void

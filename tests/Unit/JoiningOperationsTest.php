@@ -669,7 +669,7 @@ class JoiningOperationsTest extends TestCase
 
 
     /**
-     * Review 2026-10-08, 3.4 (README §3): groupJoin() hands an ALinqCollection to the result
+     * Review 2026-10-08, 3.4 (docs/en/api/joining.md): groupJoin() hands an ALinqCollection to the result
      * selector; the documented example runs as written.
      */
     public function testGroupJoinHandsAnALinqCollectionToTheResultSelector(): void

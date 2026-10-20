@@ -514,7 +514,7 @@ class ALinqPropertyAccessTest extends TestCase
         );
     }
 
-    // ===== DOT NOTATION IN getValue() (review 2026-10-08 §3.2; README §9) =====
+    // ===== DOT NOTATION IN getValue() (review 2026-10-08 §3.2; docs/en/api/property-access.md) =====
 
     public function testGetValueResolvesDotNotationPaths(): void
     {

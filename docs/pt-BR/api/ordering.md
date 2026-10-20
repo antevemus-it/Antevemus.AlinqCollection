@@ -3,46 +3,46 @@
 ### 7. Ordenação e Classificação (`OrderingOperations`)
 
 ```php
-$arquivos = ALinqCollection::from([
-    'arquivo10.txt', 'arquivo2.txt', 'arquivo1.txt', 'ARQUIVO100.txt'
+$files = ALinqCollection::from([
+    'file10.txt', 'file2.txt', 'file1.txt', 'FILE100.txt'
 ]);
 
-// Ordenação Alfanumérica Natural (ordenação humana: arquivo1, arquivo2, arquivo10, ARQUIVO100)
-$ordenadosNaturalmente = $arquivos->orderByNatural(caseSensitive: false)->toArray();
+// Ordenação Alfanumérica Natural (ordenação humana: file1, file2, file10, FILE100)
+$naturalSorted = $files->orderByNatural(caseSensitive: false)->toArray();
 
-$colaboradores = ALinqCollection::from([
-    ['nome' => 'Ana',   'depto' => 'Vendas', 'salario' => 5000],
-    ['nome' => 'Bruno', 'depto' => 'TI',     'salario' => 7000],
-    ['nome' => 'Carla', 'depto' => 'TI',     'salario' => 9000],
-    ['nome' => 'Davi',  'depto' => 'TI',     'salario' => 7000],
+$employees = ALinqCollection::from([
+    ['name' => 'Ana',   'dept' => 'Sales', 'salary' => 5000],
+    ['name' => 'Bruno', 'dept' => 'IT',    'salary' => 7000],
+    ['name' => 'Carla', 'dept' => 'IT',    'salary' => 9000],
+    ['name' => 'Davi',  'dept' => 'IT',    'salary' => 7000],
 ]);
 
 // Ordenação composta (desde a 1.4.0): orderBy() seguido de quantos thenBy()/thenByDescending() quiser
-$ordenados = $colaboradores
-    ->orderBy(fn($c) => $c['depto'])
-    ->thenByDescending(fn($c) => $c['salario'])
-    ->column('nome')
+$sorted = $employees
+    ->orderBy(fn($e) => $e['dept'])
+    ->thenByDescending(fn($e) => $e['salary'])
+    ->column('name')
     ->toArray();
-// ['Carla', 'Bruno', 'Davi', 'Ana']: TI 9000, TI 7000, TI 7000, Vendas 5000 (Bruno antes de Davi: estável)
+// ['Carla', 'Bruno', 'Davi', 'Ana']: IT 9000, IT 7000, IT 7000, Sales 5000 (Bruno antes de Davi: estável)
 
 // Um comparador recebe as duas chaves: fn($chaveA, $chaveB): int
-$porTamanhoDoNome = $colaboradores
-    ->orderBy(fn($c) => $c['depto'])
-    ->thenBy(fn($c) => $c['nome'], fn($a, $b) => strlen($a) <=> strlen($b))
-    ->column('nome')
+$byNameLength = $employees
+    ->orderBy(fn($e) => $e['dept'])
+    ->thenBy(fn($e) => $e['name'], fn($a, $b) => strlen($a) <=> strlen($b))
+    ->column('name')
     ->toArray();
 // ['Davi', 'Bruno', 'Carla', 'Ana']
 
 // thenBy() só refina uma coleção que vem direto de orderBy*()/thenBy*()
-$colaboradores->thenBy(fn($c) => $c['nome']);
+$employees->thenBy(fn($e) => $e['name']);
 // LogicException: thenBy() requires a preceding orderBy().
-$colaboradores->orderBy(fn($c) => $c['depto'])->where(fn($c) => true)->thenByDescending(fn($c) => $c['salario']);
+$employees->orderBy(fn($e) => $e['dept'])->where(fn($e) => true)->thenByDescending(fn($e) => $e['salary']);
 // LogicException: thenByDescending() requires a preceding orderBy().
 
 // orderByCustom() continua ordenando com uma única comparação sobre os itens inteiros
-$mesmaOrdem = $colaboradores
-    ->orderByCustom(fn($a, $b) => [$a['depto'], -$a['salario']] <=> [$b['depto'], -$b['salario']])
-    ->column('nome')
+$sameOrder = $employees
+    ->orderByCustom(fn($a, $b) => [$a['dept'], -$a['salary']] <=> [$b['dept'], -$b['salary']])
+    ->column('name')
     ->toArray();
 // ['Carla', 'Bruno', 'Davi', 'Ana']
 ```

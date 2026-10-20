@@ -5,46 +5,46 @@
 Junções relacionais completas e operações matemáticas de conjuntos:
 
 ```php
-$departamentos = ALinqCollection::from([
-    ['id' => 10, 'nome' => 'Engenharia'],
-    ['id' => 20, 'nome' => 'Marketing'],
+$departments = ALinqCollection::from([
+    ['id' => 10, 'name' => 'Engineering'],
+    ['id' => 20, 'name' => 'Marketing'],
 ]);
 
-$funcionarios = ALinqCollection::from([
-    ['nome' => 'Alex', 'depto_id' => 10],
-    ['nome' => 'Beatriz', 'depto_id' => 10],
-    ['nome' => 'Carlos', 'depto_id' => 20],
+$employees = ALinqCollection::from([
+    ['name' => 'Alex', 'dept_id' => 10],
+    ['name' => 'Beatrice', 'dept_id' => 10],
+    ['name' => 'Carlos', 'dept_id' => 20],
 ]);
 
 // 1. Inner Join (Estilo SQL)
-$relatorio = $funcionarios->join(
-    inner: $departamentos->toArray(),
-    outerKeySelector: fn($f) => $f['depto_id'],
-    innerKeySelector: fn($d) => $d['id'],
-    resultSelector: fn($f, $d) => [
-        'funcionario'   => $f['nome'],
-        'departamento' => $d['nome'],
+$directory = $employees->join(
+    inner: $departments->toArray(),
+    outerKeySelector: fn($emp) => $emp['dept_id'],
+    innerKeySelector: fn($dept) => $dept['id'],
+    resultSelector: fn($emp, $dept) => [
+        'employee'   => $emp['name'],
+        'department' => $dept['name'],
     ]
 )->toArray();
 
 // 2. Group Join (Left Outer Join Hierárquico)
-$equipes = $departamentos->groupJoin(
-    inner: $funcionarios->toArray(),
-    outerKeySelector: fn($d) => $d['id'],
-    innerKeySelector: fn($f) => $f['depto_id'],
-    resultSelector: fn($d, ALinqCollection $membros) => [
-        'departamento' => $d['nome'],
-        'membros'      => $membros->column('nome')->toArray(),
+$deptRoster = $departments->groupJoin(
+    inner: $employees->toArray(),
+    outerKeySelector: fn($dept) => $dept['id'],
+    innerKeySelector: fn($emp) => $emp['dept_id'],
+    resultSelector: fn($dept, ALinqCollection $matchedEmps) => [
+        'dept'  => $dept['name'],
+        'staff' => $matchedEmps->column('name')->toArray(),
     ]
 )->toArray();
 
 // 3. Operações de Conjunto com Seletores de Chave
-$conjuntoA = ALinqCollection::from([['id' => 1], ['id' => 2], ['id' => 3]]);
-$conjuntoB = [['id' => 2], ['id' => 3], ['id' => 4]];
+$datasetA = ALinqCollection::from([['id' => 1], ['id' => 2], ['id' => 3]]);
+$datasetB = [['id' => 2], ['id' => 3], ['id' => 4]];
 
-$intersecao = $conjuntoA->intersectBy($conjuntoB, fn($item) => $item['id']); // [id: 2, id: 3]
-$diferenca  = $conjuntoA->exceptBy($conjuntoB, fn($item) => $item['id']);    // [id: 1]
-$uniao      = $conjuntoA->unionBy($conjuntoB, fn($item) => $item['id']);     // [id: 1, id: 2, id: 3, id: 4]
+$intersect = $datasetA->intersectBy($datasetB, fn($item) => $item['id']); // [id: 2, id: 3]
+$difference = $datasetA->exceptBy($datasetB, fn($item) => $item['id']);   // [id: 1]
+$union = $datasetA->unionBy($datasetB, fn($item) => $item['id']);        // [id: 1, id: 2, id: 3, id: 4]
 ```
 
 #### Junções externas: `leftJoin()`, `rightJoin()`, `fullJoin()` (desde a 1.4.0)
@@ -56,31 +56,31 @@ As junções externas do LINQ do .NET 10/11 (`Enumerable.LeftJoin`, `RightJoin`,
 - `fullJoin()`: os pares e os outers sem par na ordem do outer, depois os inners sem par na ordem do inner.
 
 ```php
-$pedidos = ALinqCollection::from([
-    ['id' => 1, 'cliente' => 10],
-    ['id' => 2, 'cliente' => null], // chave null nunca casa
-    ['id' => 3, 'cliente' => 99],   // cliente inexistente
-    ['id' => 4, 'cliente' => 10],
+$orders = ALinqCollection::from([
+    ['id' => 1, 'customer' => 10],
+    ['id' => 2, 'customer' => null], // chave null nunca casa
+    ['id' => 3, 'customer' => 99],   // cliente inexistente
+    ['id' => 4, 'customer' => 10],
 ]);
-$clientes = [
-    ['id' => 10, 'nome' => 'Acme'],
-    ['id' => 20, 'nome' => 'Globex'], // sem pedidos
+$customers = [
+    ['id' => 10, 'name' => 'Acme'],
+    ['id' => 20, 'name' => 'Globex'], // sem pedidos
 ];
 
-$chavePedido  = fn($p) => $p['cliente'];
-$chaveCliente = fn($c) => $c['id'];
-$rotulo       = fn(?array $p, ?array $c) => ($p['id'] ?? '-') . ':' . ($c['nome'] ?? '-');
+$orderKey    = fn($o) => $o['customer'];
+$customerKey = fn($c) => $c['id'];
+$label       = fn(?array $o, ?array $c) => ($o['id'] ?? '-') . ':' . ($c['name'] ?? '-');
 
-$pedidos->leftJoin($clientes, $chavePedido, $chaveCliente, $rotulo)->toArray();
+$orders->leftJoin($customers, $orderKey, $customerKey, $label)->toArray();
 // ['1:Acme', '2:-', '3:-', '4:Acme']
-$pedidos->rightJoin($clientes, $chavePedido, $chaveCliente, $rotulo)->toArray();
+$orders->rightJoin($customers, $orderKey, $customerKey, $label)->toArray();
 // ['1:Acme', '4:Acme', '-:Globex']
-$pedidos->fullJoin($clientes, $chavePedido, $chaveCliente, $rotulo)->toArray();
+$orders->fullJoin($customers, $orderKey, $customerKey, $label)->toArray();
 // ['1:Acme', '2:-', '3:-', '4:Acme', '-:Globex']
 
 // Sem seletor de resultado: pares [$outer, $inner]
-[$pedido, $cliente] = $pedidos->leftJoin($clientes, $chavePedido, $chaveCliente)->toArray()[1];
-// $pedido = ['id' => 2, 'cliente' => null], $cliente = null
+[$order, $customer] = $orders->leftJoin($customers, $orderKey, $customerKey)->toArray()[1];
+// $order = ['id' => 2, 'customer' => null], $customer = null
 ```
 
 #### Chaves em vez de elementos: `exceptByKeys()`, `intersectByKeys()`; qualquer iterable no `join()` (desde a 2.2.0)

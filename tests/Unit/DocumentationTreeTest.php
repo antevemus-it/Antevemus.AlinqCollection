@@ -15,14 +15,14 @@ use ReflectionClassConstant;
  * (a) the same files in both languages; (b) both navigations parse, have the same shape, point to existing
  * pages and list every page; (c) every relative link of a page or of a README resolves; (d) every page
  * carries the same code fences and the same PHP blocks in both languages, token by token (comments aside),
- * except the blocks declared localized, which are pinned instead; (e) the number of PHP blocks of each page
+ * all 29 of them since 2.2.2 (no block is declared localized); (e) the number of PHP blocks of each page
  * is the one declared below, with its cause; (f) each README has exactly one PHP block, the Quick Start of
  * getting-started/index, and stays below 25 000 bytes; (g) the Quick Start is marked as a tested block in the
  * README and on the page of each language, so ReadmeConsumerGapsTest runs it with its written answers;
  * (h) nothing of the internal line leaks to a public page or README: no internal path, no Azure DevOps link,
  * and no relative link outside the language folders but to the public root files.
  *
- * @version    2.2.1
+ * @version    2.2.2
  * @package    Antevemus\ALinq\Tests
  * @subpackage Unit
  */
@@ -61,37 +61,17 @@ final class DocumentationTreeTest extends TestCase
     private const PHP_BLOCKS_TOTAL = 29;
 
     /**
-     * The blocks whose Portuguese version has, since they were written, its own identifiers and strings
-     * (`$pedidos` instead of `$orders`, `'PENDENTE'` instead of `'PENDING'`, `NotaFiscal` instead of
-     * `Invoice`). They were never compared between the languages, and 2.2.1 moves code without changing it,
-     * so these 20 of the 29 blocks are declared here instead of equal: each must still differ between the
-     * languages (aligning one removes it from this list), and the tokens of each language are pinned (sha1 of
-     * codeTokens() joined by "\n"), so a change to one of them without the other fails here until it is
-     * declared again. The other 9 (the Quick Start, the paginated HTTP example and the 7 tested blocks of
-     * 2.2.0) are equal token by token. Key: "<page>#<block index>"; value: [EN, pt-BR].
+     * The blocks allowed to differ between the languages, none since 2.2.2. In 2.2.1 the 20 blocks whose
+     * Portuguese version had its own identifiers and strings since it was written (`$pedidos` for `$orders`,
+     * `'PENDENTE'` for `'PENDING'`, `NotaFiscal` for `Invoice`) were declared here, the tokens of each
+     * language pinned; 2.2.2 rewrote the Portuguese code of the 20 with the English tokens (the comments stay
+     * in Portuguese), so every one of the 29 blocks is now equal token by token. A block declared here must
+     * differ between the languages and carry the sha1 of codeTokens() joined by "\n" of each language.
+     * Key: "<page>#<block index>"; value: [EN, pt-BR].
+     *
+     * @var array<string, array{string, string}>
      */
-    private const LOCALIZED_BLOCKS = [
-        'concepts/aspecification-synergy#0'    => ['ef25e212e2d55780cb466dc2133219765e33aa4b', 'c6642f696b40d0ade6e1a5639132ea9a9bed926d'], // How It Works: $isEligibleCustomer / $clienteElegivel
-        'api/aggregations#0'                   => ['0f17974bfaf9a956e444653c7cf8b30f7ee01562', '3c4180b3034913028b0ab1a300d3bd0ec9d418eb'], // §4: $orders / $pedidos
-        'api/factories#0'                      => ['ca2cd07563acc31c0019a97d516b889fd1e0f223', 'e7ad843e26417871df47d7a5350229002ec4a82a'], // §1: $numbers / $numeros
-        'api/filtering#0'                      => ['d7d3c043f5a10bef373556f7b1622cb3254c3c8c', '1b2573310cb06308e5baea8aeb829b279417ab61'], // §2: $collection / $colecao
-        'api/filtering#1'                      => ['6547d25d70c9d870522788c481bb90d6a730fbfe', '23ae9377eaf08e54adc09f74b476751d7aaec761'], // §2: $staff / $equipe
-        'api/grouping#0'                       => ['c5e6813a823d7aaf2df56240991562deab98e800', '3f9c234f65c0d4b2b65e0b0d971ec0c84da47547'], // §6: $transactions / $transacoes
-        'api/joining#0'                        => ['62c3ef3c8a8d9aada077a4a5f1d239e3d3f86435', '4cb7d7111da7843fb42dbea456420d5cbac93ada'], // §3: $departments / $departamentos
-        'api/joining#1'                        => ['6d5a389aed329950500d188373dabf5f1f859336', '1229e1d39674869d69af57598b65d5beeb634edf'], // §3: $orders / $pedidos
-        'api/lazy-streaming#0'                 => ['bd7050cef3f562833a25018102293604e8c6d560', '5c35a0f344bc7388c8fe7f700f324dda5f7e60e0'], // §10: $highSeverityAlerts / $alertasCriticos
-        'api/lazy-streaming#1'                 => ['4ffbcd88d8b4ed96830799536a39430287a02da7', '32fbad0fddb6ddd48fb554b90a42ad6d1db8ee7c'], // §10: $activeEnterpriseUsers / $clientesCorporativosAtivos
-        'api/lazy-streaming#2'                 => ['f6b3a9c27fda0ed7dd638de829b1e9f9da3638da', 'f3125028058643e20c77af3730469f2d9e9c6f76'], // §10: 'SELECT id, name, salary, department FROM employees' / 'SELECT id, nome, salario, departamento FROM funcionarios'
-        'api/lazy-streaming#4'                 => ['931e1dfdce003bb661255ad6a84b856e6f099650', '0341ef1186df1fca309a2049a32807e22d641d4e'], // §10: $cachedStream / $streamComCache
-        'api/lazy-streaming#5'                 => ['d2ad27953e23eb3ca37a8ad89cd474e2fafb2da1', '4ba9a5320e78181d9113bd0ea51431fd823f7104'], // §10: $sorted / $ordenados
-        'api/lazy-streaming#7'                 => ['8dc968bfdd89ccfca1340ba4bd0cba3f2bb4997b', '03923e7d56767fb31c30d28e23ca8f3d187accbc'], // §10: 'clients.csv' / 'clientes.csv'
-        'api/ordering#0'                       => ['32e73375b9d13f06988001bdffc6ce1b1fccbf82', 'ed43a1d2c61e77fdf8ab94791b7560f4ee685116'], // §7: $files / $arquivos
-        'api/projections#0'                    => ['f5bac4d551d5c233362d45e9b200736b13f7bdc8', '9993aca94709255a16693a1c9a445022c7b6757a'], // §5: $catalog / $catalogo
-        'api/property-access#0'                => ['a89734a5fd2f1cf087a30d7a97009a6c07be9ec8', '572fad55e62039722151b8c9689720455fdf4294'], // §9: 'user' / 'usuario'
-        'api/property-access#1'                => ['0c95d8f1994e00d2e9083680f92435863f62dcd7', '5fc49e8308da4455192ee05ba521d4d9f28bd039'], // §9: Invoice / NotaFiscal
-        'api/query-builder#0'                  => ['0e0df06e56666ed65ee82e701b87afb89018b187', '8533d3d75cb212baf9681072235771197cd18ed9'], // §8: 'APPROVED' / 'APROVADO'
-        'api/query-builder#1'                  => ['a878f2f06037988d5f6a4700e40265aeb9ffc88b', 'b5d0fa3d843e468f0892fca0a4b9e53cc0d43aab'], // §8: $applicants / $candidatos
-    ];
+    private const LOCALIZED_BLOCKS = [];
 
     /**
      * Material that lives only on the internal line (the internal docs/ files and the Reversa folders) and
@@ -188,7 +168,7 @@ final class DocumentationTreeTest extends TestCase
         $declared = array_keys(self::LOCALIZED_BLOCKS);
         sort($declared);
         sort($localized);
-        self::assertSame($declared, $localized, 'every declared localized block exists (20 of the 29 blocks)');
+        self::assertSame($declared, $localized, 'every declared localized block exists (none since 2.2.2: the 29 blocks are equal)');
     }
 
     // (e) -----------------------------------------------------------------------------------------------

@@ -6,8 +6,8 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
 - **Test Files:** 27 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
-- **Total Tests:** 743 tests (2.2.1)
-- **Total Assertions:** 3971 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4054 with ext-intl (1 skipped: the test of the missing extension)
+- **Total Tests:** 743 tests (2.2.2)
+- **Total Assertions:** 3951 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4034 with ext-intl (1 skipped: the test of the missing extension)
 - **Lines of Test Code:** 13,000+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)
 - **Runtime Dependencies:** One, from the same author, with none of its own: `antevemus/adeep-property-access` (the property accessor shared with ASpecification, since 2.0.0)
@@ -130,7 +130,7 @@ Validates the shared callback helper:
 - `hashKey()` — Strict, type-aware identity buckets
 
 ### 14. `tests/Contract/ParityTest.php` (3 tests)
-Enforces the eager × lazy contract (README §11); since 2.2.0 the matrix holds the grouping operators, `toLookup` (an `ALinqLookup` compares by its `toArray()`), `toDictionary` under the three policies, `exceptByKeys`/`intersectByKeys`, `implode` and every comparer parameter, and the row matrix runs 17 operations × 4 inputs (68 comparisons):
+Enforces the eager × lazy contract (`docs/en/api/contract.md`); since 2.2.0 the matrix holds the grouping operators, `toLookup` (an `ALinqLookup` compares by its `toArray()`), `toDictionary` under the three policies, `exceptByKeys`/`intersectByKeys`, `implode` and every comparer parameter, and the row matrix runs 17 operations × 4 inputs (68 comparisons):
 - Every operation both collections share runs over the same seven inputs on both sides; results are compared strictly, keys included, and when an operation throws the exception class and message (1.4.0) must match
 - A second matrix runs the field- and key-based operators (`whereIn`, `whereBetween`, outer joins, `thenBy`, `single`) over rows given as arrays and as entities with private fields (marked `#[Specifiable]` since 1.4.1)
 - A guard fails when a public method shared by both classes is missing from the matrix
@@ -198,7 +198,7 @@ Runs the seven blocks of 2.2.0 and the Quick Start (2.2.1), marked `<!-- tested:
 Properties with an independent oracle (2.2.0, RN-03): 300 seeded inputs per property (lists and dictionaries of 0-60 items; int, string, `1`/`'1'`/`'01'`, `BackedEnum` and occasional invalid keys; repeated values; null), on both collections: `toLookup` against `$m[$k][] = $x` and against `groupBy`; `toDictionary` `KeepFirst`/`KeepLast` against the hand-written index; `countBy`/`aggregateBy` against hand-written counters (the position inside the group); `exceptByKeys`/`intersectByKeys` against `where(in_array(..., true))->distinctBy()`; the laws of every comparer (antisymmetry, transitivity on every triple of a sample, `equals` ⇔ `compare === 0` ⇒ equal hashes; the culture ones with ext-intl).
 
 ### 30. `tests/Unit/DocumentationTreeTest.php` (8 tests)
-The guard of the documentation (2.2.1): `docs/en` and `docs/pt-BR` have the same files; both `docs-nav.json` parse, have the same shape and list every page; every relative link of a page or a README resolves; every page has the same code fences and PHP blocks in both languages, token by token (the 20 blocks with Portuguese identifiers declared and pinned by hash); the PHP blocks of each page are the declared ones (29 per language); each README has one code block, the Quick Start, and stays below 25 000 bytes; the Quick Start is a tested block; no page or README cites internal material or links outside the language folders but to the public root files.
+The guard of the documentation (2.2.1): `docs/en` and `docs/pt-BR` have the same files; both `docs-nav.json` parse, have the same shape and list every page; every relative link of a page or a README resolves; every page has the same code fences and PHP blocks in both languages, token by token, all 29 blocks since 2.2.2 (in 2.2.1 the 20 blocks with Portuguese identifiers were declared and pinned by hash); the PHP blocks of each page are the declared ones (29 per language); each README has one code block, the Quick Start, and stays below 25 000 bytes; the Quick Start is a tested block; no page or README cites internal material or links outside the language folders but to the public root files.
 
 ---
 

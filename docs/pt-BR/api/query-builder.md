@@ -9,14 +9,14 @@ use Antevemus\ALinq\ALinqQueryBuilder;
 
 // Constrói uma consulta dinâmica a partir de filtros de tela
 $query = ALinqQueryBuilder::create('and')
-    ->where('status', '=', 'APROVADO')
-    ->where('scoreCredito', '>=', 650)
-    ->where('idade', 'between', [21, 65]);
+    ->where('status', '=', 'APPROVED')
+    ->where('creditScore', '>=', 650)
+    ->where('age', 'between', [21, 65]);
 
 // Converte diretamente em um predicado chamável
-$predicado = $query->toPredicate();
+$predicate = $query->toPredicate();
 
-$candidatosAprovados = $candidatos->where($predicado);
+$approvedApplicants = $applicants->where($predicate);
 ```
 
 Operadores (sem diferenciar caixa nem separador): `=`, `==`, `===`, `!=`, `<>`, `!==`, `>`, `>=`, `<`, `<=`, `in`, `notIn`, `between`, `notBetween`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`. `between` recebe um par inclusivo `[min, max]`. O mesmo avaliador está exposto como `ALinqQueryBuilder::operatorPredicate($operador, $valor)` e sustenta o `createPredicate()`.
@@ -24,19 +24,19 @@ Operadores (sem diferenciar caixa nem separador): `=`, `==`, `===`, `!=`, `<>`, 
 Atalhos (desde a 1.4.0): `whereIn($campo, $valores)`, `whereNotIn($campo, $valores)` e `whereBetween($campo, $min, $max)` são exatamente `where($campo, 'in' | 'notIn' | 'between', ...)`:
 
 ```php
-$candidatos = ALinqCollection::from([
-    ['nome' => 'Ana',   'status' => 'APROVADO',  'pais' => 'BR', 'idade' => 30],
-    ['nome' => 'Bruno', 'status' => 'ANALISE',   'pais' => 'XX', 'idade' => 40],
-    ['nome' => 'Carla', 'status' => 'REPROVADO', 'pais' => 'BR', 'idade' => 25],
-    ['nome' => 'Davi',  'status' => 'APROVADO',  'pais' => 'PT', 'idade' => 70],
+$applicants = ALinqCollection::from([
+    ['name' => 'Ana',   'status' => 'APPROVED', 'country' => 'BR', 'age' => 30],
+    ['name' => 'Bruno', 'status' => 'REVIEW',   'country' => 'XX', 'age' => 40],
+    ['name' => 'Carla', 'status' => 'REJECTED', 'country' => 'BR', 'age' => 25],
+    ['name' => 'Davi',  'status' => 'APPROVED', 'country' => 'PT', 'age' => 70],
 ]);
 
 $query = ALinqQueryBuilder::create('and')
-    ->whereIn('status', ['APROVADO', 'ANALISE'])
-    ->whereNotIn('pais', ['XX'])
-    ->whereBetween('idade', 21, 65);
+    ->whereIn('status', ['APPROVED', 'REVIEW'])
+    ->whereNotIn('country', ['XX'])
+    ->whereBetween('age', 21, 65);
 
-$candidatos->where($query->toPredicate())->column('nome')->toArray(); // ['Ana']
+$applicants->where($query->toPredicate())->column('name')->toArray(); // ['Ana']
 ```
 
 > [!NOTE]

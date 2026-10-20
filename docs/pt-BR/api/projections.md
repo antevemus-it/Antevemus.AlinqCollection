@@ -3,24 +3,24 @@
 ### 5. Projeções e Transformações (`SelectionOperations`)
 
 ```php
-$catalogo = ALinqCollection::from([
-    ['sku' => 'A1', 'tags' => ['eletronicos', 'celular'], 'preco' => 799],
-    ['sku' => 'A2', 'tags' => ['celular', 'acessorios'], 'preco' => 29],
+$catalog = ALinqCollection::from([
+    ['sku' => 'A1', 'tags' => ['electronics', 'mobile'], 'price' => 799],
+    ['sku' => 'A2', 'tags' => ['mobile', 'accessories'], 'price' => 29],
 ]);
 
 // select(): Mapeamento 1 para 1
-$listaSku = $catalogo->select(fn($item) => $item['sku'])->toArray(); // ['A1', 'A2']
+$skuList = $catalog->select(fn($item) => $item['sku'])->toArray(); // ['A1', 'A2']
 
 // selectMany(): Achatamento de coleções aninhadas 1 para N
-$todasTags = $catalogo
+$allTags = $catalog
     ->selectMany(fn($item) => $item['tags'])
     ->distinct()
-    ->toArray(); // ['eletronicos', 'celular', 'acessorios']
+    ->toArray(); // ['electronics', 'mobile', 'accessories']
 
 // toDictionary(): Transformação em mapa chave-valor associativo
-$tabelaPrecos = $catalogo->toDictionary(
+$priceMap = $catalog->toDictionary(
     keySelector: fn($item) => $item['sku'],
-    elementSelector: fn($item) => $item['preco']
+    elementSelector: fn($item) => $item['price']
 ); // ['A1' => 799, 'A2' => 29]
 ```
 

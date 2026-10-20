@@ -17,13 +17,13 @@ Processar conjuntos de dados de escala em gigabytes (como logs de acesso, CSVs d
 use Antevemus\ALinq\ALinqLazyCollection;
 
 // Processa um log de produção de 10 GB mantendo menos de 100 KB de RAM
-$alertasCriticos = ALinqLazyCollection::fromFile('/var/log/app/production.log')
-    ->where(fn(string $linha) => str_contains($linha, '[CRITICAL]'))
-    ->select(function (string $linha) {
-        preg_match('/\[(?<data>[^\]]+)\] \[CRITICAL\] (?<msg>.*)/', $linha, $matches);
+$highSeverityAlerts = ALinqLazyCollection::fromFile('/var/log/app/production.log')
+    ->where(fn(string $line) => str_contains($line, '[CRITICAL]'))
+    ->select(function (string $line) {
+        preg_match('/\[(?<time>[^\]]+)\] \[CRITICAL\] (?<msg>.*)/', $line, $matches);
         return [
-            'data'     => $matches['data'] ?? 'desconhecida',
-            'mensagem' => $matches['msg'] ?? trim($linha),
+            'timestamp' => $matches['time'] ?? 'unknown',
+            'message'   => $matches['msg'] ?? trim($line),
         ];
     })
     ->take(50) // Interrompe imediatamente: para de ler o disco assim que encontrar os primeiros 50 registros!
@@ -34,15 +34,15 @@ $alertasCriticos = ALinqLazyCollection::fromFile('/var/log/app/production.log')
 
 ```php
 // Mapeia automaticamente o cabeçalho para arrays associativos em cada linha
-$clientesCorporativosAtivos = ALinqLazyCollection::fromCsv('/var/data/clientes.csv')
-    ->where(fn(array $linha) => $linha['plano'] === 'Enterprise' && $linha['status'] === 'ativo')
-    ->select(fn(array $linha) => [
-        'clienteId' => (int)$linha['id'],
-        'email'     => strtolower(trim($linha['email'])),
-        'mrr'       => (float)$linha['mrr'],
+$activeEnterpriseUsers = ALinqLazyCollection::fromCsv('/var/data/customers.csv')
+    ->where(fn(array $row) => $row['plan'] === 'Enterprise' && $row['status'] === 'active')
+    ->select(fn(array $row) => [
+        'customerId' => (int)$row['id'],
+        'email'      => strtolower(trim($row['email'])),
+        'mrr'        => (float)$row['mrr'],
     ])
-    ->distinctBy(fn($cliente) => $cliente['email'])
-    ->tap(fn($cliente) => syslog(LOG_INFO, "Processando cliente {$cliente['clienteId']}"))
+    ->distinctBy(fn($customer) => $customer['email'])
+    ->tap(fn($customer) => syslog(LOG_INFO, "Processing customer {$customer['customerId']}"))
     ->toCollection(); // Converte o resultado filtrado para ALinqCollection e prossegue com agrupamentos em memória
 ```
 
@@ -50,13 +50,13 @@ $clientesCorporativosAtivos = ALinqLazyCollection::fromCsv('/var/data/clientes.c
 
 ```php
 // Faz o streaming de milhões de registros diretamente de uma consulta PDO não bufferizada
-$stmt = $pdo->query('SELECT id, nome, salario, departamento FROM funcionarios');
+$stmt = $pdo->query('SELECT id, name, salary, department FROM employees');
 
-$maioresSalariosPorDept = ALinqLazyCollection::fromCursor($stmt)
-    ->where(fn($linha) => (float)$linha['salario'] > 50000.0)
+$topSalariesByDept = ALinqLazyCollection::fromCursor($stmt)
+    ->where(fn($row) => (float)$row['salary'] > 50000.0)
     ->take(100)
     ->toCollection()
-    ->groupBy(fn($linha) => $linha['departamento']);
+    ->groupBy(fn($row) => $row['department']);
 ```
 
 #### API HTTP Paginada com Prefetch (desde a 1.5.0)
@@ -100,13 +100,13 @@ $paidTotal = ALinqLazyCollection::fromHttpPages(
 Se a fonte upstream for computacionalmente pesada ou envolver I/O de rede, o método `remember()` memoriza os itens avaliados na primeira passagem para que iterações subsequentes leiam do cache local sem reexecutar os generators de origem:
 
 ```php
-$streamComCache = ALinqLazyCollection::from(function () {
+$cachedStream = ALinqLazyCollection::from(function () {
     // Generator pesado ou chamada de API externa
-    yield from buscarMetricasRemotas();
+    yield from fetchRemoteMetrics();
 })->remember();
 
-$totalCount = $streamComCache->count(); // O generator roda uma única vez
-$media      = $streamComCache->average(); // Lê do cache local em memória, sem reexecutar o generator
+$totalCount = $cachedStream->count(); // O generator roda uma única vez
+$average    = $cachedStream->average(); // Lê do cache local em memória, sem reexecutar o generator
 ```
 
 #### Ordenação e junções externas acumulam dados (desde a 1.4.0)
@@ -118,7 +118,7 @@ A coleção lazy tem `orderBy()`/`orderByDescending()` com `thenBy()`/`thenByDes
 - `rightJoin()` acumula e indexa a própria coleção lazy e faz streaming do inner (o resultado segue a ordem do inner).
 
 ```php
-$ordenados = ALinqLazyCollection::range(1, 6)
+$sorted = ALinqLazyCollection::range(1, 6)
     ->orderBy(fn($n) => $n % 3)          // postergado: nada roda ainda
     ->thenByDescending(fn($n) => $n)
     ->toArray();                          // [6, 3, 4, 1, 5, 2]
@@ -166,8 +166,8 @@ Entrada irregular falha alto ou é uma escolha explícita, nunca uma remodelagem
 - Um statement, uma coleção: um segundo `fromCursor()` (ou `from()`) sobre o mesmo `PDOStatement` lança `RuntimeException('PDOStatement already bound to another lazy collection')` na primeira travessia. Para reiterar, use `remember()`; para rodar a consulta de novo, use um statement novo, inclusive no caso de statement preparado.
 
 ```php
-ALinqLazyCollection::fromCsv('clientes.csv')->toArray();                // largura diferente → RuntimeException("CSV row 2 has 1 fields, header has 2")
-ALinqLazyCollection::fromCsv('clientes.csv', strict: false)->toArray(); // comportamento 1.3.1: o registro irregular vem como lista
+ALinqLazyCollection::fromCsv('clients.csv')->toArray();                // largura diferente → RuntimeException("CSV row 2 has 1 fields, header has 2")
+ALinqLazyCollection::fromCsv('clients.csv', strict: false)->toArray(); // comportamento 1.3.1: o registro irregular vem como lista
 ```
 
 #### Detecção do separador do CSV (desde a 2.2.0)

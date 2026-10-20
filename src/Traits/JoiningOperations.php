@@ -30,7 +30,7 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  * ALinqContract::setByKeys(), shared with the lazy side. exceptBy()/intersectBy() keep their
  * MoreLINQ-style answer (a sequence of elements, the selector applied to both sides).
  *
- * @version    2.2.0
+ * @version    2.2.2
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -70,7 +70,7 @@ trait JoiningOperations
     /**
      * Left join with another collection (GroupJoin in LINQ)
      *
-     * The matched group handed to the result selector is an ALinqCollection (README §3),
+     * The matched group handed to the result selector is an ALinqCollection (docs/en/api/joining.md),
      * empty when nothing matches. A null key on either side never matches, as in LINQ and
      * SQL: an outer item with a null key gets an empty group. Since 2.2.0 the inner side may
      * be any iterable, read once.

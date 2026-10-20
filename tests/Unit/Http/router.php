@@ -20,7 +20,7 @@
  *
  * Paths:
  * - /cursor    {"data": [...], "next": "p<N>"|null}, cursor in `after`
- * - /orders    as /cursor with order rows; `limit` items per page (the README example)
+ * - /orders    as /cursor with order rows; `limit` items per page (the example of docs/en/api/lazy-streaming.md)
  * - /numbered  {"data": [...], "page": P, "total_pages": T}, 1-based `page`
  * - /linked    a JSON list; `Link: <...>; rel="last", <...>; rel="next"` (absolute on even
  *              page indexes, relative on odd ones), no next on the last page
@@ -28,7 +28,7 @@
  * - /redirect  302 to /cursor with the same query string
  * - /headers   one item with the Authorization and X-Trace headers received
  *
- * @version    1.5.0
+ * @version    2.2.2
  * @package    antevemus
  * @subpackage alinq.tests
  * @author     Heliton Junior

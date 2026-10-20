@@ -5,41 +5,41 @@
 Utilizando a velocidade das funções nativas em C do PHP 8.4:
 
 ```php
-$pedidos = ALinqCollection::from([
-    ['codigo' => 'PED-1', 'valor' => 120.50, 'status' => 'CONCLUIDO'],
-    ['codigo' => 'PED-2', 'valor' => 45.00,  'status' => 'PENDENTE'],
-    ['codigo' => 'PED-3', 'valor' => 310.00, 'status' => 'CONCLUIDO'],
-    ['codigo' => 'PED-4', 'valor' => 85.20,  'status' => 'ESTORNADO'],
+$orders = ALinqCollection::from([
+    ['code' => 'ORD-1', 'amount' => 120.50, 'status' => 'COMPLETED'],
+    ['code' => 'ORD-2', 'amount' => 45.00,  'status' => 'PENDING'],
+    ['code' => 'ORD-3', 'amount' => 310.00, 'status' => 'COMPLETED'],
+    ['code' => 'ORD-4', 'amount' => 85.20,  'status' => 'REFUNDED'],
 ]);
 
 // Quantificadores
-$temPendente = $pedidos->any(fn($p) => $p['status'] === 'PENDENTE'); // true (via array_any)
-$todosConcluidos = $pedidos->all(fn($p) => $p['status'] === 'CONCLUIDO'); // false (via array_all)
+$hasPending = $orders->any(fn($o) => $o['status'] === 'PENDING'); // true (via array_any)
+$allCompleted = $orders->all(fn($o) => $o['status'] === 'COMPLETED'); // false (via array_all)
 
 // Métricas Aritméticas
-$totalVendas = $pedidos->sum(fn($p) => $p['valor']);      // 560.70
-$ticketMedio = $pedidos->average(fn($p) => $p['valor']);  // 140.175
-$maiorPedido = $pedidos->maxBy(fn($p) => $p['valor']);    // PED-3
-$menorPedido = $pedidos->minBy(fn($p) => $p['valor']);    // PED-2
+$totalSales = $orders->sum(fn($o) => $o['amount']);      // 560.70
+$avgTicket  = $orders->average(fn($o) => $o['amount']);  // 140.175
+$biggestOrder = $orders->maxBy(fn($o) => $o['amount']); // ORD-3
+$smallestOrder = $orders->minBy(fn($o) => $o['amount']); // ORD-2
 
 // Contagem por Categoria
-$contagemStatus = $pedidos->countBy(fn($p) => $p['status'])->toArray();
-// ['CONCLUIDO' => 2, 'PENDENTE' => 1, 'ESTORNADO' => 1]
+$statusCounts = $orders->countBy(fn($o) => $o['status'])->toArray();
+// ['COMPLETED' => 2, 'PENDING' => 1, 'REFUNDED' => 1]
 
 // Reduções Customizadas
-$saldoTotal = $pedidos->aggregate(seed: 1000.0, func: fn($acc, $p) => $acc + $p['valor']);
+$totalBalance = $orders->aggregate(seed: 1000.0, func: fn($acc, $o) => $acc + $o['amount']);
 
 // single(): exatamente um elemento, ou exatamente um que case (Single do LINQ), senão lança (desde a 1.4.0)
-$estorno = $pedidos->single(fn($p) => $p['status'] === 'ESTORNADO')['codigo']; // 'PED-4'
-$pedidos->single(fn($p) => $p['status'] === 'CANCELADO'); // UnderflowException: Sequence contains no matching element.
-$pedidos->single(fn($p) => $p['status'] === 'CONCLUIDO'); // OverflowException: Sequence contains more than one matching element.
-ALinqCollection::from([])->single();                      // UnderflowException: Sequence contains no elements.
-$pedidos->single();                                       // OverflowException: Sequence contains more than one element.
-$pedidos->singleOrDefault(null, fn($p) => $p['status'] === 'CANCELADO'); // null (a variante tolerante)
+$refund = $orders->single(fn($o) => $o['status'] === 'REFUNDED')['code']; // 'ORD-4'
+$orders->single(fn($o) => $o['status'] === 'CANCELLED'); // UnderflowException: Sequence contains no matching element.
+$orders->single(fn($o) => $o['status'] === 'COMPLETED'); // OverflowException: Sequence contains more than one matching element.
+ALinqCollection::from([])->single();                     // UnderflowException: Sequence contains no elements.
+$orders->single();                                       // OverflowException: Sequence contains more than one element.
+$orders->singleOrDefault(null, fn($o) => $o['status'] === 'CANCELLED'); // null (a variante tolerante)
 
 // minOrDefault() e família: a resposta do irmão, ou um fallback quando não há o que agregar (desde a 2.1.0)
-$menor = $pedidos->minOrDefault(null, fn($p) => $p['valor']);                                        // 45.0
-$cancelados = $pedidos->where(fn($p) => $p['status'] === 'CANCELADO')->maxOrDefault(0.0, fn($p) => $p['valor']); // 0.0 (max() lançaria)
+$smallest = $orders->minOrDefault(null, fn($o) => $o['amount']);                                    // 45.0
+$cancelled = $orders->where(fn($o) => $o['status'] === 'CANCELLED')->maxOrDefault(0.0, fn($o) => $o['amount']); // 0.0 (max() lançaria)
 ALinqCollection::from([])->averageOrDefault();                                                       // null
 ```
 

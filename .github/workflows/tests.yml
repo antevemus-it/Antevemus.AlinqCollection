@@ -19,9 +19,9 @@ env:
 
 jobs:
   tests:
-    # Two legs since 2.2.0: with ext-intl the StringComparer::culture() tests and the README
-    # culture block run; without it they are skipped and the LogicException of the missing
-    # extension is the test that runs (ext-intl is a suggest, never a require).
+    # Two legs since 2.2.0: with ext-intl the StringComparer::culture() tests and the culture
+    # block of docs/en/api/ordering.md run; without it they are skipped and the LogicException
+    # of the missing extension is the test that runs (ext-intl is a suggest, never a require).
     name: PHP ${{ matrix.php }} (${{ matrix.leg }})
     runs-on: ubuntu-latest
     timeout-minutes: 15

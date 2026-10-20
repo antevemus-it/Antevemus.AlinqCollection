@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-10-19
+
+A PATCH release with documentation only: the Portuguese code blocks of the documentation now carry the code of the English ones, and the last references to README sections point to the documentation pages. No code change in `src/` beyond docblocks.
+
+### Documentation
+
+- **The 20 Portuguese PHP blocks with their own identifiers and strings now have the code of the English blocks**, token by token (everything but comments and whitespace). Their comments stay in Portuguese; a comment that states a result states the result of the English values (9 comments: `ORD-3`, `ORD-2`, the `countBy()` array and `'ORD-4'` in §4, `['PENDING', 'PENDING', 'PENDING']` in §1, the `$order`/`$customer` pair in §3, the file names and `IT 9000, IT 7000, IT 7000, Sales 5000` in §7, the tags in §5). The English blocks are byte-identical to 2.2.1. Every block keeps its structure (the same number of tokens in each block); only identifiers and literals changed, page by page (`docs/pt-BR`):
+  - `concepts/aspecification-synergy` (How It Works): variables (`$clienteElegivel` → `$isEligibleCustomer`, `$dadosClientes` → `$rawCustomerData`), the property `scoreCredito` → `creditScore`, `'ATIVO'` → `'ACTIVE'`, the projected keys `'nome'`/`'faixa'` → `'name'`/`'tier'`.
+  - `api/factories` (§1): variables and `'PENDENTE'` → `'PENDING'`.
+  - `api/filtering` (§2, 2 blocks): variables (`$colecao` → `$collection`, `$equipe` → `$staff`), keys `'nome'`/`'depto'`/`'idade'` → `'name'`/`'dept'`/`'age'`, values `'TI'`/`'RH'`/`'Vendas'` → `'IT'`/`'HR'`/`'Sales'`.
+  - `api/joining` (§3, 2 blocks): variables and closure parameters (`$f`/`$d` → `$emp`/`$dept`, `$p` → `$o`), keys (`'depto_id'` → `'dept_id'`, `'cliente'` → `'customer'`, the projected keys), values `'Engenharia'` → `'Engineering'`, `'Beatriz'` → `'Beatrice'`.
+  - `api/aggregations` (§4): variables, keys `'codigo'`/`'valor'` → `'code'`/`'amount'`, codes `'PED-n'` → `'ORD-n'`, statuses `'CONCLUIDO'`/`'PENDENTE'`/`'ESTORNADO'`/`'CANCELADO'` → `'COMPLETED'`/`'PENDING'`/`'REFUNDED'`/`'CANCELLED'`.
+  - `api/projections` (§5): variables, `'preco'` → `'price'`, the tags in English.
+  - `api/grouping` (§6): variables, keys, categories (`'Alimentacao'`/`'Transporte'`/`'Lazer'` → `'Food'`/`'Transport'`/`'Leisure'`) and the projected keys (`'quantidade_itens'`/`'gasto_medio'` → `'transaction_count'`/`'average_spend'`).
+  - `api/ordering` (§7): variables, the file names (`arquivoN.txt` → `fileN.txt`), keys and values, the closure parameter `$c` → `$e`.
+  - `api/query-builder` (§8, 2 blocks): variables, fields (`'scoreCredito'`, `'idade'`, `'pais'`, `'nome'` → `'creditScore'`, `'age'`, `'country'`, `'name'`), statuses `'APROVADO'`/`'ANALISE'`/`'REPROVADO'` → `'APPROVED'`/`'REVIEW'`/`'REJECTED'`.
+  - `api/property-access` (§9, 2 blocks): the path `usuario.perfil.empresa.cnpj` → `user.profile.organization.taxId`, the class `NotaFiscal` → `Invoice` with its properties (`numero`/`codigoAprovacao` → `number`/`approvalCode`), `'X9-SEGREDO'` → `'X9-SECRET'`, `'inexistente'` → `'missing'`. The 8 written answers of each language were already the English values and stay (`// Retorna: '12.345.678/0001-90'`, `99.9`, `'NF-001'`, `true`, `null`, `false`, `null`, `0`); `ReadmePropertyAccessTest` still runs both blocks of each language and checks the 8 answers.
+  - `api/lazy-streaming` (§10, 6 blocks): the log example (the regex group `data` → `time`, the keys `'timestamp'`/`'message'`, `'desconhecida'` → `'unknown'`), the CSV example (`/var/data/clientes.csv` → `/var/data/customers.csv`, `'plano'`/`'ativo'`/`'clienteId'` → `'plan'`/`'active'`/`'customerId'`, the `syslog` message in English), the PDO cursor (the SQL in English), `remember()` (`buscarMetricasRemotas()` → `fetchRemoteMetrics()`, `$media` → `$average`), the lazy ordering (`$ordenados` → `$sorted`) and the irregular input (`'clientes.csv'` → `'clients.csv'`).
+- **Prose**: no line changes; no Portuguese paragraph names an identifier, literal or value of these blocks.
+- **The EN × pt-BR guard has no exceptions**: `DocumentationTreeTest` declares no localized block, so each of the 29 PHP blocks must be equal token by token in both languages (2.2.1 declared these 20 and pinned their tokens by hash).
+- **No README section references are left outside the history of this changelog**; each points to its page: the `suggest` of `antevemus/aspecification` in `composer.json` ("README § Synergy" → `docs/en/concepts/aspecification-synergy.md`), `ROADMAP.md` ("README §11" → `docs/en/api/contract.md`, twice; "README §7" → `docs/en/api/ordering.md`), the PHPDoc of `groupJoin()` in `src/Traits/JoiningOperations.php` ("README §3" → `docs/en/api/joining.md`; `@version 2.2.2`), comments in the tests (`JoiningOperationsTest` §3, `ALinqQueryBuilderTest` §8, `ALinqPropertyAccessTest` §9, `GroupingOperationsTest` §6, `FromHttpPagesTest` and `tests/Unit/Http/router.php` §10, `tests/README.md` §11) and the comment of the CI workflow on the culture block (`docs/en/api/ordering.md`).
+- `quality/tests.md` (both languages), the README badges and quality lines and `tests/README.md` carry the counts of 2.2.2.
+
+### Notes
+
+- **Suite.** Without `ext-intl` (PHP 8.4.13): 743 tests, 3971 → 3951 assertions, 10 skipped. With it (PHP 8.4, the second CI leg): 743 tests, 4054 → 4034 assertions, 1 skipped. −20 assertions on both legs, all in `DocumentationTreeTest::testEveryPageHasTheSameCodeInBothLanguages` (91 → 71): each of the 20 blocks took two assertions (the languages still differ; the pinned hashes) and now takes one (the tokens are equal). The tests and the skipped tests are the same. In a copy with only the public list, the same counts.
+- **No code change in `src/` beyond docblocks** (one file, `src/Traits/JoiningOperations.php`); the CI workflow changes in a comment only.
+
 ## [2.2.1] - 2026-10-19
 
 A PATCH release with documentation only: the README becomes an index, and the official documentation moves to `docs/en` and `docs/pt-BR`, one page per topic, in the Docs Kit format. No code change in `src/`.
