@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.2.2] - 2026-10-19
+## [2.2.2] - 2026-10-20
 
 A PATCH release with documentation only: the Portuguese code blocks of the documentation now carry the code of the English ones, and the last references to README sections point to the documentation pages. No code change in `src/` beyond docblocks.
 
