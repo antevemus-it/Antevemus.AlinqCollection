@@ -167,7 +167,8 @@ final class KeyedSetAndJoinTest extends TestCase
         foreach ([IALinqJoinable::class, IALinqLazyCollection::class] as $interface) {
             foreach (['exceptByKeys', 'intersectByKeys'] as $method) {
                 $parameters = (new ReflectionMethod($interface, $method))->getParameters();
-                $this->assertSame(['keys', 'keySelector'], array_map(fn($p) => $p->getName(), $parameters), "$interface::$method");
+                // 2.4.0: the optional comparer joined them as the last parameter
+                $this->assertSame(['keys', 'keySelector', 'comparer'], array_map(fn($p) => $p->getName(), $parameters), "$interface::$method");
                 $this->assertSame('iterable', (string) $parameters[0]->getType());
             }
         }

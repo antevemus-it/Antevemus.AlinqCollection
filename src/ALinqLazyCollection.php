@@ -89,7 +89,13 @@ use WeakMap;
  * streams as one built over an array of that shape; isList() answers the shape the collection knows
  * (true, false, or null when unknown); antevemus/alinq-revolt builds its stages with both.
  *
- * @version    2.3.0
+ * Since 2.4.0: join() and groupJoin() as deferred stages (the inner side read once and indexed
+ * on traversal, this stream streamed, ALinqContract::innerJoin()/groupJoin() shared with the
+ * eager side); an IALinqEqualityComparer on every join, on groupBy(), countBy(), aggregateBy(),
+ * toDictionary(), toLookup(), exceptByKeys() and intersectByKeys(); a seed selector `fn($key)`
+ * in aggregateBy(); and fromHttpPagesByIndex(), several pages in flight on one curl multi handle.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -613,6 +619,40 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
 
     /**
      * {@inheritdoc}
+     *
+     * Since 2.4.0. The loop lives in Http\HttpPageStream::itemsByIndex(): one curl multi handle
+     * per traversal, the page being awaited and up to $prefetch pages after it in flight, every
+     * request still in flight cancelled by the generator's `finally` when the stream ends (an
+     * empty page, `$until`, early termination or an error).
+     *
+     * @throws InvalidArgumentException When $prefetch is below 1
+     * @throws LogicException When ext-curl is not loaded
+     */
+    public static function fromHttpPagesByIndex(
+        callable $requestFor,
+        callable $parsePage,
+        int $prefetch = 2,
+        ?callable $until = null,
+        ?HttpPageOptions $options = null
+    ): self {
+        ALinqContract::requireAtLeast($prefetch, 1, 'prefetch', 'fromHttpPagesByIndex');
+        if (!function_exists('curl_multi_init')) {
+            throw new LogicException('fromHttpPagesByIndex() requires the curl extension (ext-curl).');
+        }
+
+        $requestFor = $requestFor instanceof Closure ? $requestFor : Closure::fromCallable($requestFor);
+        $parsePage = $parsePage instanceof Closure ? $parsePage : Closure::fromCallable($parsePage);
+        $until = $until === null || $until instanceof Closure ? $until : Closure::fromCallable($until);
+        $options ??= new HttpPageOptions();
+
+        return self::pipe(
+            static fn(): Generator => HttpPageStream::itemsByIndex($requestFor, $parsePage, $prefetch, $until, $options),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
      */
     public static function empty(): self
     {
@@ -1015,11 +1055,27 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
 
     /**
      * {@inheritdoc}
+     *
+     * A deferred stage (2.4.0): on traversal the inner side is read once and indexed, then this
+     * stream flows (O(inner) memory, as leftJoin()); a list, in outer order.
      */
-    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): self
     {
         return self::pipe(
-            fn() => ALinqContract::outerJoin('left', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            fn() => ALinqContract::innerJoin($this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     *
+     * A deferred stage (2.4.0), as join(): one result per outer item, its matches an ALinqCollection.
+     */
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): self
+    {
+        return self::pipe(
+            fn() => ALinqContract::groupJoin($this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             true
         );
     }
@@ -1027,10 +1083,10 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
-    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self
     {
         return self::pipe(
-            fn() => ALinqContract::outerJoin('right', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            fn() => ALinqContract::outerJoin('left', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             true
         );
     }
@@ -1038,10 +1094,21 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
     /**
      * {@inheritdoc}
      */
-    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self
     {
         return self::pipe(
-            fn() => ALinqContract::outerJoin('full', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            fn() => ALinqContract::outerJoin('right', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
+            true
+        );
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self
+    {
+        return self::pipe(
+            fn() => ALinqContract::outerJoin('full', $this, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             true
         );
     }
@@ -1071,11 +1138,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
      */
-    public function groupBy(callable $keySelector): self
+    public function groupBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self
     {
         $keySelector = ALinqCallable::withKey($keySelector);
-        return self::pipe(function () use ($keySelector) {
-            foreach (ALinqContract::groupItems($this, $keySelector, null, 'groupBy') as $key => $items) {
+        return self::pipe(function () use ($keySelector, $comparer) {
+            foreach (ALinqContract::groupItems($this, $keySelector, null, 'groupBy', $comparer) as $key => $items) {
                 yield $key => new ALinqCollection($items);
             }
         }, false);
@@ -1088,12 +1155,12 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
      */
-    public function countBy(callable $keySelector): self
+    public function countBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self
     {
         $keySelector = ALinqCallable::withKey($keySelector);
-        return self::pipe(function () use ($keySelector) {
+        return self::pipe(function () use ($keySelector, $comparer) {
             // The message of an invalid key names groupBy(), as on the eager side since 1.3.0.
-            yield from ALinqContract::countByKey($this, $keySelector, 'groupBy');
+            yield from ALinqContract::countByKey($this, $keySelector, 'groupBy', $comparer);
         }, false);
     }
 
@@ -1106,11 +1173,11 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a key is not int, string or BackedEnum (at traversal)
      */
-    public function aggregateBy(callable $keySelector, mixed $seed, callable $func): self
+    public function aggregateBy(callable $keySelector, mixed $seed, callable $func, ?IALinqEqualityComparer $comparer = null, ?callable $seedSelector = null): self
     {
         $keySelector = ALinqCallable::withKey($keySelector);
-        return self::pipe(function () use ($keySelector, $seed, $func) {
-            yield from ALinqContract::aggregateByKey($this, $keySelector, $seed, $func, 'groupBy');
+        return self::pipe(function () use ($keySelector, $seed, $func, $comparer, $seedSelector) {
+            yield from ALinqContract::aggregateByKey($this, $keySelector, $seed, $func, 'groupBy', $comparer, $seedSelector);
         }, false);
     }
 
@@ -1121,13 +1188,14 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a key is not valid, or (Throw) is produced twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw, ?IALinqEqualityComparer $comparer = null): array
     {
         return ALinqContract::dictionary(
             $this,
             ALinqCallable::withKey($keySelector),
             $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
-            $onDuplicate
+            $onDuplicate,
+            $comparer
         );
     }
 
@@ -1138,12 +1206,13 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * @throws InvalidArgumentException When a key is not int, string or BackedEnum
      */
-    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null, ?IALinqEqualityComparer $comparer = null): ALinqLookup
     {
         return ALinqContract::lookup(
             $this,
             ALinqCallable::withKey($keySelector),
-            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector)
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
+            $comparer
         );
     }
 
@@ -1153,9 +1222,9 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      * A deferred stage (2.2.0): on traversal the keys are read first (O(keys)), then the
      * stream flows, remembering the keys already emitted.
      */
-    public function exceptByKeys(iterable $keys, callable $keySelector): self
+    public function exceptByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): self
     {
-        return $this->keyedSetStage($keys, $keySelector, false);
+        return $this->keyedSetStage($keys, $keySelector, false, $comparer);
     }
 
     /**
@@ -1163,17 +1232,17 @@ final class ALinqLazyCollection implements IALinqLazyCollection, JsonSerializabl
      *
      * A deferred stage (2.2.0), as exceptByKeys().
      */
-    public function intersectByKeys(iterable $keys, callable $keySelector): self
+    public function intersectByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): self
     {
-        return $this->keyedSetStage($keys, $keySelector, true);
+        return $this->keyedSetStage($keys, $keySelector, true, $comparer);
     }
 
-    private function keyedSetStage(iterable $keys, callable $keySelector, bool $keepWhenPresent): self
+    private function keyedSetStage(iterable $keys, callable $keySelector, bool $keepWhenPresent, ?IALinqEqualityComparer $comparer): self
     {
         $keySelector = ALinqCallable::withKey($keySelector);
         $isList = $this->sourceIsList;
-        return self::pipe(function () use ($keys, $keySelector, $keepWhenPresent, $isList) {
-            foreach (ALinqContract::setByKeys($this, $keys, $keySelector, $keepWhenPresent) as $key => $item) {
+        return self::pipe(function () use ($keys, $keySelector, $keepWhenPresent, $comparer, $isList) {
+            foreach (ALinqContract::setByKeys($this, $keys, $keySelector, $keepWhenPresent, $comparer) as $key => $item) {
                 if ($isList) {
                     yield $item;
                 } else {

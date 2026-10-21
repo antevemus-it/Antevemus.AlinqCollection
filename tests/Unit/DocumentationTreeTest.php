@@ -15,14 +15,14 @@ use ReflectionClassConstant;
  * (a) the same files in both languages; (b) both navigations parse, have the same shape, point to existing
  * pages and list every page; (c) every relative link of a page or of a README resolves; (d) every page
  * carries the same code fences and the same PHP blocks in both languages, token by token (comments aside),
- * all 29 of them since 2.2.2 (no block is declared localized); (e) the number of PHP blocks of each page
+ * all 29 of them since 2.2.2 and 33 since 2.4.0 (no block is declared localized); (e) the number of PHP blocks of each page
  * is the one declared below, with its cause; (f) each README has exactly one PHP block, the Quick Start of
  * getting-started/index, and stays below 25 000 bytes; (g) the Quick Start is marked as a tested block in the
  * README and on the page of each language, so ReadmeConsumerGapsTest runs it with its written answers;
  * (h) nothing of the internal line leaks to a public page or README: no internal path, no Azure DevOps link,
  * and no relative link outside the language folders but to the public root files.
  *
- * @version    2.2.2
+ * @version    2.4.0
  * @package    Antevemus\ALinq\Tests
  * @subpackage Unit
  */
@@ -45,20 +45,24 @@ final class DocumentationTreeTest extends TestCase
         'concepts/aspecification-synergy' => 1, // "How It Works": ALinqBridge over a specification
         'api/factories' => 1,                   // §1
         'api/filtering' => 2,                   // §2, and its field filters (1.4.0)
-        'api/joining' => 3,                     // §3, the outer joins (1.4.0) and 3-keys (2.2.0)
+        'api/joining' => 4,                     // §3, the outer joins (1.4.0), 3-keys (2.2.0) and 3-comparer (2.4.0)
         'api/aggregations' => 1,                // §4
         'api/projections' => 2,                 // §5, and 5-dictionary (2.2.0)
-        'api/grouping' => 2,                    // §6, and 6-lookup (2.2.0)
+        'api/grouping' => 3,                    // §6, 6-lookup (2.2.0) and 6-comparer (2.4.0)
         'api/ordering' => 3,                    // §7, 7-ordinal and 7-culture (2.2.0)
         'api/query-builder' => 2,               // §8, and its shortcuts (1.4.0)
         'api/property-access' => 2,             // §9: paths, and the resolution order with #[Specifiable]
-        'api/lazy-streaming' => 9,              // §10: log file, CSV, PDO cursor, paginated HTTP (1.5.0), remember(),
-                                                // ordering and outer joins (1.4.0), 10-grouping (2.2.0),
-                                                // irregular input (1.3.2), 10-csv (2.2.0)
+        'api/lazy-streaming' => 11,             // §10: log file, CSV, PDO cursor, paginated HTTP (1.5.0), pages by
+                                                // index (2.4.0), remember(), ordering and outer joins (1.4.0),
+                                                // 10-grouping (2.2.0), 10-joins (2.4.0), irregular input (1.3.2),
+                                                // 10-csv (2.2.0)
     ];
 
-    /** The 29 blocks of the 2.2.0 README; §11 (api/contract) has none. */
-    private const PHP_BLOCKS_TOTAL = 29;
+    /**
+     * The 29 blocks of the 2.2.0 README and the 4 of 2.4.0 (3-comparer, 6-comparer, the pages by index of
+     * fromHttpPagesByIndex(), 10-joins); §11 (api/contract) has none.
+     */
+    private const PHP_BLOCKS_TOTAL = 33;
 
     /**
      * The blocks allowed to differ between the languages, none since 2.2.2. In 2.2.1 the 20 blocks whose
@@ -175,7 +179,7 @@ final class DocumentationTreeTest extends TestCase
 
     public function testEveryPageHasTheDeclaredNumberOfPhpBlocks(): void
     {
-        self::assertSame(self::PHP_BLOCKS_TOTAL, array_sum(self::PHP_BLOCKS), 'the table adds up to the 29 blocks of 2.2.0');
+        self::assertSame(self::PHP_BLOCKS_TOTAL, array_sum(self::PHP_BLOCKS), 'the table adds up to the 29 blocks of 2.2.0 and the 4 of 2.4.0');
         foreach (self::LANGUAGES as $language) {
             $total = 0;
             foreach (self::pages($language) as $page) {

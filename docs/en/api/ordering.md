@@ -110,3 +110,5 @@ $people->countBy(fn($p) => $ptBr->hash(mb_substr($p['name'], 0, 1)))->count(); /
 // numeric: digit runs compare by value
 ALinqCollection::from(['item10', 'item2'])->orderBy(fn($s) => $s, StringComparer::culture('en_US', numeric: true))->toArray(); // ['item2', 'item10']
 ```
+
+Since 2.4.0 the grouping operators, the set operations and the joins take the comparer itself, and a group keeps a readable name (the first spelling seen) instead of an opaque hash: see [Grouping](grouping.md) and [Joining](joining.md).

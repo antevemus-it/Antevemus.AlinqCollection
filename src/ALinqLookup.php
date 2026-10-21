@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Antevemus\ALinq;
 
+use Antevemus\ALinq\Helpers\ALinqKeySet;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use ArrayAccess;
 use BackedEnum;
 use Countable;
@@ -28,7 +30,12 @@ use LogicException;
  * - Read-only ArrayAccess: `$lookup['x']` is get('x'), `isset($lookup['x'])` is contains('x');
  *   writing or unsetting throws LogicException.
  *
- * @version    2.2.0
+ * Since 2.4.0 toLookup() may take an IALinqEqualityComparer: the keys equal under it are one
+ * group, named by the first of them seen, and the lookup keeps the comparer, so get() and
+ * contains() find a group by any key equal to its name (`get('SAO PAULO')` finds the group
+ * `'São Paulo'` under an accent- and case-insensitive comparer, as `lookup[key]` does in .NET).
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq
  * @author     Heliton Junior
@@ -46,17 +53,35 @@ final class ALinqLookup implements Countable, IteratorAggregate, ArrayAccess, Js
     private readonly array $groups;
 
     /**
+     * The names of the groups under the comparer given to toLookup() (2.4.0); null without one.
+     */
+    private readonly ?ALinqKeySet $names;
+
+    /**
      * Built by toLookup(); each group is kept as a list (reindexed).
      *
      * @param array<array-key, array<mixed>> $groups key => elements, keys in first-appearance order
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys for get() and contains() (since 2.4.0)
+     * @param list<int|string>|null $keys The key of each group as the comparer must see it, in the
+     *                                    order of $groups (a numeric string is an int array key);
+     *                                    the array keys when null (since 2.4.0)
      */
-    public function __construct(array $groups)
+    public function __construct(array $groups, ?IALinqEqualityComparer $comparer = null, ?array $keys = null)
     {
         $lists = [];
         foreach ($groups as $key => $elements) {
             $lists[$key] = array_values($elements);
         }
         $this->groups = $lists;
+
+        $names = null;
+        if ($comparer !== null) {
+            $names = new ALinqKeySet($comparer);
+            foreach ($keys ?? array_keys($lists) as $key) {
+                $names->add($key);
+            }
+        }
+        $this->names = $names;
     }
 
     /**
@@ -64,15 +89,35 @@ final class ALinqLookup implements Countable, IteratorAggregate, ArrayAccess, Js
      */
     public function get(int|string|BackedEnum $key): ALinqCollection
     {
-        return new ALinqCollection($this->groups[self::arrayKey($key)] ?? []);
+        $name = $this->name($key);
+
+        return new ALinqCollection($name === null ? [] : $this->groups[$name[0]]);
     }
 
     /**
-     * Whether the key exists.
+     * Whether the key exists (under the comparer of toLookup(), when it was given one).
      */
     public function contains(int|string|BackedEnum $key): bool
     {
-        return array_key_exists(self::arrayKey($key), $this->groups);
+        return $this->name($key) !== null;
+    }
+
+    /**
+     * The key of the group that $key names, wrapped, or null when there is none: the key itself
+     * when it is a group key (a key is equal to itself under any comparer, and `10` finds the
+     * group `'10'`, whose array key is the int 10), otherwise the group name equal to it under
+     * the comparer, if any.
+     *
+     * @return array{0: int|string}|null
+     */
+    private function name(int|string|BackedEnum $key): ?array
+    {
+        $key = self::arrayKey($key);
+        if (array_key_exists($key, $this->groups)) {
+            return [$key];
+        }
+
+        return $this->names?->find($key);
     }
 
     /**

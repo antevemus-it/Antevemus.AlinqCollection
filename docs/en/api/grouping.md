@@ -44,3 +44,36 @@ $lookup[7] = ALinqCollection::from([]); // throws LogicException: ALinqLookup is
 // Group keys are PHP array keys: 1 and '1' are one key, '01' is another
 ALinqCollection::from([['k' => 1], ['k' => '1'], ['k' => '01']])->toLookup(fn($r) => $r['k'])->keys(); // [1, '01']
 ```
+
+#### Comparers: one group for every spelling (since 2.4.0)
+
+`groupBy()`, `countBy()`, `aggregateBy()`, `toDictionary()` and `toLookup()` take an `IALinqEqualityComparer` as their last parameter, on both collections: the keys equal under it are **one group, named by the first key seen** (the first element represents the group, as in LINQ: `'São Paulo'` before `'sao paulo'` gives the group `'São Paulo'`; in the other order, `'sao paulo'`). The identity is hash-based (`hash()` buckets, `equals()` decides), so grouping stays linear. The comparer receives the key after the key rule above (a `BackedEnum` as its value; `null` and the other types still throw), and two keys it tells apart that PHP turns into one array key (`1` and `'1'`) throw `InvalidArgumentException`. The lookup of `toLookup()` keeps the comparer, so `get()`/`contains()` find a group by any key equal to its name. `toDictionary()` keeps the first key seen (under `KeepLast` it holds the element of the last item equal to it), and its message for a repeat names the key as produced the second time.
+
+`aggregateBy()` also takes a seed selector, `aggregateBy($keySelector, $seed, $func, $comparer = null, $seedSelector = null)`: a callable `fn($key)` called once per group, when the group starts, with the key that names it, whose answer is the seed of that group (the `seedSelector` of .NET 9): a fresh object per group, or a seed that depends on the key. When it is given, `$seed` is ignored (pass `null`); without it `$seed` is the seed of every group whatever its type, as before, a Closure included (it is the accumulator itself, never called).
+
+<!-- tested: 6-comparer -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+use Antevemus\ALinq\DuplicateKeyPolicy;
+
+$visits = ALinqCollection::from([
+    ['city' => 'São Paulo', 'visits' => 3],
+    ['city' => 'Rio', 'visits' => 1],
+    ['city' => 'sao paulo', 'visits' => 2],
+    ['city' => 'SAO PAULO', 'visits' => 4],
+]);
+$ptBr = StringComparer::culture('pt_BR', ignoreCase: true, ignoreAccents: true);
+$city = fn($v) => $v['city'];
+
+// The first spelling seen names the group
+$visits->countBy($city, $ptBr)->toArray(); // ['São Paulo' => 3, 'Rio' => 1]
+$visits->groupBy($city, $ptBr)->select(fn($group) => $group->sum(fn($v) => $v['visits']))->toArray(); // ['São Paulo' => 9, 'Rio' => 1]
+$visits->toDictionary($city, fn($v) => $v['visits'], DuplicateKeyPolicy::KeepLast, $ptBr); // ['São Paulo' => 4, 'Rio' => 1]
+// The lookup keeps the comparer: any spelling finds the group
+$visits->toLookup($city, fn($v) => $v['visits'], $ptBr)->get('SÃO paulo')->toArray(); // [3, 2, 4]
+// aggregateBy(): a seed selector gives each group its own seed
+$visits->aggregateBy($city, null, fn($trace, $v) => $trace . ' ' . $v['visits'], $ptBr, fn($name) => $name . ':')->toArray(); // ['São Paulo' => 'São Paulo: 3 2 4', 'Rio' => 'Rio: 1']
+// Without a comparer the keys are PHP array keys, as before
+$visits->countBy($city)->count(); // 4
+```

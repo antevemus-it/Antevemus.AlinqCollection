@@ -24,24 +24,27 @@ use Throwable;
  * The guard compares the two languages: the same markers on the same pages, in the same order,
  * with the same code (comments and whitespace aside) and the same answers.
  *
- * @version    2.2.1
+ * @version    2.4.0
  * @package    Antevemus\ALinq\Tests
  * @subpackage Unit
  */
 final class ReadmeConsumerGapsTest extends TestCase
 {
     /**
-     * The tested blocks and the number of answers each one writes down: the Quick Start (2.2.1)
-     * and the blocks of 2.2.0.
+     * The tested blocks and the number of answers each one writes down: the Quick Start (2.2.1),
+     * the blocks of 2.2.0 and those of 2.4.0 (3-comparer, 6-comparer, 10-joins).
      */
     private const BLOCKS = [
         'quick-start' => 4,
         '3-keys' => 6,
+        '3-comparer' => 7,
         '5-dictionary' => 7,
         '6-lookup' => 7,
+        '6-comparer' => 6,
         '7-ordinal' => 5,
         '7-culture' => 6,
         '10-grouping' => 6,
+        '10-joins' => 3,
         '10-csv' => 2,
     ];
 
@@ -49,11 +52,14 @@ final class ReadmeConsumerGapsTest extends TestCase
     private const PAGES = [
         'quick-start' => 'getting-started/index',
         '3-keys' => 'api/joining',
+        '3-comparer' => 'api/joining',
         '5-dictionary' => 'api/projections',
         '6-lookup' => 'api/grouping',
+        '6-comparer' => 'api/grouping',
         '7-ordinal' => 'api/ordering',
         '7-culture' => 'api/ordering',
         '10-grouping' => 'api/lazy-streaming',
+        '10-joins' => 'api/lazy-streaming',
         '10-csv' => 'api/lazy-streaming',
     ];
 
@@ -61,7 +67,7 @@ final class ReadmeConsumerGapsTest extends TestCase
     private const READMES = ['en' => 'README.md', 'pt-BR' => 'README.pt-BR.md'];
 
     /** Blocks that need ext-intl (StringComparer::culture()). */
-    private const NEEDS_INTL = ['7-culture'];
+    private const NEEDS_INTL = ['7-culture', '6-comparer'];
 
     /**
      * @return array<string, array{string, string}>

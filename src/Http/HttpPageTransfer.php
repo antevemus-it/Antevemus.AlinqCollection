@@ -7,6 +7,7 @@ namespace Antevemus\ALinq\Http;
 use Closure;
 use CurlHandle;
 use CurlMultiHandle;
+use WeakMap;
 
 /**
  * HttpPageTransfer - One page request in flight on a curl multi handle
@@ -27,8 +28,12 @@ use CurlMultiHandle;
  * Fixed transport rules: HTTP and HTTPS only (redirects too), TLS peer and host verification
  * always on, at most 5 redirects when they are followed, no `Expect: 100-continue`.
  *
+ * Several transfers on one multi handle (fromHttpPagesByIndex(), since 2.4.0): the completion
+ * messages of the multi handle are read by whichever transfer drives it, so each message is
+ * kept for the transfer it belongs to (a WeakMap by easy handle) instead of being dropped.
+ *
  * @internal
- * @version    1.5.0
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.http
  * @author     Heliton Junior
@@ -69,6 +74,14 @@ final class HttpPageTransfer
     private float $waited = 0.0;
 
     private readonly float $budget;
+
+    /**
+     * Completion codes read from a multi handle, by easy handle, until their transfer collects
+     * them (2.4.0: with several transfers in flight, one may read the message of another).
+     *
+     * @var WeakMap<CurlHandle, int>|null
+     */
+    private static ?WeakMap $completed = null;
 
     public function __construct(
         private readonly CurlMultiHandle $multi,
@@ -220,14 +233,17 @@ final class HttpPageTransfer
     }
 
     /**
-     * Read the completion message of this transfer, if any.
+     * Read the completion messages of the multi handle and take the one of this transfer, if any.
      */
     private function collect(): void
     {
+        $completed = self::$completed ??= new WeakMap();
         while (($info = curl_multi_info_read($this->multi)) !== false) {
-            if ($info['handle'] === $this->handle) {
-                $this->result = $info['result'];
-            }
+            $completed[$info['handle']] = $info['result'];
+        }
+        if (isset($completed[$this->handle])) {
+            $this->result = $completed[$this->handle];
+            unset($completed[$this->handle]);
         }
     }
 

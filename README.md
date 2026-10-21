@@ -1,10 +1,10 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.3.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.4.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests Passing](https://img.shields.io/badge/tests-772%20passed%20%7C%204102%20assertions-success.svg)](docs/en/quality/tests.md)
+[![Tests Passing](https://img.shields.io/badge/tests-836%20passed%20%7C%204631%20assertions-success.svg)](docs/en/quality/tests.md)
 [![Architecture](https://img.shields.io/badge/Architecture-LINQ%20%7C%20Functional%20Collections-orange)](https://learn.microsoft.com/en-us/dotnet/csharp/linq/)
 [![Synergy: ASpecification](https://img.shields.io/badge/Synergy-Antevemus.ASpecification-purple)](https://github.com/antevemus-it/Antevemus.ASpecification)
 
@@ -95,7 +95,7 @@ One line per page, grouped as in the navigation; §N is the section of the API R
 
 - [Factories](docs/en/api/factories.md) (§1) · [pt-BR](docs/pt-BR/api/factories.md): `from()`, `range()`, `repeat()`, `empty()`, `toArray()` and `toObject()`.
 - [Filtering and slicing](docs/en/api/filtering.md) (§2) · [pt-BR](docs/pt-BR/api/filtering.md): `where()`, `take()`/`skip()`, `distinct()`, `first()`, `chunk()` and the field filters `whereIn()`, `whereNotIn()`, `whereBetween()`.
-- [Joining and set theory](docs/en/api/joining.md) (§3) · [pt-BR](docs/pt-BR/api/joining.md): Inner and outer joins, `groupJoin()`, the set operations and `exceptByKeys()`/`intersectByKeys()`.
+- [Joining and set theory](docs/en/api/joining.md) (§3) · [pt-BR](docs/pt-BR/api/joining.md): Inner and outer joins, `groupJoin()`, the set operations and `exceptByKeys()`/`intersectByKeys()`, with an equality comparer since 2.4.0.
 - [Aggregations and metrics](docs/en/api/aggregations.md) (§4) · [pt-BR](docs/pt-BR/api/aggregations.md): `any()`, `all()`, `sum()`, `average()`, `min()`/`max()`, `single()` and the `*OrDefault()` aggregates.
 - [Projections and transformations](docs/en/api/projections.md) (§5) · [pt-BR](docs/pt-BR/api/projections.md): `select()`, `selectMany()`, `column()`, `toDictionary(onDuplicate:)` and `toLookup()`.
 - [Grouping and partitioning](docs/en/api/grouping.md) (§6) · [pt-BR](docs/pt-BR/api/grouping.md): `groupBy()` into sub-collections, and `ALinqLookup`, a materialized `groupBy()`.
@@ -118,8 +118,8 @@ One line per page, grouped as in the navigation; §N is the section of the API R
 
 ## 🧪 Quality
 
-- **Tests:** 772 PHPUnit tests (`vendor/bin/phpunit`) over the 8 traits, the streaming engine, the eager × lazy contract and the code blocks of the documentation, 100% passing on PHP 8.4.
-- **Assertions:** 4102 without `ext-intl` (the 10 tests of `StringComparer::culture()` skipped) and 4185 with it (1 skipped, the test of the missing extension); the CI runs both legs.
+- **Tests:** 836 PHPUnit tests (`vendor/bin/phpunit`) over the 8 traits, the streaming engine, the eager × lazy contract and the code blocks of the documentation, 100% passing on PHP 8.4.
+- **Assertions:** 4631 without `ext-intl` (the 17 tests of `StringComparer::culture()` skipped) and 4772 with it (1 skipped, the test of the missing extension); the CI runs both legs.
 - **Coverage** (pcov, 2.2.0, with `ext-intl`): 289 of 299 methods and 1619 of 1637 lines of `src/`; the 18 uncovered lines are defensive guards or depend on the environment.
 - **Mutation testing:** Infection on the lines changed since 2.1.0, MSI 97.59% (10 escaped mutants, all equivalent).
 - **Contract parity:** every shared operation runs over the same inputs on the eager and the lazy collection, with zero divergences allowed (`tests/Contract/ParityTest.php`; the rules: [The contract](docs/en/api/contract.md)).

@@ -41,8 +41,9 @@
   "suggest": {
     "ext-intl": "Required by StringComparer::culture() (since 2.2.0): text compared by the collation rules of a language (ICU), ignoring case and/or accents, numeric ordering; without it culture() throws LogicException and ordinal()/ordinalIgnoreCase() keep working",
     "ext-mbstring": "Required by StringComparer::ordinalIgnoreCase() (since 2.2.0): Unicode case folding; without it ordinalIgnoreCase() throws LogicException",
-    "ext-curl": "Required by ALinqLazyCollection::fromHttpPages() (since 1.5.0): lazy source over a paginated HTTP API that prefetches the next page with curl_multi",
+    "ext-curl": "Required by ALinqLazyCollection::fromHttpPages() (since 1.5.0) and fromHttpPagesByIndex() (since 2.4.0): lazy sources over a paginated HTTP API that prefetch the next pages with curl_multi",
     "antevemus/alinq-revolt": "^1.0 \u2014 ALinqAsyncCollection: selectAsync()/whereAsync()/selectManyAsync()/eachAsync() over the Revolt event loop (Fibers, Amp futures) with an ordered, bounded window of items in flight, for I/O per item against asynchronous SDKs",
+    "antevemus/alinq-parallel": "^1.0 \u2014 ALinqParallelCollection: selectParallel()/whereParallel()/selectManyParallel()/eachParallel() over a pool of PHP worker processes, for CPU-bound work per item (a Fiber alone is not parallelism); the work must be transportable to another process (a static method or a serializable invokable, never a closure)",
     "antevemus/aspecification": "^2.0.0 \u2014 Specification pattern with ALinqBridge and ALinqSpecificationVisitor: evaluate domain specifications over eager and lazy ALinq collections (docs/en/concepts/aspecification-synergy.md); since 2.0 both packages resolve property names through the same antevemus/adeep-property-access"
   },
   "autoload": {

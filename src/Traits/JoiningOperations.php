@@ -7,6 +7,7 @@ namespace Antevemus\ALinq\Traits;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 
 /**
  * JoiningOperations Trait
@@ -30,7 +31,17 @@ use Antevemus\ALinq\Interfaces\IALinqCollection;
  * ALinqContract::setByKeys(), shared with the lazy side. exceptBy()/intersectBy() keep their
  * MoreLINQ-style answer (a sequence of elements, the selector applied to both sides).
  *
- * @version    2.2.2
+ * Since 2.4.0 every join (join, groupJoin, leftJoin, rightJoin, fullJoin) and every set
+ * operation by key or element (intersect, except, intersectBy, exceptBy, unionBy,
+ * exceptByKeys, intersectByKeys) takes an IALinqEqualityComparer as its last parameter: its
+ * hash() indexes, its equals() confirms (linear time, never a comparison of every pair), and in
+ * a set the first item of each key is the one kept. join()/groupJoin() run on
+ * ALinqContract::innerJoin()/groupJoin() under a comparer (shared with the lazy side, which
+ * gained them in 2.4.0), and the set operations on ALinqContract::setByElements()/union()/
+ * setByKeys(); without a comparer they keep the code of 2.3.1 (the same answers, and no cost
+ * added to the path that does not use a comparer).
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -47,10 +58,22 @@ trait JoiningOperations
      * LINQ and SQL. Since 2.2.0 the inner side may be any iterable (a generator, an
      * ALinqCollection, an ALinqLazyCollection over a cursor): it is read once.
      *
+     * Since 2.4.0 a comparer may decide which keys match (for instance
+     * `StringComparer::ordinalIgnoreCase()` for e-mails): the inner side is indexed by its
+     * hash() and each match is confirmed by its equals(), so the join stays linear.
+     *
      * @param iterable $inner The inner sequence (an array before 2.2.0)
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      */
-    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
+        if ($comparer !== null) {
+            return new self(iterator_to_array(
+                ALinqContract::innerJoin($this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
+                false
+            ));
+        }
+
         $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
         $innerGrouped = self::indexByKey($inner, $innerKeySelector);
 
@@ -73,12 +96,20 @@ trait JoiningOperations
      * The matched group handed to the result selector is an ALinqCollection (docs/en/api/joining.md),
      * empty when nothing matches. A null key on either side never matches, as in LINQ and
      * SQL: an outer item with a null key gets an empty group. Since 2.2.0 the inner side may
-     * be any iterable, read once.
+     * be any iterable, read once; since 2.4.0 a comparer may decide which keys match, as in join().
      *
      * @param iterable $inner The inner sequence (an array before 2.2.0)
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      */
-    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
+        if ($comparer !== null) {
+            return new self(iterator_to_array(
+                ALinqContract::groupJoin($this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
+                false
+            ));
+        }
+
         $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
         $innerGrouped = self::indexByKey($inner, $innerKeySelector);
 
@@ -104,11 +135,12 @@ trait JoiningOperations
      * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
      * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
      * @param callable|null $resultSelector `fn($outer, $inner)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      */
-    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         return new self(iterator_to_array(
-            ALinqContract::outerJoin('left', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            ALinqContract::outerJoin('left', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             false
         ));
     }
@@ -125,11 +157,12 @@ trait JoiningOperations
      * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
      * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
      * @param callable|null $resultSelector `fn($outer, $inner)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      */
-    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         return new self(iterator_to_array(
-            ALinqContract::outerJoin('right', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            ALinqContract::outerJoin('right', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             false
         ));
     }
@@ -146,11 +179,12 @@ trait JoiningOperations
      * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
      * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
      * @param callable|null $resultSelector `fn($outer, $inner)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      */
-    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         return new self(iterator_to_array(
-            ALinqContract::outerJoin('full', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector),
+            ALinqContract::outerJoin('full', $this->items, $inner, $outerKeySelector, $innerKeySelector, $resultSelector, $comparer),
             false
         ));
     }
@@ -188,21 +222,27 @@ trait JoiningOperations
     /**
      * Get elements that exist in both collections (Intersect in LINQ)
      *
-     * A set operation: deduplicated, strict identity, keys of a dictionary preserved.
+     * A set operation: deduplicated, strict identity, keys of a dictionary preserved. Since
+     * 2.4.0 a comparer may decide which items are equal; the first of each is kept.
+     *
+     * @param IALinqEqualityComparer|null $comparer The identity of the items (since 2.4.0)
      */
-    public function intersect(array $second): IALinqCollection
+    public function intersect(array $second, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->setOperation($second, fn($item) => $item, true);
+        return $this->setOperation($second, fn($item) => $item, true, $comparer);
     }
 
     /**
      * Get elements from this collection that don't exist in second (Except in LINQ)
      *
-     * A set operation: deduplicated, strict identity, keys of a dictionary preserved.
+     * A set operation: deduplicated, strict identity, keys of a dictionary preserved. Since
+     * 2.4.0 a comparer may decide which items are equal; the first of each is kept.
+     *
+     * @param IALinqEqualityComparer|null $comparer The identity of the items (since 2.4.0)
      */
-    public function except(array $second): IALinqCollection
+    public function except(array $second, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->setOperation($second, fn($item) => $item, false);
+        return $this->setOperation($second, fn($item) => $item, false, $comparer);
     }
 
     /**
@@ -282,11 +322,12 @@ trait JoiningOperations
      *
      * @param array $second The sequence to compare to the first sequence (elements, not keys)
      * @param callable $keySelector A function to extract the key for each element of both sequences
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self A collection containing elements from the first sequence not in the second
      */
-    public function exceptBy(array $second, callable $keySelector): IALinqCollection
+    public function exceptBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->setOperation($second, $keySelector, false);
+        return $this->setOperation($second, $keySelector, false, $comparer);
     }
 
     /**
@@ -298,11 +339,12 @@ trait JoiningOperations
      *
      * @param array $second The sequence to compare to the first sequence (elements, not keys)
      * @param callable $keySelector A function to extract the key for each element of both sequences
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self A collection containing shared elements based on the key selector
      */
-    public function intersectBy(array $second, callable $keySelector): IALinqCollection
+    public function intersectBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->setOperation($second, $keySelector, true);
+        return $this->setOperation($second, $keySelector, true, $comparer);
     }
 
     /**
@@ -314,12 +356,15 @@ trait JoiningOperations
      * (`1` and `'1'` differ), a null key matches a null in $keys, a list is reindexed and a
      * dictionary keeps its keys.
      *
+     * Since 2.4.0 a comparer may decide which keys are equal (the first item of each key is kept).
+     *
      * @param iterable $keys The keys to remove
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      */
-    public function exceptByKeys(iterable $keys, callable $keySelector): IALinqCollection
+    public function exceptByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->keyedSetOperation($keys, $keySelector, false);
+        return $this->keyedSetOperation($keys, $keySelector, false, $comparer);
     }
 
     /**
@@ -329,27 +374,34 @@ trait JoiningOperations
      *
      * @param iterable $keys The keys to keep
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      */
-    public function intersectByKeys(iterable $keys, callable $keySelector): IALinqCollection
+    public function intersectByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
-        return $this->keyedSetOperation($keys, $keySelector, true);
+        return $this->keyedSetOperation($keys, $keySelector, true, $comparer);
     }
 
-    private function keyedSetOperation(iterable $keys, callable $keySelector, bool $keepWhenPresent): IALinqCollection
+    private function keyedSetOperation(iterable $keys, callable $keySelector, bool $keepWhenPresent, ?IALinqEqualityComparer $comparer): IALinqCollection
     {
-        $kept = ALinqContract::setByKeys($this->items, $keys, ALinqCallable::withKey($keySelector), $keepWhenPresent);
+        $kept = ALinqContract::setByKeys($this->items, $keys, ALinqCallable::withKey($keySelector), $keepWhenPresent, $comparer);
 
         return new self(ALinqContract::shapeLike($this->items, iterator_to_array($kept, true)));
     }
 
     /**
-     * Keeps the items of this collection whose key identity is (intersect) or is not
-     * (except) present in $second, each identity at most once, keys of a dictionary
-     * preserved.
+     * Keeps the items of this collection whose key is (intersect) or is not (except) the key
+     * of an item of $second, each key at most once, keys of a dictionary preserved; strict
+     * identity, or the comparer (2.4.0).
      */
-    private function setOperation(array $second, callable $keySelector, bool $keepWhenPresent): IALinqCollection
+    private function setOperation(array $second, callable $keySelector, bool $keepWhenPresent, ?IALinqEqualityComparer $comparer): IALinqCollection
     {
         $keySelector = ALinqCallable::withKey($keySelector);
+        if ($comparer !== null) {
+            $kept = ALinqContract::setByElements($this->items, $second, $keySelector, $keepWhenPresent, $comparer);
+
+            return new self(ALinqContract::shapeLike($this->items, iterator_to_array($kept, true)));
+        }
+
         $secondKeys = [];
         foreach ($second as $key => $item) {
             $secondKeys[ALinqCallable::hashKey($keySelector($item, $key))] = true;
@@ -372,15 +424,21 @@ trait JoiningOperations
      * Produces the set union of two sequences based on a key selector function
      *
      * The result is a list: first the distinct items of this collection, then the items
-     * of $second whose key was not seen yet.
+     * of $second whose key was not seen yet. Since 2.4.0 a comparer may decide which keys are
+     * equal; the first item of each key is kept.
      *
      * @param array $second The sequence to combine with the first sequence
      * @param callable $keySelector A function to extract the key for each element
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self A collection containing unique elements from both sequences
      */
-    public function unionBy(array $second, callable $keySelector): IALinqCollection
+    public function unionBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         $keySelector = ALinqCallable::withKey($keySelector);
+        if ($comparer !== null) {
+            return new self(iterator_to_array(ALinqContract::union([$this->items, $second], $keySelector, $comparer), false));
+        }
+
         $result = [];
         $keys = [];
 

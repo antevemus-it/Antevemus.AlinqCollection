@@ -9,7 +9,8 @@ use Generator;
 use UnexpectedValueException;
 
 /**
- * HttpPageStream - The paging loop of `ALinqLazyCollection::fromHttpPages()` (since 1.5.0)
+ * HttpPageStream - The paging loops of `ALinqLazyCollection::fromHttpPages()` (since 1.5.0)
+ * and `fromHttpPagesByIndex()` (since 2.4.0)
  *
  * One traversal, one curl multi handle (connections are reused between pages). For each
  * page `n` (forward 027, D2, prefetch depth 1):
@@ -30,8 +31,15 @@ use UnexpectedValueException;
  *
  * Items are yielded with consecutive integer keys across pages (the source is a list).
  *
+ * itemsByIndex() (2.4.0) is the loop of a page addressed by its index alone: no response is
+ * needed to build the next request, so the page being awaited and up to `$prefetch` pages
+ * after it are in flight on the same multi handle (several transfers, one handle each). For
+ * page `n`: top up the pages in flight, wait for page `n`, parse its items, ask `$until`, yield
+ * the items (nudging the transfers between them), then stop on an empty page or on `$until`.
+ * The `finally` cancels every request still in flight.
+ *
  * @internal
- * @version    1.5.0
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.http
  * @author     Heliton Junior
@@ -106,6 +114,152 @@ final class HttpPageStream
             $transfer?->cancel();
             curl_multi_close($multi);
         }
+    }
+
+    /**
+     * The loop of fromHttpPagesByIndex() (2.4.0): see the class description.
+     *
+     * The page limit: when `maxPages` pages were requested, none ended the stream and
+     * `$requestFor` still answers a request for the next index, HttpPageException is thrown after
+     * the items of the last allowed page (as in items()).
+     *
+     * @param Closure(int): (HttpPageRequest|string|null) $requestFor
+     * @param Closure(HttpPageResponse): iterable $parsePage
+     * @param Closure(int, HttpPageResponse): bool|null $until
+     * @return Generator<int, mixed>
+     * @throws HttpPageException When a page cannot be delivered or the page limit is reached
+     * @throws UnexpectedValueException When a callback answers something of the wrong shape
+     */
+    public static function itemsByIndex(Closure $requestFor, Closure $parsePage, int $prefetch, ?Closure $until, HttpPageOptions $options): Generator
+    {
+        $multi = curl_multi_init();
+        /** @var list<HttpPageTransfer> $inFlight in page order */
+        $inFlight = [];
+        $nextIndex = 0;
+        $exhausted = false;
+        $pageLimit = null;
+        $position = 0;
+
+        try {
+            while (true) {
+                // The page awaited next and up to $prefetch pages after it are on the wire.
+                while (!$exhausted && count($inFlight) <= $prefetch) {
+                    $request = self::requestByIndex($requestFor, $nextIndex);
+                    if ($request === null) {
+                        $exhausted = true;
+                    } elseif ($nextIndex >= $options->maxPages) {
+                        $safeUrl = HttpPageException::redactUrl($request->url);
+                        $pageLimit = HttpPageException::forPageLimit($options->maxPages, $request->method, $safeUrl, $nextIndex);
+                        $exhausted = true;
+                    } else {
+                        $inFlight[] = new HttpPageTransfer($multi, $request, $options, $nextIndex);
+                        $nextIndex++;
+                    }
+                }
+
+                $transfer = array_shift($inFlight);
+                if ($transfer === null) {
+                    if ($pageLimit !== null) {
+                        throw $pageLimit;
+                    }
+                    return;
+                }
+
+                $response = $transfer->await();
+                $items = self::parseItems($parsePage, $response);
+                $last = $until !== null && self::isLastPage($until, $response);
+                if ($last) {
+                    // No page after this one is needed: stop the downloads now, not after its items.
+                    foreach ($inFlight as $pending) {
+                        $pending->cancel();
+                    }
+                    $inFlight = [];
+                }
+
+                $delivered = false;
+                $lastPump = hrtime(true);
+                foreach ($items as $item) {
+                    yield $position++ => $item;
+                    $delivered = true;
+
+                    if ($inFlight !== [] && hrtime(true) - $lastPump >= self::PUMP_INTERVAL_NS) {
+                        $inFlight[0]->pump();
+                        $lastPump = hrtime(true);
+                    }
+                }
+
+                if ($last || !$delivered) {
+                    return; // the last page, or an empty one: the finally cancels what is in flight
+                }
+            }
+        } finally {
+            foreach ($inFlight as $pending) {
+                $pending->cancel();
+            }
+            curl_multi_close($multi);
+        }
+    }
+
+    /**
+     * Call the $requestFor of fromHttpPagesByIndex() and check its answer: a request, a URL
+     * (a GET request) or null.
+     *
+     * @throws UnexpectedValueException When it answers anything else
+     */
+    private static function requestByIndex(Closure $requestFor, int $pageIndex): ?HttpPageRequest
+    {
+        $request = $requestFor($pageIndex);
+        if (is_string($request)) {
+            return HttpPageRequest::get($request);
+        }
+        if ($request !== null && !$request instanceof HttpPageRequest) {
+            throw new UnexpectedValueException(sprintf(
+                'fromHttpPagesByIndex(): $requestFor must return an HttpPageRequest, a URL or null, %s given for page index %d.',
+                get_debug_type($request),
+                $pageIndex
+            ));
+        }
+
+        return $request;
+    }
+
+    /**
+     * Call the $parsePage of fromHttpPagesByIndex() and check its answer.
+     *
+     * @return iterable<mixed>
+     * @throws UnexpectedValueException When it does not answer an iterable
+     */
+    private static function parseItems(Closure $parsePage, HttpPageResponse $response): iterable
+    {
+        $items = $parsePage($response);
+        if (!is_iterable($items)) {
+            throw new UnexpectedValueException(sprintf(
+                'fromHttpPagesByIndex(): $parsePage must return the iterable items of the page, %s given for page index %d.',
+                get_debug_type($items),
+                $response->pageIndex
+            ));
+        }
+
+        return $items;
+    }
+
+    /**
+     * Call the $until of fromHttpPagesByIndex() and check its answer.
+     *
+     * @throws UnexpectedValueException When it does not answer a bool
+     */
+    private static function isLastPage(Closure $until, HttpPageResponse $response): bool
+    {
+        $last = $until($response->pageIndex, $response);
+        if (!is_bool($last)) {
+            throw new UnexpectedValueException(sprintf(
+                'fromHttpPagesByIndex(): $until must return a bool, %s given for page index %d.',
+                get_debug_type($last),
+                $response->pageIndex
+            ));
+        }
+
+        return $last;
     }
 
     /**

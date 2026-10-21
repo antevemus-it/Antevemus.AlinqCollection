@@ -7,6 +7,7 @@ namespace Antevemus\ALinq\Traits;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use InvalidArgumentException;
 use OverflowException;
 use UnderflowException;
@@ -44,7 +45,11 @@ use UnderflowException;
  * aggregateBy() hands to `$func` is, as always, the position of the item inside its group.
  * implode() joins the text of the items.
  *
- * @version    2.2.0
+ * Since 2.4.0: countBy() and aggregateBy() take an IALinqEqualityComparer for the keys (the
+ * keys equal under it are one group, named by the first seen), and aggregateBy() takes a seed
+ * selector `fn($key)` that returns the seed of each group (the `seedSelector` of .NET 9).
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -310,31 +315,42 @@ trait AggregationOperations
      * its group (0, 1, ...), not its key in the source; every group starts from the same
      * $seed. Since 2.2.0 the groups are not built: one accumulator per key.
      *
+     * $seed is the seed of every group whatever its type (a Closure seed is the accumulator
+     * itself). Since 2.4.0 a seed selector `fn($key)` may give each group its own seed instead
+     * (the `seedSelector` of .NET 9): it is called once per group, when the group starts, with
+     * the key of the group, and $seed is then ignored (`aggregateBy($key, null, $func,
+     * seedSelector: fn($k) => ...)`). A comparer may decide which keys are equal: the first key
+     * seen names the group.
+     *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
-     * @param mixed $seed The initial accumulator value of every group
+     * @param mixed $seed The initial accumulator value of every group (ignored when $seedSelector is given)
      * @param callable $func `fn($carry, $item, $position)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
+     * @param callable|null $seedSelector `fn($key)`, the seed of each group (since 2.4.0)
      * @return self `key => accumulator`, keys in first-appearance order
      * @throws InvalidArgumentException when the selector returns a key that is not int, string or BackedEnum
      */
-    public function aggregateBy(callable $keySelector, $seed, callable $func): IALinqCollection
+    public function aggregateBy(callable $keySelector, $seed, callable $func, ?IALinqEqualityComparer $comparer = null, ?callable $seedSelector = null): IALinqCollection
     {
         // The message of an invalid key names groupBy(), as it has since 1.3.0 (RN-01, 2.2.0).
-        return new self(ALinqContract::aggregateByKey($this->items, ALinqCallable::withKey($keySelector), $seed, $func, 'groupBy'));
+        return new self(ALinqContract::aggregateByKey($this->items, ALinqCallable::withKey($keySelector), $seed, $func, 'groupBy', $comparer, $seedSelector));
     }
 
     /**
      * Groups elements by a specified key and counts the elements in each group (CountBy in .NET 9)
      *
-     * Since 2.2.0 the groups are not built: one counter per key.
+     * Since 2.2.0 the groups are not built: one counter per key. Since 2.4.0 a comparer may
+     * decide which keys are equal: the first key seen names the group.
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self `key => count`, keys in first-appearance order
      * @throws InvalidArgumentException when the selector returns a key that is not int, string or BackedEnum
      */
-    public function countBy(callable $keySelector): IALinqCollection
+    public function countBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection
     {
         // The message of an invalid key names groupBy(), as it has since 1.3.0 (RN-01, 2.2.0).
-        return new self(ALinqContract::countByKey($this->items, ALinqCallable::withKey($keySelector), 'groupBy'));
+        return new self(ALinqContract::countByKey($this->items, ALinqCallable::withKey($keySelector), 'groupBy', $comparer));
     }
 
     /**

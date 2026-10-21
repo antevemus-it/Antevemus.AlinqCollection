@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Antevemus\ALinq\Helpers;
 
 use Antevemus\ADeepPropertyAccess\PropertyAccess;
+use Antevemus\ALinq\ALinqCollection;
 use Antevemus\ALinq\ALinqLookup;
 use Antevemus\ALinq\ALinqQueryBuilder;
 use Antevemus\ALinq\DuplicateKeyPolicy;
@@ -53,7 +54,16 @@ use UnderflowException;
  * - setByKeys(): exceptByKeys()/intersectByKeys(), the `ExceptBy`/`IntersectBy` of .NET 6.
  * - implode(): the text of the items joined by a separator.
  *
- * @version    2.2.0
+ * Since 2.4.0 an IALinqEqualityComparer may decide the key identity of every operator that
+ * groups, deduplicates or matches by key: groupItems(), countByKey(), aggregateByKey(),
+ * dictionary(), lookup(), setByKeys(), setByElements() and union() (the set operations of the
+ * eager side, written there until 2.3.1), outerJoin(), and the inner joins innerJoin() and
+ * groupJoin() (shared since 2.4.0, when the lazy side gained join() and groupJoin()). The
+ * identity is hash-based (ALinqKeySet: hash() is the bucket, equals() decides inside it), and
+ * the first key seen represents its group or set. aggregateByKey() takes the seed of each
+ * group from a seed selector `fn($key)` when one is given.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.helpers
  * @author     Heliton Junior
@@ -273,7 +283,8 @@ final class ALinqContract
      * The outer joins of .NET 10/11 LINQ (`Enumerable.LeftJoin`, `RightJoin`, `FullJoin`),
      * shared by both collections. The result selector receives `($outer, $inner)` with `null`
      * on the side without a match; without a selector each result is the pair
-     * `[$outer, $inner]`. Keys match by the strict identity of ALinqCallable::hashKey() and a
+     * `[$outer, $inner]`. Keys match by the strict identity of ALinqCallable::hashKey() (or,
+     * since 2.4.0, by a comparer: its hash() indexes, its equals() confirms) and a
      * null key never matches (the item with a null key comes out without a partner). The
      * output is a sequence (yielded without keys, so it materializes as a list):
      *
@@ -288,6 +299,7 @@ final class ALinqContract
      * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
      * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
      * @param callable|null $resultSelector `fn($outer, $inner)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (2.4.0), hash-based
      * @return Generator<int, mixed>
      */
     public static function outerJoin(
@@ -296,7 +308,8 @@ final class ALinqContract
         iterable $inner,
         callable $outerKeySelector,
         callable $innerKeySelector,
-        ?callable $resultSelector
+        ?callable $resultSelector,
+        ?IALinqEqualityComparer $comparer = null
     ): Generator {
         $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
         $innerKeySelector = ALinqCallable::withKey($innerKeySelector);
@@ -304,10 +317,12 @@ final class ALinqContract
 
         if ($kind === 'right') {
             // RightJoin: the outer side becomes the lookup, the inner side drives the order.
-            [$outerItems, $outerIndex] = self::indexPositions($outer, $outerKeySelector);
+            [$outerItems, $outerIndex] = self::indexPositions($outer, $outerKeySelector, $comparer);
             foreach ($inner as $innerKey => $innerItem) {
                 $key = $innerKeySelector($innerItem, $innerKey);
-                $positions = $key === null ? [] : ($outerIndex[ALinqCallable::hashKey($key)] ?? []);
+                $positions = $comparer === null
+                    ? ($key === null ? [] : ($outerIndex[ALinqCallable::hashKey($key)] ?? []))
+                    : self::matchingPositions($outerIndex, $key, $comparer);
                 if ($positions === []) {
                     yield $result(null, $innerItem);
                     continue;
@@ -323,12 +338,14 @@ final class ALinqContract
             throw new InvalidArgumentException(sprintf('Unknown outer join kind: %s', $kind));
         }
 
-        [$innerItems, $innerIndex] = self::indexPositions($inner, $innerKeySelector);
+        [$innerItems, $innerIndex] = self::indexPositions($inner, $innerKeySelector, $comparer);
         $matched = [];
 
         foreach ($outer as $outerKey => $outerItem) {
             $key = $outerKeySelector($outerItem, $outerKey);
-            $positions = $key === null ? [] : ($innerIndex[ALinqCallable::hashKey($key)] ?? []);
+            $positions = $comparer === null
+                ? ($key === null ? [] : ($innerIndex[ALinqCallable::hashKey($key)] ?? []))
+                : self::matchingPositions($innerIndex, $key, $comparer);
             if ($positions === []) {
                 yield $result($outerItem, null);
                 continue;
@@ -349,15 +366,85 @@ final class ALinqContract
     }
 
     /**
-     * Buffers a sequence and indexes the position of every item by the identity of its
-     * selected key; items whose key is null are buffered but never indexed (they cannot
-     * match).
+     * The inner join (Join in LINQ), shared since 2.4.0 by join() of both collections: the inner
+     * side is buffered and indexed first (read once), then the outer side is streamed; for each
+     * outer item, one result per matching inner item, in inner order. A null key never matches.
+     *
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable $resultSelector `fn($outer, $inner)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys, hash-based
+     * @return Generator<int, mixed>
+     */
+    public static function innerJoin(
+        iterable $outer,
+        iterable $inner,
+        callable $outerKeySelector,
+        callable $innerKeySelector,
+        callable $resultSelector,
+        ?IALinqEqualityComparer $comparer
+    ): Generator {
+        $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
+        [$innerItems, $innerIndex] = self::indexPositions($inner, ALinqCallable::withKey($innerKeySelector), $comparer);
+
+        foreach ($outer as $outerKey => $outerItem) {
+            $key = $outerKeySelector($outerItem, $outerKey);
+            $positions = $comparer === null
+                ? ($key === null ? [] : ($innerIndex[ALinqCallable::hashKey($key)] ?? []))
+                : self::matchingPositions($innerIndex, $key, $comparer);
+            foreach ($positions as $position) {
+                yield $resultSelector($outerItem, $innerItems[$position]);
+            }
+        }
+    }
+
+    /**
+     * The group join (GroupJoin in LINQ), shared since 2.4.0 by groupJoin() of both collections:
+     * as innerJoin(), but one result per outer item, the matching inner items handed over as an
+     * ALinqCollection list (empty when nothing matches; a null key never matches).
+     *
+     * @param callable $outerKeySelector `fn($outer)` or `fn($outer, $key)`
+     * @param callable $innerKeySelector `fn($inner)` or `fn($inner, $key)`
+     * @param callable $resultSelector `fn($outer, ALinqCollection $matches)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys, hash-based
+     * @return Generator<int, mixed>
+     */
+    public static function groupJoin(
+        iterable $outer,
+        iterable $inner,
+        callable $outerKeySelector,
+        callable $innerKeySelector,
+        callable $resultSelector,
+        ?IALinqEqualityComparer $comparer
+    ): Generator {
+        $outerKeySelector = ALinqCallable::withKey($outerKeySelector);
+        [$innerItems, $innerIndex] = self::indexPositions($inner, ALinqCallable::withKey($innerKeySelector), $comparer);
+
+        foreach ($outer as $outerKey => $outerItem) {
+            $key = $outerKeySelector($outerItem, $outerKey);
+            $positions = $comparer === null
+                ? ($key === null ? [] : ($innerIndex[ALinqCallable::hashKey($key)] ?? []))
+                : self::matchingPositions($innerIndex, $key, $comparer);
+            $matches = [];
+            foreach ($positions as $position) {
+                $matches[] = $innerItems[$position];
+            }
+            yield $resultSelector($outerItem, new ALinqCollection($matches));
+        }
+    }
+
+    /**
+     * Buffers a sequence and indexes the position of every item by its selected key; items
+     * whose key is null are buffered but never indexed (they cannot match). Without a comparer
+     * the index maps ALinqCallable::hashKey() to the positions (the shape of 2.3.1); with one
+     * (2.4.0) it maps the comparer's hash() to the distinct keys that have it, each with its
+     * positions, so equals() runs once per distinct key of a bucket, never once per item.
      *
      * @param iterable $items
      * @param Closure(mixed, mixed): mixed $keySelector
-     * @return array{0: list<mixed>, 1: array<string, list<int>>}
+     * @return array{0: list<mixed>, 1: array<string, list<int>|list<array{0: mixed, 1: list<int>}>>}
      */
-    private static function indexPositions(iterable $items, Closure $keySelector): array
+    private static function indexPositions(iterable $items, Closure $keySelector, ?IALinqEqualityComparer $comparer): array
     {
         $buffer = [];
         $index = [];
@@ -365,11 +452,57 @@ final class ALinqContract
             $position = count($buffer);
             $buffer[] = $item;
             $selected = $keySelector($item, $key);
-            if ($selected !== null) {
+            if ($selected === null) {
+                continue;
+            }
+            if ($comparer === null) {
                 $index[ALinqCallable::hashKey($selected)][] = $position;
+                continue;
+            }
+            $hash = $comparer->hash($selected);
+            $entry = self::bucketEntry($index[$hash] ?? [], $selected, $comparer);
+            if ($entry === null) {
+                $index[$hash][] = [$selected, [$position]];
+            } else {
+                $index[$hash][$entry][1][] = $position;
             }
         }
         return [$buffer, $index];
+    }
+
+    /**
+     * Under a comparer, the positions indexed under the key equal to $key, in source order; none
+     * for a null key, which never reaches the comparer. (Without a comparer the callers read the
+     * index directly, as in 2.3.1.)
+     *
+     * @param array<string, list<array{0: mixed, 1: list<int>}>> $index
+     * @return list<int>
+     */
+    private static function matchingPositions(array $index, mixed $key, IALinqEqualityComparer $comparer): array
+    {
+        if ($key === null) {
+            return [];
+        }
+        $bucket = $index[$comparer->hash($key)] ?? [];
+        $entry = self::bucketEntry($bucket, $key, $comparer);
+
+        return $entry === null ? [] : $bucket[$entry][1];
+    }
+
+    /**
+     * The entry of a comparer's bucket whose key is equal to $key, by equals().
+     *
+     * @param list<array{0: mixed, 1: list<int>}> $bucket
+     */
+    private static function bucketEntry(array $bucket, mixed $key, IALinqEqualityComparer $comparer): ?int
+    {
+        foreach ($bucket as $entry => [$kept]) {
+            if ($comparer->equals($kept, $key)) {
+                return $entry;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -457,18 +590,80 @@ final class ALinqContract
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
      * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
      * @param string $operation The operator name (for the message of an invalid key)
+     * With a comparer (2.4.0) the keys that are equal under it form one group, whose key is
+     * the first of them seen (see representatives()).
+     *
      * @return array<array-key, list<mixed>>
      * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
      */
-    public static function groupItems(iterable $items, Closure $keySelector, ?Closure $elementSelector, string $operation): array
+    public static function groupItems(iterable $items, Closure $keySelector, ?Closure $elementSelector, string $operation, ?IALinqEqualityComparer $comparer = null): array
     {
+        return self::groupItemsWithKeys($items, $keySelector, $elementSelector, $operation, $comparer)[0];
+    }
+
+    /**
+     * groupItems() and the key of every group as the selector produced it (after groupKey()),
+     * in the order of the groups: a numeric string such as `'10'` stays a string here, where
+     * the array key of its group is the int 10 (what a comparer of texts must receive).
+     *
+     * @return array{0: array<array-key, list<mixed>>, 1: list<int|string>}
+     * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
+     */
+    private static function groupItemsWithKeys(iterable $items, Closure $keySelector, ?Closure $elementSelector, string $operation, ?IALinqEqualityComparer $comparer): array
+    {
+        $representative = self::representatives($comparer, $operation);
         $groups = [];
+        $keys = [];
         foreach ($items as $itemKey => $item) {
             $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            if ($representative !== null) {
+                $key = $representative($key);
+            }
+            if (!array_key_exists($key, $groups)) {
+                $keys[] = $key;
+            }
             $groups[$key][] = $elementSelector === null ? $item : $elementSelector($item, $itemKey);
         }
 
-        return $groups;
+        return [$groups, $keys];
+    }
+
+    /**
+     * The group of every key under a comparer (2.4.0): a Closure that takes a key already
+     * validated by groupKey() and answers the representative of its group, the first key seen
+     * that is equal to it (an ALinqKeySet, so hash-based); null without a comparer, where a key
+     * is its own group. Two keys that the comparer tells apart but that are one PHP array key
+     * (`1` and `'1'`, for a comparer that separates them) cannot both name a group: that throws.
+     *
+     * @return (Closure(int|string): int|string)|null
+     * @throws InvalidArgumentException (from the Closure) When two different keys are one array key
+     */
+    private static function representatives(?IALinqEqualityComparer $comparer, string $operation): ?Closure
+    {
+        if ($comparer === null) {
+            return null;
+        }
+
+        $kept = new ALinqKeySet($comparer);
+        $arrayKeys = [];
+
+        return static function (int|string $key) use ($kept, &$arrayKeys, $operation): int|string {
+            [$representative, $added] = $kept->intern($key);
+            if (!$added) {
+                return $representative;
+            }
+            if (array_key_exists($key, $arrayKeys)) {
+                throw new InvalidArgumentException(sprintf(
+                    '%s() keys %s and %s are different under the comparer but are the same array key',
+                    $operation,
+                    var_export($arrayKeys[$key], true),
+                    var_export($key, true)
+                ));
+            }
+            $arrayKeys[$key] = $key;
+
+            return $key;
+        };
     }
 
     /**
@@ -476,14 +671,19 @@ final class ALinqContract
      * key, the items are not kept.
      *
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (2.4.0); the first key seen names the group
      * @return array<array-key, int>
      * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
      */
-    public static function countByKey(iterable $items, Closure $keySelector, string $operation): array
+    public static function countByKey(iterable $items, Closure $keySelector, string $operation, ?IALinqEqualityComparer $comparer = null): array
     {
+        $representative = self::representatives($comparer, $operation);
         $counts = [];
         foreach ($items as $itemKey => $item) {
             $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            if ($representative !== null) {
+                $key = $representative($key);
+            }
             $counts[$key] = ($counts[$key] ?? 0) + 1;
         }
 
@@ -494,20 +694,30 @@ final class ALinqContract
      * One accumulator per key (aggregateBy()): `$func($carry, $item, $position)`, where the
      * third argument is the position of the item inside its group (0, 1, ...), as the eager
      * aggregateBy() has always passed (each group was a reindexed list); every group starts
-     * from the same $seed. Keys in first-appearance order; the items are not kept.
+     * from the same $seed, whatever its type (a Closure seed is the accumulator itself), or,
+     * since 2.4.0, from `$seedSelector($key)` when a seed selector is given (the `seedSelector`
+     * of .NET 9), called once per group with the key of the group; $seed is then ignored. Keys
+     * in first-appearance order; the items are not kept.
      *
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @param mixed $seed The initial accumulator of every group (ignored when $seedSelector is given)
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (2.4.0); the first key seen names the group
+     * @param callable|null $seedSelector `fn($key)`, the seed of each group (2.4.0)
      * @return array<array-key, mixed>
      * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
      */
-    public static function aggregateByKey(iterable $items, Closure $keySelector, mixed $seed, callable $func, string $operation): array
+    public static function aggregateByKey(iterable $items, Closure $keySelector, mixed $seed, callable $func, string $operation, ?IALinqEqualityComparer $comparer = null, ?callable $seedSelector = null): array
     {
+        $representative = self::representatives($comparer, $operation);
         $carries = [];
         $positions = [];
         foreach ($items as $itemKey => $item) {
             $key = self::groupKey($keySelector($item, $itemKey), $itemKey, $operation);
+            if ($representative !== null) {
+                $key = $representative($key);
+            }
             $position = $positions[$key] ?? 0;
-            $carries[$key] = $func($position === 0 ? $seed : $carries[$key], $item, $position);
+            $carries[$key] = $func($position === 0 ? ($seedSelector === null ? $seed : $seedSelector($key)) : $carries[$key], $item, $position);
             $positions[$key] = $position + 1;
         }
 
@@ -518,26 +728,30 @@ final class ALinqContract
      * toDictionary(): `key => element`, with the policy for a key produced twice. The key
      * selector runs for every item and every key is validated; under KeepFirst the element
      * selector does not run for a repeated key; under KeepLast the key keeps the position of
-     * its first occurrence.
+     * its first occurrence. With a comparer (2.4.0) the keys equal under it are one key, the
+     * first one seen, and the message of a repeat names the key as produced the second time.
      *
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
      * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
      * @return array<array-key, mixed>
      * @throws InvalidArgumentException When a key is not valid, or (Throw) is produced twice
      */
-    public static function dictionary(iterable $items, Closure $keySelector, ?Closure $elementSelector, DuplicateKeyPolicy $onDuplicate): array
+    public static function dictionary(iterable $items, Closure $keySelector, ?Closure $elementSelector, DuplicateKeyPolicy $onDuplicate, ?IALinqEqualityComparer $comparer = null): array
     {
+        $representative = self::representatives($comparer, 'toDictionary');
         $result = [];
         foreach ($items as $itemKey => $item) {
-            $key = self::groupKey($keySelector($item, $itemKey), $itemKey, 'toDictionary');
+            $produced = self::groupKey($keySelector($item, $itemKey), $itemKey, 'toDictionary');
+            $key = $representative === null ? $produced : $representative($produced);
             if (array_key_exists($key, $result)) {
                 if ($onDuplicate === DuplicateKeyPolicy::KeepFirst) {
                     continue;
                 }
                 if ($onDuplicate === DuplicateKeyPolicy::Throw) {
                     throw new InvalidArgumentException(sprintf(
-                        'toDictionary() key %s produced twice (second time for item at key %s)',
+                        'toDictionary() key %s produced twice (second time %sfor item at key %s)',
                         var_export($key, true),
+                        $produced === $key ? '' : 'as ' . var_export($produced, true) . ', ',
                         var_export($itemKey, true)
                     ));
                 }
@@ -553,11 +767,14 @@ final class ALinqContract
      *
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
      * @param Closure(mixed, mixed): mixed|null $elementSelector normalized by ALinqCallable::withKey()
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (2.4.0), kept by the lookup for get()/contains()
      * @throws InvalidArgumentException When a key is not an int, a string or a BackedEnum
      */
-    public static function lookup(iterable $items, Closure $keySelector, ?Closure $elementSelector): ALinqLookup
+    public static function lookup(iterable $items, Closure $keySelector, ?Closure $elementSelector, ?IALinqEqualityComparer $comparer = null): ALinqLookup
     {
-        return new ALinqLookup(self::groupItems($items, $keySelector, $elementSelector, 'toLookup'));
+        [$groups, $keys] = self::groupItemsWithKeys($items, $keySelector, $elementSelector, 'toLookup', $comparer);
+
+        return new ALinqLookup($groups, $comparer, $keys);
     }
 
     /**
@@ -566,12 +783,19 @@ final class ALinqContract
      * runs on the items only; an item is kept when its key is absent ($keepWhenPresent false)
      * or present (true) in the set, each key at most once (the first occurrence), with its
      * source key. A null key matches a null in $keys (a set rule; null never matches in a join).
+     * With a comparer (2.4.0) the keys are compared by it (ALinqKeySet), the first item of each
+     * key still the one kept.
      *
      * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
      * @return Generator<array-key, mixed>
      */
-    public static function setByKeys(iterable $items, iterable $keys, Closure $keySelector, bool $keepWhenPresent): Generator
+    public static function setByKeys(iterable $items, iterable $keys, Closure $keySelector, bool $keepWhenPresent, ?IALinqEqualityComparer $comparer = null): Generator
     {
+        if ($comparer !== null) {
+            yield from self::setByKeysUnder($comparer, $items, $keys, $keySelector, $keepWhenPresent);
+            return;
+        }
+
         $present = [];
         foreach ($keys as $key) {
             $present[ALinqCallable::hashKey($key)] = true;
@@ -585,6 +809,70 @@ final class ALinqContract
             }
             $seen[$identity] = true;
             yield $itemKey => $item;
+        }
+    }
+
+    /**
+     * setByKeys() under a comparer (2.4.0): the same rules, the keys compared by the comparer
+     * through two ALinqKeySet (the keys given, the keys already emitted).
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return Generator<array-key, mixed>
+     */
+    private static function setByKeysUnder(IALinqEqualityComparer $comparer, iterable $items, iterable $keys, Closure $keySelector, bool $keepWhenPresent): Generator
+    {
+        $present = new ALinqKeySet($comparer);
+        foreach ($keys as $key) {
+            $present->add($key);
+        }
+
+        $seen = new ALinqKeySet($comparer);
+        foreach ($items as $itemKey => $item) {
+            $identity = $keySelector($item, $itemKey);
+            if ($present->contains($identity) !== $keepWhenPresent || !$seen->add($identity)) {
+                continue;
+            }
+            yield $itemKey => $item;
+        }
+    }
+
+    /**
+     * The set operations of the eager collection under a comparer (2.4.0: intersect(), except(),
+     * intersectBy(), exceptBy()): the items whose key is (intersect) or is not (except) the key
+     * of an item of $second, the selector applied to both sides, each key at most once (the
+     * first occurrence), with its source key.
+     *
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return Generator<array-key, mixed>
+     */
+    public static function setByElements(iterable $items, iterable $second, Closure $keySelector, bool $keepWhenPresent, IALinqEqualityComparer $comparer): Generator
+    {
+        $keys = static function () use ($second, $keySelector): Generator {
+            foreach ($second as $key => $item) {
+                yield $keySelector($item, $key);
+            }
+        };
+
+        return self::setByKeysUnder($comparer, $items, $keys(), $keySelector, $keepWhenPresent);
+    }
+
+    /**
+     * unionBy() under a comparer (2.4.0): the items of every sequence, in order, whose key was not
+     * seen yet (the first occurrence of each key), without their source keys.
+     *
+     * @param list<iterable> $sequences
+     * @param Closure(mixed, mixed): mixed $keySelector normalized by ALinqCallable::withKey()
+     * @return Generator<int, mixed>
+     */
+    public static function union(array $sequences, Closure $keySelector, IALinqEqualityComparer $comparer): Generator
+    {
+        $seen = new ALinqKeySet($comparer);
+        foreach ($sequences as $sequence) {
+            foreach ($sequence as $key => $item) {
+                if ($seen->add($keySelector($item, $key))) {
+                    yield $item;
+                }
+            }
         }
     }
 

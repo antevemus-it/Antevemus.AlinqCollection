@@ -110,3 +110,5 @@ $people->countBy(fn($p) => $ptBr->hash(mb_substr($p['name'], 0, 1)))->count(); /
 // numeric: sequências de dígitos comparam pelo valor
 ALinqCollection::from(['item10', 'item2'])->orderBy(fn($s) => $s, StringComparer::culture('en_US', numeric: true))->toArray(); // ['item2', 'item10']
 ```
+
+Desde a 2.4.0 os operadores de agrupamento, as operações de conjunto e as junções aceitam o próprio comparador, e um grupo mantém um nome legível (a primeira grafia vista) em vez de um hash opaco: veja [Agrupamento](grouping.md) e [Junções](joining.md).

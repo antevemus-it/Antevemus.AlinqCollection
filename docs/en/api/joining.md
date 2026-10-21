@@ -119,3 +119,36 @@ $participants = (function () {
 $documents->join($participants, fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $p) => $p['name'] . ': ' . $d['type'])->toArray(); // ['Ana: ID card']
 $documents->groupJoin(ALinqCollection::from([]), fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $ps) => $ps->count())->toArray(); // [0, 0, 0]
 ```
+
+#### Comparers in joins and set operations (since 2.4.0)
+
+Every join (`join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`) and every set operation by element or key (`intersect()`, `except()`, `intersectBy()`, `exceptBy()`, `unionBy()`, `exceptByKeys()`, `intersectByKeys()`) takes an `IALinqEqualityComparer` as its last parameter, so `StringComparer::ordinalIgnoreCase()` matches e-mails whatever their case and `StringComparer::culture('pt_BR', ignoreAccents: true)` matches names whatever their accents. The comparer's `hash()` indexes one side and its `equals()` confirms each candidate, so a join stays linear: over 10 000 × 10 000 rows `equals()` runs once per outer row, never once per pair. A `null` key still never matches in a join, even under a comparer that finds `null` equal to `null`; in a set operation `null` is a key like any other. A set operation keeps the **first item of each key** (the first spelling seen), a list is reindexed and a dictionary keeps its keys, as without a comparer. On the lazy collection the joins, `exceptByKeys()` and `intersectByKeys()` take it too (see [Streaming](lazy-streaming.md)).
+
+<!-- tested: 3-comparer -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+
+$users = ALinqCollection::from([
+    ['email' => 'Ana@Example.com', 'name' => 'Ana'],
+    ['email' => 'bruno@example.com', 'name' => 'Bruno'],
+]);
+$orders = [
+    ['email' => 'ana@example.com', 'id' => 1],
+    ['email' => 'ANA@EXAMPLE.COM', 'id' => 2],
+    ['email' => 'carla@example.com', 'id' => 3],
+];
+$email = fn($row) => $row['email'];
+$ignoreCase = StringComparer::ordinalIgnoreCase();
+
+$users->join($orders, $email, $email, fn($u, $o) => $u['name'] . '#' . $o['id'], $ignoreCase)->toArray(); // ['Ana#1', 'Ana#2']
+$users->groupJoin($orders, $email, $email, fn($u, $os) => $os->count(), $ignoreCase)->toArray(); // [2, 0]
+$users->leftJoin($orders, $email, $email, fn($u, $o) => $u['name'] . '#' . ($o['id'] ?? '-'), $ignoreCase)->toArray(); // ['Ana#1', 'Ana#2', 'Bruno#-']
+// Without a comparer the keys match by strict identity, as before
+$users->join($orders, $email, $email, fn($u, $o) => $o['id'])->count(); // 0
+
+// Set operations: the first item of each key is the one kept
+ALinqCollection::from(['Ana', 'ANA', 'Bruno'])->intersect(['ana', 'carla'], $ignoreCase)->toArray(); // ['Ana']
+ALinqCollection::from($orders)->exceptByKeys(['ANA@example.com'], $email, $ignoreCase)->column('id')->toArray(); // [3]
+ALinqCollection::from($orders)->unionBy([['email' => 'Carla@Example.com', 'id' => 4], ['email' => 'dora@example.com', 'id' => 5]], $email, $ignoreCase)->column('id')->toArray(); // [1, 3, 5]
+```

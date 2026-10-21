@@ -8,7 +8,7 @@ Processing gigabyte-scale datasets (such as access logs, financial transaction C
 
 #### Key Architectural Guarantees:
 - **Rewindable Multi-Pass Traversals**: Unlike standard PHP generators that throw `"Cannot traverse an already closed generator"`, `ALinqLazyCollection` wraps generator factories (`Closure(): iterable`). You can iterate, filter, and materialize the same pipeline multiple times safely.
-- **Deterministic Resource Disposal**: Sources like `fromFile()` and `fromCsv()` guarantee file handle closure in `finally` blocks, even during early pipeline termination (e.g. short-circuiting with `first()`, `take(n)`); `fromHttpPages()` cancels the request in flight the same way.
+- **Deterministic Resource Disposal**: Sources like `fromFile()` and `fromCsv()` guarantee file handle closure in `finally` blocks, even during early pipeline termination (e.g. short-circuiting with `first()`, `take(n)`); `fromHttpPages()` and `fromHttpPagesByIndex()` cancel the requests in flight the same way.
 - **Dual Pipeline Integration**: Effortlessly convert between eager collections (`ALinqCollection`) and streaming pipelines (`ALinqLazyCollection`) via `$collection->lazy()` and `$lazy->toCollection()`.
 
 #### Real-World Streaming Example: Multi-Gigabyte Log File
@@ -93,7 +93,38 @@ $paidTotal = ALinqLazyCollection::fromHttpPages(
 - **Stopping early** (`take()`, `first()`, `any()`, an exception in your loop) cancels the request in flight: at most one page is downloaded for nothing.
 - **Every traversal fetches again from the first page** (`count()` followed by `toArray()` walks the API twice). Call `remember()` to walk it once and replay from memory.
 - **`HttpPageOptions`**: `timeout` (30 s by default: the longest the iteration blocks waiting for one page; the time your code spends on the previous page does not count), `maxPages` (10 000 by default, a guard against a cursor that never ends), `headers` (sent with every request; a request header with the same name wins) and `followRedirects` (`false` by default). TLS verification is always on and cannot be turned off.
-- **Prefetch depth 1**: the next request needs the cursor of the previous response. On the local test server, 3 pages of 300 ms with a consumer that spends 300 ms per page take 1.2 s instead of 1.8 s (`tests/Unit/Http/FromHttpPagesTest.php`).
+- **Prefetch depth 1**: the next request needs the cursor of the previous response. On the local test server, 3 pages of 300 ms with a consumer that spends 300 ms per page take 1.2 s instead of 1.8 s (`tests/Unit/Http/FromHttpPagesTest.php`). When a page is addressed by its index alone, `fromHttpPagesByIndex()` keeps several pages in flight (below).
+
+#### Pages addressed by their index (since 2.4.0)
+
+When the URL of page *n* can be written without the response of page *n − 1* (`?page=N`, `?offset=N`), `fromHttpPagesByIndex()` keeps several requests in flight on one `curl_multi` handle: the page being consumed and up to `$prefetch` pages after it (2 by default). Same requirements as `fromHttpPages()`: `ext-curl`, no event loop.
+
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+use Antevemus\ALinq\Http\HttpPageOptions;
+use Antevemus\ALinq\Http\HttpPageResponse;
+
+$api = 'https://api.example.com/invoices';
+$token = getenv('API_TOKEN');
+
+$openTotal = ALinqLazyCollection::fromHttpPagesByIndex(
+    // The URL of page 0, 1, 2, ...: built from the index alone
+    fn(int $page) => $api . '?per=100&page=' . ($page + 1),
+    // The items of the page; a page without items ends the stream
+    fn(HttpPageResponse $response) => $response->json()['data'],
+    prefetch: 3, // pages n+1 to n+3 download while page n is consumed
+    until: fn(int $page, HttpPageResponse $response) => $page + 1 >= $response->json()['total_pages'],
+    options: new HttpPageOptions(timeout: 10.0, headers: ['Authorization' => 'Bearer ' . $token]),
+)
+    ->where(fn(array $invoice) => $invoice['status'] === 'open')
+    ->sum(fn(array $invoice) => $invoice['total']);
+```
+
+- **The callbacks.** `$requestFor($pageIndex)` answers the request of a page from its index (0, 1, 2, …): an absolute http(s) URL (a GET) or an `HttpPageRequest`; `null` ends the stream before that page. `$parsePage($response)` answers the items of the page, any iterable.
+- **The end.** The stream ends after the first page **without items**, or after the page for which `$until($pageIndex, $response)` answers `true` (its items are delivered). Pass `$until` when the API tells the number of pages, or answers an error instead of an empty page after the last one.
+- **Stopping** (an empty page, `$until`, `take()`, `first()`, `any()`, an exception in your loop) cancels every request still in flight: at most `$prefetch` pages are downloaded for nothing.
+- **Errors, timeout, options and re-iteration** behave as in `fromHttpPages()` (every traversal starts again from page 0; `remember()` walks it once). `maxPages` counts the pages requested: when that many came with items, none ended the stream and `$requestFor` still answers a request for the next index, `HttpPageException` (`isPageLimit()`) is thrown after the items of the last allowed page.
+- **The gain**: on the local test server, 4 pages of 600 ms with a consumer that spends 200 ms per page take about 1.4 s with `prefetch: 3`, against 2.6 s one page ahead (`tests/Unit/Http/FromHttpPagesByIndexTest.php`).
 
 #### Other event loops
 
@@ -118,7 +149,7 @@ $average    = $cachedStream->average(); // Reads from local memory cache, no gen
 The lazy collection has `orderBy()`/`orderByDescending()` with `thenBy()`/`thenByDescending()`, and the three outer joins, with the same answers as the eager side. They stay deferred (nothing runs until the first traversal), but they are **not** constant-memory:
 
 - `orderBy*()`/`thenBy*()` buffer the whole upstream when traversed, then sort once with every criterion;
-- `leftJoin()`/`fullJoin()` buffer and index the inner side and stream the lazy collection;
+- `leftJoin()`/`fullJoin()` buffer and index the inner side and stream the lazy collection, and so do `join()`/`groupJoin()` (2.4.0);
 - `rightJoin()` buffers and indexes the lazy collection itself and streams the inner side (the result follows the inner order).
 
 ```php
@@ -157,6 +188,29 @@ $orders->aggregateBy(fn($o) => $o['status'], '', fn($trace, $o, $position) => $t
 $orders->groupBy(fn($o) => $o['status'])->select(fn($group) => $group->sum(fn($o) => $o['total']))->toArray(); // ['paid' => 15, 'open' => 25]
 $orders->toLookup(fn($o) => $o['status'], fn($o) => $o['id'])->get('paid')->toArray(); // [1, 3]
 $orders->implode(', ', fn($o) => '#' . $o['id']); // '#1, #2, #3'
+```
+
+#### Inner joins and comparers on the lazy side (since 2.4.0)
+
+`join()` and `groupJoin()` exist on the lazy collection too, with the answers of the eager side: deferred stages that read the inner side once per traversal into a hash table and stream the lazy collection (an endless source works with `take()`), one result per match in outer order and, within it, in inner order; the result is a list. Every join, `groupBy()`, `countBy()`, `aggregateBy()`, `toDictionary()`, `toLookup()`, `exceptByKeys()` and `intersectByKeys()` take an `IALinqEqualityComparer` as their last parameter, as on the eager side ([Grouping](grouping.md), [Joining](joining.md)); `aggregateBy()` takes a seed selector `fn($key)` too.
+
+<!-- tested: 10-joins -->
+```php
+use Antevemus\ALinq\ALinqLazyCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+
+$lines = ALinqLazyCollection::from(function () {
+    yield ['sku' => 'a-1', 'qty' => 2];
+    yield ['sku' => 'B-2', 'qty' => 1];
+    yield ['sku' => 'A-1', 'qty' => 5];
+});
+$products = [['sku' => 'A-1', 'name' => 'Pen'], ['sku' => 'b-2', 'name' => 'Ink']];
+$sku = fn($row) => $row['sku'];
+
+$joined = $lines->join($products, $sku, $sku, fn($line, $product) => $product['name'] . ' x' . $line['qty'], StringComparer::ordinalIgnoreCase()); // deferred: nothing runs yet
+$joined->toArray(); // ['Pen x2', 'Ink x1', 'Pen x5']
+$lines->join($products, $sku, $sku, fn($line, $product) => $line['qty'], StringComparer::ordinalIgnoreCase())->sum(); // 8
+$lines->groupJoin($products, $sku, $sku, fn($line, $matches) => $matches->count())->toArray(); // [0, 0, 1]
 ```
 
 #### Irregular input (since 1.3.2)

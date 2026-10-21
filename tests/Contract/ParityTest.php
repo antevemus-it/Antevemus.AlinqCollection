@@ -41,6 +41,14 @@ use Throwable;
  * as an array, a generator and a collection, null among them), implode(), and the comparer of
  * orderBy*(), distinct*(), min*() and max*() joined the matrix; toLookup(), exceptByKeys() and
  * countBy() joined the row matrix.
+ *
+ * 2.4.0: join() and groupJoin() exist on both sides now and joined the matrix; the comparer of
+ * groupBy(), countBy(), aggregateBy(), toLookup(), toDictionary(), exceptByKeys(),
+ * intersectByKeys() and of the five joins joined it too, with the seed selector of aggregateBy()
+ * and a Closure seed (the accumulator itself, as in 2.3.1);
+ * join(), groupJoin() and groupBy() with a comparer joined the row matrix. A comparer that
+ * separates `1` and `'1'` (StrictComparer) shows that two group keys that are one array key
+ * throw the same way on both sides.
  */
 final class ParityTest extends TestCase
 {
@@ -63,6 +71,8 @@ final class ParityTest extends TestCase
         // 2.2.0: the message of a repeated key names the source key of the second item
         'toDictionary(parity)',
         'toDictionary(1 vs "1")',
+        // 2.4.0: the same message, under a comparer
+        'toDictionary(v, parity comparer)',
     ];
 
     /**
@@ -222,6 +232,29 @@ final class ParityTest extends TestCase
             'implode()' => fn($c) => $c->implode(),
             'implode(", ")' => fn($c) => $c->implode(', '),
             'implode("|", json)' => fn($c) => $c->implode('|', fn($v) => json_encode($v)),
+            // 2.4.0: join()/groupJoin() on both sides, and the comparer of grouping, sets and joins
+            'join([2,3,"y",7,3])' => fn($c) => $c->join([2, 3, 'y', 7, 3], fn($v) => $v, fn($v) => $v, fn($o, $i) => json_encode([$o, $i])),
+            'join(dict, parity comparer)' => fn($c) => $c->join(['k' => 3, 'm' => null, 'n' => '0', 'o' => 8], fn($v) => $v, fn($v) => $v, fn($o, $i) => json_encode([$o, $i]), new C\ParityComparer()),
+            'groupJoin([2,3,"y",7,3])' => fn($c) => $c->groupJoin([2, 3, 'y', 7, 3], fn($v) => $v, fn($v) => $v, fn($o, $is) => json_encode([$o, $is->toArray()])),
+            'groupJoin(parity comparer)' => fn($c) => $c->groupJoin([2, 3, 'y', 7, null, false], fn($v) => $v, fn($v) => $v, fn($o, $is) => json_encode([$o, $is->toArray()]), new C\ParityComparer()),
+            'leftJoin(parity comparer)' => fn($c) => $c->leftJoin([2, 3, 'y', 7, 3], fn($v) => $v, fn($v) => $v, null, new C\ParityComparer()),
+            'rightJoin(parity comparer)' => fn($c) => $c->rightJoin([2, 3, 'y', 7, null], fn($v) => $v, fn($v) => $v, null, new C\ParityComparer()),
+            'fullJoin(parity comparer)' => fn($c) => $c->fullJoin([2, 'y', '0', 8], fn($v) => $v, fn($v) => $v, fn($o, $i) => json_encode([$o, $i]), new C\ParityComparer()),
+            'groupBy(v, parity comparer)' => fn($c) => $c->groupBy(fn($v) => is_int($v) ? $v : 'other', new C\ParityComparer()),
+            'groupBy(json, ordinalIgnoreCase)' => fn($c) => $c->groupBy(fn($v) => is_string($v) ? strtoupper($v) . $v : json_encode($v), StringComparer::ordinalIgnoreCase()),
+            'groupBy(1 vs "1", strict comparer)' => fn($c) => $c->groupBy(fn($v) => is_int($v) ? 1 : '1', new C\StrictComparer()),
+            'countBy(v, parity comparer)' => fn($c) => $c->countBy(fn($v) => is_int($v) ? $v : 'other', new C\ParityComparer()),
+            'aggregateBy(v, parity comparer)' => fn($c) => $c->aggregateBy(fn($v) => is_int($v) ? $v : 'other', '', fn($acc, $v, $p) => $acc . "[$p=" . json_encode($v) . ']', new C\ParityComparer()),
+            'aggregateBy(parity, seedSelector)' => fn($c) => $c->aggregateBy(fn($v) => is_int($v) ? $v % 2 : 'other', null, fn($acc, $v) => $acc . json_encode($v), null, fn($k) => "<$k>"),
+            'aggregateBy(v, parity comparer, seedSelector)' => fn($c) => $c->aggregateBy(fn($v) => is_int($v) ? $v : 'other', 'ignored', fn($acc, $v) => $acc . json_encode($v), new C\ParityComparer(), fn($k) => "<$k>"),
+            'aggregateBy(parity, Closure seed)' => fn($c) => $c->aggregateBy(fn($v) => is_int($v) ? $v % 2 : 'other', fn($x) => "<$x>", fn(\Closure $f, $v) => fn($x) => $f($x) . json_encode($v))->select(fn(\Closure $f) => $f('x')),
+            'toLookup(v, parity comparer)' => fn($c) => $c->toLookup(fn($v) => is_int($v) ? $v : 'other', fn($v) => json_encode($v), new C\ParityComparer()),
+            'toLookup(parity comparer, get 9)' => fn($c) => $c->toLookup(fn($v) => is_int($v) ? $v : 'other', null, new C\ParityComparer())->get(9),
+            'toDictionary(v, parity comparer)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v : 'other', null, DuplicateKeyPolicy::Throw, new C\ParityComparer()),
+            'toDictionary(v, json, KeepLast, parity comparer)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v : 'other', fn($v) => json_encode($v), DuplicateKeyPolicy::KeepLast, new C\ParityComparer()),
+            'toDictionary(v, KeepFirst, parity comparer)' => fn($c) => $c->toDictionary(fn($v) => is_int($v) ? $v : 'other', null, DuplicateKeyPolicy::KeepFirst, new C\ParityComparer()),
+            'exceptByKeys([2,"y",null], parity comparer)' => fn($c) => $c->exceptByKeys([2, 'y', null], fn($v) => $v, new C\ParityComparer()),
+            'intersectByKeys([7,"0"], parity comparer)' => fn($c) => $c->intersectByKeys([7, '0'], fn($v) => $v, new C\ParityComparer()),
         ];
     }
 
@@ -303,6 +336,10 @@ final class ParityTest extends TestCase
             'toLookup(dept)' => fn($c) => $c->toLookup(fn($r) => C\Employee::read($r, 'dept')),
             'exceptByKeys([1,3], id)' => fn($c) => $c->exceptByKeys([1, 3], fn($r) => C\Employee::read($r, 'id')),
             'countBy(dept)' => fn($c) => $c->countBy(fn($r) => C\Employee::read($r, 'dept')),
+            // 2.4.0
+            'join(customers)' => fn($c) => $c->join($customers, fn($o) => C\Employee::read($o, 'c'), fn($i) => $i['id'], $pair),
+            'groupJoin(customers, parity comparer)' => fn($c) => $c->groupJoin($customers, fn($o) => C\Employee::read($o, 'c'), fn($i) => $i['id'], fn($o, $is) => [is_object($o) ? $o->describe() : $o, $is->toArray()], new C\ParityComparer()),
+            'groupBy(dept upper, ordinalIgnoreCase)' => fn($c) => $c->groupBy(fn($r) => strtoupper(C\Employee::read($r, 'dept')), StringComparer::ordinalIgnoreCase()),
         ];
     }
 
@@ -321,8 +358,9 @@ final class ParityTest extends TestCase
             }
         }
 
-        // 14 row operations of 1.4.0 + 3 of 2.2.0 (toLookup, exceptByKeys, countBy), × 4 inputs
-        $this->assertSame((14 + 3) * 4, $total);
+        // 14 row operations of 1.4.0 + 3 of 2.2.0 (toLookup, exceptByKeys, countBy) + 3 of 2.4.0
+        // (join, groupJoin with a comparer, groupBy with a comparer), × 4 inputs
+        $this->assertSame((14 + 3 + 3) * 4, $total);
         $this->assertSame([], $rows, "Eager × lazy divergences on rows:\n" . implode("\n", $rows));
     }
 
@@ -458,5 +496,23 @@ final class ParityComparer implements \Antevemus\ALinq\Interfaces\IALinqEquality
     private static function identity(mixed $value): string
     {
         return is_int($value) ? 'parity' . ($value % 2) : (string) json_encode($value);
+    }
+}
+
+/**
+ * A comparer stricter than PHP array keys (2.4.0): two values are equal only when they are
+ * identical, so `1` and `'1'` are two keys; as group keys they would be one array key, which
+ * every grouping operator refuses on both sides.
+ */
+final class StrictComparer implements \Antevemus\ALinq\Interfaces\IALinqEqualityComparer
+{
+    public function equals(mixed $a, mixed $b): bool
+    {
+        return $a === $b;
+    }
+
+    public function hash(mixed $value): string
+    {
+        return \Antevemus\ALinq\Helpers\ALinqCallable::hashKey($value);
     }
 }

@@ -55,7 +55,15 @@ use Traversable;
  * factory's stream, and isList(): ?bool answers the shape the collection knows. Classes that
  * implement this interface on their own must add the parameter and the method.
  *
- * @version    2.3.0
+ * Since 2.4.0: join() and groupJoin() (the inner side indexed on traversal, this stream
+ * streamed, the answers of the eager side); an optional IALinqEqualityComparer as the last
+ * parameter of the joins, of groupBy(), countBy(), aggregateBy(), toDictionary(), toLookup(),
+ * exceptByKeys() and intersectByKeys() (hash-based; the first key seen names a group or is the
+ * one kept by a set); a seed selector `fn($key)` in aggregateBy(); and fromHttpPagesByIndex(),
+ * paged by index with several pages in flight. Classes that implement this interface on their
+ * own must add them.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -176,6 +184,40 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @return self
      */
     public static function fromHttpPages(callable $requestFor, callable $parsePage, ?HttpPageOptions $options = null): self;
+
+    /**
+     * Create a lazy stream over the items of an HTTP API whose pages are addressed by their
+     * index alone (`?page=N`), keeping up to `$prefetch` pages in flight ahead of the page being
+     * consumed (since 2.4.0).
+     *
+     * `$requestFor($pageIndex)` answers the request of a page (an HttpPageRequest, or an absolute
+     * http(s) URL for a GET; null ends the stream before that page); `$pageIndex` counts from 0
+     * and needs no previous response, so pages n+1 … n+$prefetch are requested with curl_multi
+     * before the items of page n are yielded. `$parsePage($response)` answers the iterable
+     * items of the page. The stream ends after the first page without items, or after the page
+     * for which `$until($pageIndex, $response)` answers true (its items are yielded); the
+     * requests still in flight are then cancelled, as on early termination (`take()`,
+     * `first()`, `any()`): at most `$prefetch` pages are downloaded for nothing. Errors, the
+     * timeout and the page limit (`maxPages` pages were fetched and none ended the stream)
+     * throw `HttpPageException` at the point where that page would be delivered, as in
+     * fromHttpPages(). Every traversal fetches again from page 0. Requires ext-curl.
+     *
+     * @param callable $requestFor fn(int $pageIndex): HttpPageRequest|string|null
+     * @param callable $parsePage fn(HttpPageResponse $response): iterable
+     * @param int $prefetch Pages requested ahead of the page being consumed, at least 1 (default 2)
+     * @param callable|null $until fn(int $pageIndex, HttpPageResponse $response): bool, true on the last page
+     * @param HttpPageOptions|null $options Timeout, page limit, common headers, redirects
+     * @return self
+     * @throws \InvalidArgumentException When $prefetch is below 1
+     * @throws \LogicException When ext-curl is not loaded
+     */
+    public static function fromHttpPagesByIndex(
+        callable $requestFor,
+        callable $parsePage,
+        int $prefetch = 2,
+        ?callable $until = null,
+        ?HttpPageOptions $options = null
+    ): self;
 
     /**
      * Create an empty lazy collection.
@@ -356,6 +398,35 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
     public function zip(iterable|callable $second, ?callable $resultSelector = null): self;
 
     /**
+     * Inner join (Join in LINQ, since 2.4.0): the inner side is read once and indexed on
+     * traversal, this stream is streamed; for each outer item, one result per matching inner
+     * item (outer order, then inner order), the answers of the eager join(). A null key never
+     * matches. The result is a list.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector fn($outer, $key): mixed
+     * @param callable $innerKeySelector fn($inner, $key): mixed
+     * @param callable $resultSelector fn($outer, $inner): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
+     * @return self
+     */
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): self;
+
+    /**
+     * Group join (GroupJoin in LINQ, since 2.4.0): as join(), but one result per outer item,
+     * the matching inner items handed over as an ALinqCollection (empty when nothing matches).
+     * The result is a list.
+     *
+     * @param iterable $inner
+     * @param callable $outerKeySelector fn($outer, $key): mixed
+     * @param callable $innerKeySelector fn($inner, $key): mixed
+     * @param callable $resultSelector fn($outer, ALinqCollection $matches): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
+     * @return self
+     */
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): self;
+
+    /**
      * Left outer join (LeftJoin in .NET 10/11 LINQ): the inner side is indexed on traversal and
      * this stream is streamed; every outer item appears, with `null` as the inner side when
      * nothing matches (a null key never matches). The result is a list.
@@ -364,9 +435,10 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $outerKeySelector fn($outer, $key): mixed
      * @param callable $innerKeySelector fn($inner, $key): mixed
      * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      * @return self
      */
-    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Right outer join (RightJoin in .NET 10/11 LINQ): this stream is indexed on traversal and
@@ -377,9 +449,10 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $outerKeySelector fn($outer, $key): mixed
      * @param callable $innerKeySelector fn($inner, $key): mixed
      * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      * @return self
      */
-    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Full outer join (FullJoin in .NET 10/11 LINQ): the inner side is indexed on traversal and
@@ -390,9 +463,10 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $outerKeySelector fn($outer, $key): mixed
      * @param callable $innerKeySelector fn($inner, $key): mixed
      * @param callable|null $resultSelector fn($outer, $inner): mixed; the pair [$outer, $inner] when null
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); strict identity when null
      * @return self
      */
-    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): self;
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Stable ascending sort by the selected key (OrderBy in LINQ). The stream is consumed and
@@ -419,20 +493,22 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * in first-appearance order. Keys follow the eager groupBy() (int, string or BackedEnum).
      *
      * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
      * @return self
      * @throws \InvalidArgumentException when a key is not valid (at traversal)
      */
-    public function groupBy(callable $keySelector): self;
+    public function groupBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Count the items per key (CountBy in .NET 9), as a deferred stage keeping one integer per
      * key (since 2.2.0); yields `key => count` in first-appearance order.
      *
      * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
      * @return self
      * @throws \InvalidArgumentException when a key is not valid (at traversal)
      */
-    public function countBy(callable $keySelector): self;
+    public function countBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Fold the items of each key (AggregateBy in .NET 9), as a deferred stage keeping one
@@ -440,12 +516,14 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * position of the item inside its group, as on the eager side.
      *
      * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
-     * @param mixed $seed
+     * @param mixed $seed The seed of every group, whatever its type (ignored when $seedSelector is given)
      * @param callable $func fn($carry, $item, $position): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
+     * @param callable|null $seedSelector fn($key): the seed of each group, called once per group (since 2.4.0)
      * @return self
      * @throws \InvalidArgumentException when a key is not valid (at traversal)
      */
-    public function aggregateBy(callable $keySelector, mixed $seed, callable $func): self;
+    public function aggregateBy(callable $keySelector, mixed $seed, callable $func, ?IALinqEqualityComparer $comparer = null, ?callable $seedSelector = null): self;
 
     /**
      * Materialize a dictionary `key => element` in one pass (ToDictionary in LINQ, since 2.2.0).
@@ -453,20 +531,22 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
      * @param callable|null $elementSelector fn($item, $key): mixed
      * @param DuplicateKeyPolicy $onDuplicate Throw (default), KeepFirst or KeepLast
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen is kept
      * @return array
      * @throws \InvalidArgumentException when a key is not valid or, under Throw, produced twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array;
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw, ?IALinqEqualityComparer $comparer = null): array;
 
     /**
      * Materialize an immutable one-to-many lookup in one pass (ToLookup in LINQ, since 2.2.0).
      *
      * @param callable $keySelector fn($item, $key): int|string|\BackedEnum
      * @param callable|null $elementSelector fn($item, $key): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0), kept by the lookup
      * @return ALinqLookup
      * @throws \InvalidArgumentException when a key is not valid (a null key included)
      */
-    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup;
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null, ?IALinqEqualityComparer $comparer = null): ALinqLookup;
 
     /**
      * The distinct items whose selected key is not in $keys (ExceptBy of .NET 6), as a
@@ -474,9 +554,10 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      *
      * @param iterable $keys
      * @param callable $keySelector fn($item, $key): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self
      */
-    public function exceptByKeys(iterable $keys, callable $keySelector): self;
+    public function exceptByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * The distinct items whose selected key is in $keys (IntersectBy of .NET 6), as a deferred
@@ -484,9 +565,10 @@ interface IALinqLazyCollection extends Countable, IteratorAggregate, JsonSeriali
      *
      * @param iterable $keys
      * @param callable $keySelector fn($item, $key): mixed
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @return self
      */
-    public function intersectByKeys(iterable $keys, callable $keySelector): self;
+    public function intersectByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): self;
 
     /**
      * Subsequent ascending ordering (ThenBy in LINQ), applied in the same sort as the

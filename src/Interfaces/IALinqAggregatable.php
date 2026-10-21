@@ -27,7 +27,13 @@ namespace Antevemus\ALinq\Interfaces;
  * (`aggregateBy` hands `$func` the position of the item inside its group). Classes that
  * implement this interface on their own must add the parameters and `implode()`.
  *
- * @version    2.2.0
+ * Since 2.4.0: `countBy` and `aggregateBy` take an optional `IALinqEqualityComparer` (the last
+ * parameter of `countBy`, the fourth of `aggregateBy`; the keys equal under it are one group,
+ * named by the first seen), and
+ * `aggregateBy` takes a last optional `$seedSelector` `fn($key)` that returns the seed of each
+ * group. Classes that implement this interface on their own must add the parameters.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -148,17 +154,21 @@ interface IALinqAggregatable extends IALinqBaseCollection
     /**
      * Applies an accumulator function over each group of elements in a sequence (AggregateBy in .NET 9)
      *
+     * @param mixed $seed The seed of every group, whatever its type (ignored when $seedSelector is given)
      * @param callable $func `fn($carry, $item, $position)`: the position of the item inside its group, not its source key
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
+     * @param callable|null $seedSelector `fn($key)`, the seed of each group, called once per group (since 2.4.0)
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum
      */
-    public function aggregateBy(callable $keySelector, $seed, callable $func): IALinqCollection;
+    public function aggregateBy(callable $keySelector, $seed, callable $func, ?IALinqEqualityComparer $comparer = null, ?callable $seedSelector = null): IALinqCollection;
 
     /**
      * Groups elements by a specified key and counts the elements in each group
      *
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum
      */
-    public function countBy(callable $keySelector): IALinqCollection;
+    public function countBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Returns the element whose selected key is the maximum

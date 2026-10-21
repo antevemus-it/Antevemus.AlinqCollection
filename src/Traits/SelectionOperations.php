@@ -9,6 +9,7 @@ use Antevemus\ALinq\DuplicateKeyPolicy;
 use Antevemus\ALinq\Helpers\ALinqCallable;
 use Antevemus\ALinq\Helpers\ALinqContract;
 use Antevemus\ALinq\Interfaces\IALinqCollection;
+use Antevemus\ALinq\Interfaces\IALinqEqualityComparer;
 use InvalidArgumentException;
 use stdClass;
 use UnexpectedValueException;
@@ -22,9 +23,10 @@ use UnexpectedValueException;
  *
  * Since 2.2.0 (forward 047): toDictionary() takes a DuplicateKeyPolicy and toLookup() returns
  * an ALinqLookup, both on the implementation shared with the lazy side
- * (ALinqContract::dictionary(), ALinqContract::lookup()).
+ * (ALinqContract::dictionary(), ALinqContract::lookup()). Since 2.4.0 both take an
+ * IALinqEqualityComparer for the keys.
  *
- * @version    2.2.0
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.traits
  * @author     Heliton Junior
@@ -93,20 +95,24 @@ trait SelectionOperations
      * as ToDictionary does in LINQ). Since 2.2.0 `$onDuplicate` may choose
      * DuplicateKeyPolicy::KeepFirst (the element selector does not run for the repeats) or
      * DuplicateKeyPolicy::KeepLast (the key stays at the position of its first occurrence).
-     * A key is a PHP array key: `1` and `'1'` are the same key.
+     * A key is a PHP array key: `1` and `'1'` are the same key. Since 2.4.0 a comparer may
+     * decide which keys are equal: the first key seen is the one kept (under KeepLast it holds
+     * the element of the last item equal to it).
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
      * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`; the item when null
      * @param DuplicateKeyPolicy $onDuplicate What a repeated key does (since 2.2.0)
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @throws InvalidArgumentException when a key is not int/string/BackedEnum or, under Throw, is produced twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw, ?IALinqEqualityComparer $comparer = null): array
     {
         return ALinqContract::dictionary(
             $this->items,
             ALinqCallable::withKey($keySelector),
             $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
-            $onDuplicate
+            $onDuplicate,
+            $comparer
         );
     }
 
@@ -116,18 +122,21 @@ trait SelectionOperations
      * A groupBy() already materialized: `get($key)` gives the elements of a key, or an empty
      * collection for a missing key. The key follows groupBy(): an int, a string or a
      * BackedEnum; null and every other type throw (unlike .NET, which accepts a null key: a
-     * lookup answers as groupBy() does).
+     * lookup answers as groupBy() does). Since 2.4.0 a comparer may decide which keys are equal:
+     * the first key seen names the group, and get()/contains() of the lookup use the comparer.
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
      * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`; the item when null
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0)
      * @throws InvalidArgumentException when a key is not int, string or BackedEnum
      */
-    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null, ?IALinqEqualityComparer $comparer = null): ALinqLookup
     {
         return ALinqContract::lookup(
             $this->items,
             ALinqCallable::withKey($keySelector),
-            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector)
+            $elementSelector === null ? null : ALinqCallable::withKey($elementSelector),
+            $comparer
         );
     }
 

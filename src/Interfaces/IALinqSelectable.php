@@ -21,7 +21,11 @@ use stdClass;
  * KeepFirst, KeepLast) and `toLookup()` returns an immutable `ALinqLookup`. Classes that
  * implement this interface on their own must add them.
  *
- * @version    2.2.0
+ * Since 2.4.0: `toDictionary()` and `toLookup()` take an optional `IALinqEqualityComparer` as
+ * their last parameter (the keys equal under it are one key, the first seen; a lookup keeps it
+ * for `get()`/`contains()`). Classes that implement this interface on their own must add it.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -53,10 +57,11 @@ interface IALinqSelectable extends IALinqBaseCollection
      * Convert to dictionary (ToDictionary in LINQ); `1` and `'1'` are the same key
      *
      * @param DuplicateKeyPolicy $onDuplicate What a repeated key does (since 2.2.0; Throw by default)
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen is kept
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum,
      *         or, under DuplicateKeyPolicy::Throw, produces the same key twice
      */
-    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw): array;
+    public function toDictionary(callable $keySelector, ?callable $elementSelector = null, DuplicateKeyPolicy $onDuplicate = DuplicateKeyPolicy::Throw, ?IALinqEqualityComparer $comparer = null): array;
 
     /**
      * Convert to an immutable one-to-many lookup (ToLookup in LINQ, since 2.2.0): get() of a
@@ -64,9 +69,10 @@ interface IALinqSelectable extends IALinqBaseCollection
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`
      * @param callable|null $elementSelector `fn($item)` or `fn($item, $key)`
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0), kept by the lookup
      * @throws \InvalidArgumentException when the key selector returns something other than int, string or BackedEnum
      */
-    public function toLookup(callable $keySelector, ?callable $elementSelector = null): ALinqLookup;
+    public function toLookup(callable $keySelector, ?callable $elementSelector = null, ?IALinqEqualityComparer $comparer = null): ALinqLookup;
 
     /**
      * Convert collection to an object

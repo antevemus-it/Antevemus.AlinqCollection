@@ -119,3 +119,36 @@ $participants = (function () {
 $documents->join($participants, fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $p) => $p['name'] . ': ' . $d['type'])->toArray(); // ['Ana: ID card']
 $documents->groupJoin(ALinqCollection::from([]), fn($d) => $d['id'], fn($p) => $p['document_id'], fn($d, $ps) => $ps->count())->toArray(); // [0, 0, 0]
 ```
+
+#### Comparadores em junções e operações de conjunto (desde a 2.4.0)
+
+Toda junção (`join()`, `groupJoin()`, `leftJoin()`, `rightJoin()`, `fullJoin()`) e toda operação de conjunto por elemento ou chave (`intersect()`, `except()`, `intersectBy()`, `exceptBy()`, `unionBy()`, `exceptByKeys()`, `intersectByKeys()`) aceita um `IALinqEqualityComparer` como último parâmetro, então `StringComparer::ordinalIgnoreCase()` casa e-mails qualquer que seja a caixa e `StringComparer::culture('pt_BR', ignoreAccents: true)` casa nomes quaisquer que sejam os acentos. O `hash()` do comparador indexa um lado e o seu `equals()` confirma cada candidato, então a junção continua linear: em 10 000 × 10 000 linhas o `equals()` roda uma vez por linha externa, nunca uma vez por par. Uma chave `null` continua sem casar numa junção, mesmo com um comparador que ache `null` igual a `null`; numa operação de conjunto `null` é uma chave como as outras. Uma operação de conjunto mantém o **primeiro item de cada chave** (a primeira grafia vista), uma lista é reindexada e um dicionário mantém as chaves, como sem comparador. Na coleção preguiçosa as junções, `exceptByKeys()` e `intersectByKeys()` também o aceitam (veja [Streaming](lazy-streaming.md)).
+
+<!-- tested: 3-comparer -->
+```php
+use Antevemus\ALinq\ALinqCollection;
+use Antevemus\ALinq\Comparison\StringComparer;
+
+$users = ALinqCollection::from([
+    ['email' => 'Ana@Example.com', 'name' => 'Ana'],
+    ['email' => 'bruno@example.com', 'name' => 'Bruno'],
+]);
+$orders = [
+    ['email' => 'ana@example.com', 'id' => 1],
+    ['email' => 'ANA@EXAMPLE.COM', 'id' => 2],
+    ['email' => 'carla@example.com', 'id' => 3],
+];
+$email = fn($row) => $row['email'];
+$ignoreCase = StringComparer::ordinalIgnoreCase();
+
+$users->join($orders, $email, $email, fn($u, $o) => $u['name'] . '#' . $o['id'], $ignoreCase)->toArray(); // ['Ana#1', 'Ana#2']
+$users->groupJoin($orders, $email, $email, fn($u, $os) => $os->count(), $ignoreCase)->toArray(); // [2, 0]
+$users->leftJoin($orders, $email, $email, fn($u, $o) => $u['name'] . '#' . ($o['id'] ?? '-'), $ignoreCase)->toArray(); // ['Ana#1', 'Ana#2', 'Bruno#-']
+// Sem comparador as chaves casam por identidade estrita, como antes
+$users->join($orders, $email, $email, fn($u, $o) => $o['id'])->count(); // 0
+
+// Operações de conjunto: o primeiro item de cada chave é o que fica
+ALinqCollection::from(['Ana', 'ANA', 'Bruno'])->intersect(['ana', 'carla'], $ignoreCase)->toArray(); // ['Ana']
+ALinqCollection::from($orders)->exceptByKeys(['ANA@example.com'], $email, $ignoreCase)->column('id')->toArray(); // [3]
+ALinqCollection::from($orders)->unionBy([['email' => 'Carla@Example.com', 'id' => 4], ['email' => 'dora@example.com', 'id' => 5]], $email, $ignoreCase)->column('id')->toArray(); // [1, 3, 5]
+```

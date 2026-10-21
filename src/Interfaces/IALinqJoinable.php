@@ -26,7 +26,13 @@ namespace Antevemus\ALinq\Interfaces;
  * both sides). Classes that implement this interface on their own must widen the two
  * parameters and add the two methods.
  *
- * @version    2.2.0
+ * Since 2.4.0: every join and every set operation by key or element (`intersect`, `except`,
+ * `intersectBy`, `exceptBy`, `exceptByKeys`, `intersectByKeys`, `unionBy`) takes an optional
+ * `IALinqEqualityComparer` as its last parameter: hash-based (its `hash()` indexes, its
+ * `equals()` confirms), the first item of each key kept by a set operation. Classes that
+ * implement this interface on their own must add the parameter.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -39,14 +45,14 @@ interface IALinqJoinable extends IALinqBaseCollection
      * Join with another collection (Join in LINQ); keys match by strict identity and a
      * null key never matches (LINQ and SQL semantics); result is a list
      */
-    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
+    public function join(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Left join with another collection (GroupJoin in LINQ); the matched group is an
      * ALinqCollection (empty when nothing matches); keys match by strict identity and a
      * null key never matches (LINQ and SQL semantics)
      */
-    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector): IALinqCollection;
+    public function groupJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, callable $resultSelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Left outer join (LeftJoin in .NET 10/11 LINQ): every outer item, paired with each match
@@ -54,7 +60,7 @@ interface IALinqJoinable extends IALinqBaseCollection
      *
      * @param callable|null $resultSelector `fn($outer, $inner|null)`; the pair `[$outer, $inner]` when null
      */
-    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
+    public function leftJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Right outer join (RightJoin in .NET 10/11 LINQ): every inner item, paired with each
@@ -62,7 +68,7 @@ interface IALinqJoinable extends IALinqBaseCollection
      *
      * @param callable|null $resultSelector `fn($outer|null, $inner)`; the pair `[$outer, $inner]` when null
      */
-    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
+    public function rightJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Full outer join (FullJoin in .NET 10/11 LINQ): the outer items in outer order (paired
@@ -70,7 +76,7 @@ interface IALinqJoinable extends IALinqBaseCollection
      *
      * @param callable|null $resultSelector `fn($outer|null, $inner|null)`; the pair `[$outer, $inner]` when null
      */
-    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null): IALinqCollection;
+    public function fullJoin(iterable $inner, callable $outerKeySelector, callable $innerKeySelector, ?callable $resultSelector = null, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Concatenate with another collection (Concat in LINQ): a sequence operation, the result is a reindexed list
@@ -80,12 +86,12 @@ interface IALinqJoinable extends IALinqBaseCollection
     /**
      * Get the distinct elements that exist in both collections, by strict identity (Intersect in LINQ)
      */
-    public function intersect(array $second): IALinqCollection;
+    public function intersect(array $second, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Get the distinct elements of this collection that don't exist in second, by strict identity (Except in LINQ)
      */
-    public function except(array $second): IALinqCollection;
+    public function except(array $second, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Intersect with another collection using a custom comparer (`bool` or `<=>` answer)
@@ -119,29 +125,29 @@ interface IALinqJoinable extends IALinqBaseCollection
      * holds ELEMENTS and the selector applies to both sides (MoreLINQ), unlike the `ExceptBy`
      * of .NET 6: for a sequence of keys use exceptByKeys()
      */
-    public function exceptBy(array $second, callable $keySelector): IALinqCollection;
+    public function exceptBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Produces the set intersection of two sequences based on a key selector function; $second
      * holds ELEMENTS and the selector applies to both sides (MoreLINQ), unlike the `IntersectBy`
      * of .NET 6: for a sequence of keys use intersectByKeys()
      */
-    public function intersectBy(array $second, callable $keySelector): IALinqCollection;
+    public function intersectBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * The distinct items whose selected key is not in $keys (ExceptBy of .NET 6, since 2.2.0):
      * $keys is read once, the selector runs on this collection only, strict identity
      */
-    public function exceptByKeys(iterable $keys, callable $keySelector): IALinqCollection;
+    public function exceptByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * The distinct items whose selected key is in $keys (IntersectBy of .NET 6, since 2.2.0):
      * $keys is read once, the selector runs on this collection only, strict identity
      */
-    public function intersectByKeys(iterable $keys, callable $keySelector): IALinqCollection;
+    public function intersectByKeys(iterable $keys, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 
     /**
      * Produces the set union of two sequences based on a key selector function
      */
-    public function unionBy(array $second, callable $keySelector): IALinqCollection;
+    public function unionBy(array $second, callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 }

@@ -9,7 +9,10 @@ namespace Antevemus\ALinq\Interfaces;
  *
  * Interface for grouping operations on collections.
  *
- * @version    1.3.1
+ * Since 2.4.0 groupBy() takes an optional IALinqEqualityComparer for the keys. Classes that
+ * implement this interface on their own must add the parameter.
+ *
+ * @version    2.4.0
  * @package    antevemus
  * @subpackage alinq.interfaces
  * @author     Heliton Junior
@@ -23,7 +26,8 @@ interface IALinqGroupable extends IALinqBaseCollection
      * values are ALinqCollection instances
      *
      * @param callable $keySelector `fn($item)` or `fn($item, $key)`, returning int, string or BackedEnum
+     * @param IALinqEqualityComparer|null $comparer The identity of the keys (since 2.4.0); the first key seen names the group
      * @throws \InvalidArgumentException when the key selector returns any other type
      */
-    public function groupBy(callable $keySelector): IALinqCollection;
+    public function groupBy(callable $keySelector, ?IALinqEqualityComparer $comparer = null): IALinqCollection;
 }
