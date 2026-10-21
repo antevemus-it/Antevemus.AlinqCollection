@@ -95,6 +95,10 @@ $paidTotal = ALinqLazyCollection::fromHttpPages(
 - **`HttpPageOptions`**: `timeout` (30 s by default: the longest the iteration blocks waiting for one page; the time your code spends on the previous page does not count), `maxPages` (10 000 by default, a guard against a cursor that never ends), `headers` (sent with every request; a request header with the same name wins) and `followRedirects` (`false` by default). TLS verification is always on and cannot be turned off.
 - **Prefetch depth 1**: the next request needs the cursor of the previous response. On the local test server, 3 pages of 300 ms with a consumer that spends 300 ms per page take 1.2 s instead of 1.8 s (`tests/Unit/Http/FromHttpPagesTest.php`).
 
+#### Other event loops
+
+The shape hook, `from($factory, isList: ...)` and `isList()`, knows no event loop: no class of this package uses Revolt, Amp or Fibers, and none of them is required. [`antevemus/alinq-revolt`](https://github.com/antevemus-it/Antevemus.AlinqRevolt) is the companion for Revolt and Amp, built on that hook. Its [Architecture](https://github.com/antevemus-it/Antevemus.AlinqRevolt/blob/main/docs/en/internals/architecture.md) page explains why it runs on Revolt and Amp, and what a companion for another event loop (ReactPHP, ...) implements: a wrapper over the source, operators that return `ALinqLazyCollection::from($factory, $isList)` with the shape declared, and the ordered, bounded, lazy window with cancellation on early stop. Such a package needs no change here.
+
 #### Caching Intermediate Streams with `remember()`
 
 If an upstream data stream is computationally expensive or involves external I/O, calling `remember()` caches evaluated elements so subsequent iterations pull from memory without re-executing upstream generators:

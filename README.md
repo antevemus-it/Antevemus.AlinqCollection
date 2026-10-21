@@ -1,7 +1,7 @@
 # Antevemus ALinq Collection
 
 [![CI](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml/badge.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/actions/workflows/tests.yml)
-[![Latest Stable Version](https://img.shields.io/badge/release-v2.3.0-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
+[![Latest Stable Version](https://img.shields.io/badge/release-v2.3.1-blue.svg)](https://github.com/antevemus-it/Antevemus.AlinqCollection/releases)
 [![PHP Version](https://img.shields.io/badge/php-%3E%3D8.4-8892BF.svg)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Tests Passing](https://img.shields.io/badge/tests-772%20passed%20%7C%204102%20assertions-success.svg)](docs/en/quality/tests.md)

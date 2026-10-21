@@ -6,7 +6,7 @@ Comprehensive PHPUnit 11 test suite certifying the **Antevemus ALinq Collection*
 
 - **Test Framework:** PHPUnit 11.5+ (configured for PHP 8.4+)
 - **Test Files:** 28 unit test files (`tests/Unit/`, two of them in `tests/Unit/Http/`) and 4 contract test files (`tests/Contract/`)
-- **Total Tests:** 772 tests (2.3.0)
+- **Total Tests:** 772 tests (2.3.1)
 - **Total Assertions:** 4102 assertions without ext-intl (10 tests that use `StringComparer::culture()` skipped); 4185 with ext-intl (1 skipped: the test of the missing extension)
 - **Lines of Test Code:** 13,000+ lines
 - **Success Rate:** 100% Passing (0 failures, 0 errors, 0 deprecations)

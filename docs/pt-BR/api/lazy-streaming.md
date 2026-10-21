@@ -95,6 +95,10 @@ $paidTotal = ALinqLazyCollection::fromHttpPages(
 - **`HttpPageOptions`**: `timeout` (30 s por padrão: o máximo que a iteração fica bloqueada esperando uma página; o tempo que o seu código gasta na página anterior não conta), `maxPages` (10 000 por padrão, proteção contra um cursor que nunca termina), `headers` (enviados em toda requisição; um cabeçalho de mesmo nome na requisição prevalece) e `followRedirects` (`false` por padrão). A verificação TLS está sempre ligada e não pode ser desligada.
 - **Prefetch de profundidade 1**: a próxima requisição depende do cursor da resposta anterior. No servidor local dos testes, 3 páginas de 300 ms com um consumidor que gasta 300 ms por página levam 1,2 s em vez de 1,8 s (`tests/Unit/Http/FromHttpPagesTest.php`).
 
+#### Outros event loops
+
+O gancho do formato, `from($factory, isList: ...)` e `isList()`, não conhece event loop: nenhuma classe deste pacote usa Revolt, Amp ou Fibers, e nenhum deles é exigido. O [`antevemus/alinq-revolt`](https://github.com/antevemus-it/Antevemus.AlinqRevolt) é o pacote satélite para Revolt e Amp, construído sobre esse gancho. A página [Arquitetura](https://github.com/antevemus-it/Antevemus.AlinqRevolt/blob/main/docs/pt-BR/internals/architecture.md) dele explica por que ele roda sobre o Revolt e o Amp, e o que um satélite para outro event loop (ReactPHP, ...) implementa: um invólucro sobre a fonte, operadores que devolvem `ALinqLazyCollection::from($factory, $isList)` com o formato declarado, e a janela ordenada, limitada e preguiçosa com cancelamento na parada antecipada. Um pacote desses não exige mudança aqui.
+
 #### Cache de Streams Intermediários com `remember()`
 
 Se a fonte upstream for computacionalmente pesada ou envolver I/O de rede, o método `remember()` memoriza os itens avaliados na primeira passagem para que iterações subsequentes leiam do cache local sem reexecutar os generators de origem:

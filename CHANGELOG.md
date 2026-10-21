@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-10-21
+
+A PATCH release with documentation only: the lazy-streaming page points to the Architecture page of the companion package, for other event loops. No change in `src/`.
+
+### Documentation
+
+- **`docs/<language>/api/lazy-streaming.md`** (§10, both languages): a new subsection, "Other event loops" / "Outros event loops", after the one on `fromHttpPages()`, where the companion and the shape hook are described. Prose only: the shape hook (`from($factory, isList: ...)` and `isList()`) knows no event loop, and no class of this package uses Revolt, Amp or Fibers; `antevemus/alinq-revolt` is the companion for Revolt and Amp; its Architecture page (`docs/en/internals/architecture.md` of that repository, `docs/pt-BR/...` from the Portuguese page) explains why it runs on Revolt and Amp and what a companion for another event loop (ReactPHP, ...) implements, with no change here. The PHP blocks are unchanged.
+- The Release badge of both READMEs is v2.3.1; `tests/README.md` carries the counts of 2.3.1, the same as 2.3.0.
+
+### Notes
+
+- **Suite.** Without `ext-intl` (PHP 8.4.13): 772 tests, 4102 assertions, 10 skipped. With it (PHP 8.4.26, in a container): 772 tests, 4185 assertions, 1 skipped. Unchanged on both legs, test by test: the new links are absolute URLs, which the documentation guard does not count among the relative links, and the new subsection adds no code fence or PHP block, so `DocumentationTreeTest` keeps its counts; the Tests badge, the Quality lines and `quality/tests.md` keep theirs.
+- **No code change**: `src/`, the tests and the workflows are unchanged.
+
 ## [2.3.0] - 2026-10-20
 
 A MINOR release: `ALinqLazyCollection::from()` takes the declared shape of a generator factory's stream, `isList()` answers the shape a lazy collection knows, and the companion package `antevemus/alinq-revolt` 1.0.0 (the async collection of ROADMAP milestone 12), which builds its stages with it, is suggested and documented. Additive for callers; classes that implement `IALinqLazyCollection` on their own must add the parameter and the method.
